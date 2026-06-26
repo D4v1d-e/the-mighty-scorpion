@@ -55,13 +55,11 @@
   </style>
 
   <script>
-    // ─── ORB STATE ───────────────────────────────────────
     function setOrbState(state, statusText) {
       document.getElementById('orb').className = state;
       document.getElementById('orb-status').innerText = statusText;
     }
 
-    // ─── ACTIVATION SOUND ────────────────────────────────
     function playActivationSound() {
       try {
         const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -88,7 +86,6 @@
       } catch(e) {}
     }
 
-    // ─── VOICE INPUT ─────────────────────────────────────
     let recognition = null;
     let isListening = false;
 
@@ -122,7 +119,6 @@
           setOrbState('', 'TAP THE ORB TO SPEAK');
         }
       };
-
       return true;
     }
 
@@ -142,7 +138,6 @@
       recognition.start();
     }
 
-    // ─── VOICE OUTPUT - FREETTS ───────────────────────────
     let currentAudio = null;
 
     async function speakReply(text) {
@@ -185,7 +180,6 @@
       }
     }
 
-    // ─── AI BRAIN ────────────────────────────────────────
     async function sendCmd() {
       const val = document.getElementById('cmd').value.trim();
       if (!val) return;
