@@ -86,6 +86,17 @@
       } catch(e) {}
     }
 
+    // ─── AUDIO UNLOCK (fixes silent autoplay block) ──────
+    let audioUnlocked = false;
+    function unlockAudio() {
+      if (audioUnlocked) return;
+      try {
+        const silence = new Audio("data:audio/mp3;base64,//uQxAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAACcQCA");
+        silence.play().catch(()=>{});
+        audioUnlocked = true;
+      } catch(e) {}
+    }
+
     let recognition = null;
     let isListening = false;
 
@@ -102,7 +113,7 @@
 
       recognition.onresult = function(event) {
         const result = event.results[0];
-        if (!result.isFinal) return; // still talking, wait for final transcript
+        if (!result.isFinal) return;
         const transcript = result[0].transcript;
         document.getElementById('cmd').value = transcript;
         setOrbState('thinking', 'HEARD: ' + transcript.toUpperCase());
@@ -133,6 +144,7 @@
     }
 
     function activateScorpion() {
+      unlockAudio();
       playActivationSound();
       if (!recognition) {
         if (!initVoice()) return;
@@ -171,18 +183,30 @@
           body: JSON.stringify({ text: cleanText })
         });
 
-        const data = await response.json();
-
-        if (data.error) {
+        if (!response.ok) {
+          let errMsg = 'Voice generation failed';
+          try {
+            const errData = await response.json();
+            errMsg = errData.error || errMsg;
+          } catch(e) {}
+          console.error('Voice error:', errMsg);
           setOrbState('', 'VOICE ERROR - TAP ORB TO RETRY');
           return;
         }
 
-        const audio = new Audio(data.audio_url);
+        const blob = await response.blob();
+        const audioUrl = URL.createObjectURL(blob);
+        const audio = new Audio(audioUrl);
         currentAudio = audio;
-        audio.onended = () => setOrbState('', 'TAP THE ORB TO SPEAK');
+        audio.onended = () => {
+          URL.revokeObjectURL(audioUrl);
+          setOrbState('', 'TAP THE ORB TO SPEAK');
+        };
         audio.onerror = () => setOrbState('', 'VOICE ERROR - TAP ORB TO RETRY');
-        audio.play();
+        audio.play().catch(e => {
+          console.error('Play blocked:', e);
+          setOrbState('', 'TAP ANYWHERE THEN RETRY');
+        });
 
       } catch(e) {
         console.error('Voice error:', e);
@@ -191,6 +215,7 @@
     }
 
     async function sendCmd() {
+      unlockAudio();
       const val = document.getElementById('cmd').value.trim();
       if (!val) return;
       document.getElementById('cmd').value = '';
