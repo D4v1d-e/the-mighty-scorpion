@@ -24,7 +24,6 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model: 'meta-llama/llama-4-scout:free',
-        stream: true,
         messages: [
           {
             role: 'system',
@@ -35,42 +34,25 @@ export default async function handler(req, res) {
       })
     });
 
-    // stream the response back to browser word by word
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
+    const text = await response.text();
 
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      const chunk = decoder.decode(value);
-      const lines = chunk.split('\n').filter(line => line.trim() !== '');
-
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          const data = line.slice(6);
-          if (data === '[DONE]') {
-            res.write('data: [DONE]\n\n');
-            continue;
-          }
-          try {
-            const parsed = JSON.parse(data);
-            const content = parsed.choices?.[0]?.delta?.content;
-            if (content) {
-              res.write(`data: ${JSON.stringify({ text: content })}\n\n`);
-            }
-          } catch(e) {}
-        }
-      }
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch(e) {
+      return res.status(500).json({ error: 'Bad response: ' + text });
     }
 
-    res.end();
+    if (data.error) return res.status(500).json({ error: data.error.message || JSON.stringify(data.error) });
+
+    if (!data.choices || !data.choices[0]) {
+      return res.status(500).json({ error: 'No response. Raw: ' + JSON.stringify(data) });
+    }
+
+    const reply = data.choices[0].message.content;
+    return res.status(200).json({ reply });
 
   } catch(e) {
-    res.status(500).json({ error: e.message });
+    return res.status(500).json({ error: e.message });
   }
 }
