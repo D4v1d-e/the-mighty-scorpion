@@ -1,6 +1,3 @@
-// SCORPION AI - AI BRAIN
-// Calls our secure Vercel backend - key never exposed
-
 const AI = {
 
   think: async function(prompt) {
@@ -14,15 +11,21 @@ const AI = {
       });
 
       const data = await response.json();
-      const reply = data.reply;
 
+      if (data.error) {
+        setOrbState('', 'ERROR - TAP ORB TO RETRY');
+        document.getElementById('output').innerText = '❌ ERROR: ' + data.error;
+        return;
+      }
+
+      const reply = data.reply;
       document.getElementById('output').innerText = '🦂 ' + reply;
       setOrbState('speaking', 'SCORPION SPEAKING...');
       VoiceOutput.speak(reply);
 
     } catch(e) {
       setOrbState('', 'ERROR - TAP ORB TO RETRY');
-      document.getElementById('output').innerText = 'ERROR: ' + e.message;
+      document.getElementById('output').innerText = '❌ ERROR: ' + e.message;
     }
   }
 
