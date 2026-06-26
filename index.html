@@ -54,8 +54,6 @@
     @keyframes orbPulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.08)} }
   </style>
 
-  <script src="https://js.puter.com/v2/"></script>
-
   <script>
     // ─── ORB STATE ───────────────────────────────────────
     function setOrbState(state, statusText) {
@@ -144,7 +142,7 @@
       recognition.start();
     }
 
-    // ─── VOICE OUTPUT - ELEVENLABS ONLY ──────────────────
+    // ─── VOICE OUTPUT - FREETTS ───────────────────────────
     let currentAudio = null;
 
     async function speakReply(text) {
@@ -162,12 +160,20 @@
 
         setOrbState('speaking', 'SCORPION SPEAKING...');
 
-        const audio = await puter.ai.txt2speech(cleanText, {
-          provider: 'elevenlabs',
-          voice: '21m00Tcm4TlvDq8ikWAM',
-          model: 'eleven_multilingual_v2'
+        const response = await fetch('/api/speak', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: cleanText })
         });
 
+        const data = await response.json();
+
+        if (data.error) {
+          setOrbState('', 'VOICE ERROR - TAP ORB TO RETRY');
+          return;
+        }
+
+        const audio = new Audio(data.audio_url);
         currentAudio = audio;
         audio.onended = () => setOrbState('', 'TAP THE ORB TO SPEAK');
         audio.onerror = () => setOrbState('', 'VOICE ERROR - TAP ORB TO RETRY');
@@ -175,7 +181,7 @@
 
       } catch(e) {
         console.error('Voice error:', e);
-        setOrbState('', 'VOICE UNAVAILABLE - CHECK PUTER LOGIN');
+        setOrbState('', 'TAP THE ORB TO SPEAK');
       }
     }
 
