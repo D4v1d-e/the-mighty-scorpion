@@ -1,49 +1,100 @@
 // SCORPION AI - VOICE OUTPUT ENGINE
-// Uses Web Speech Synthesis API - 100% free, built into Chrome
-// No API key needed
+// Uses Puter.js → ElevenLabs - 100% free, no API key needed
+// Quality: Studio realistic human voice
 
 const VoiceOutput = {
 
-  speak: function(text) {
-    // stop any current speech first
-    window.speechSynthesis.cancel();
+  isSpeaking: false,
+  currentAudio: null,
 
-    const utterance = new SpeechSynthesisUtterance(text);
-    
-    // voice settings
-    utterance.lang = 'en-US';
-    utterance.pitch = 0.8;      // slightly deep voice
-    utterance.rate = 0.95;      // slightly slower - clear and smooth
-    utterance.volume = 1.0;     // full volume
+  speak: async function(text) {
+    try {
+      // stop any current speech first
+      this.stop();
 
-    // pick best available voice
-    const voices = window.speechSynthesis.getVoices();
-    const preferred = voices.find(v => 
-      v.name.includes('Google') || 
-      v.name.includes('Daniel') || 
-      v.name.includes('Alex')
-    );
-    if (preferred) utterance.voice = preferred;
+      this.isSpeaking = true;
+      setOrbState('speaking', 'SCORPION SPEAKING...');
 
-    // update UI while speaking
-    utterance.onstart = function() {
-      document.getElementById('orb-status').innerText = 'SCORPION SPEAKING...';
-    };
+      // clean the text - remove markdown symbols that sound weird
+      const cleanText = text
+        .replace(/\*\*/g, '')
+        .replace(/\*/g, '')
+        .replace(/#{1,6}/g, '')
+        .replace(/`/g, '')
+        .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1')
+        .trim();
 
-    utterance.onend = function() {
-      document.getElementById('orb-status').innerText = 'AWAITING YOUR COMMAND...';
-    };
+      // use Puter.js to access ElevenLabs for free
+      const audio = await puter.ai.txt2speech(cleanText, {
+        provider: 'elevenlabs',
+        voice: '21m00Tcm4TlvDq8ikWAM', // Rachel - clear, professional female voice
+        model: 'eleven_multilingual_v2'
+      });
 
-    utterance.onerror = function(e) {
-      document.getElementById('orb-status').innerText = 'VOICE OUTPUT ERROR';
-    };
+      this.currentAudio = audio;
 
-    window.speechSynthesis.speak(utterance);
+      audio.onended = () => {
+        this.isSpeaking = false;
+        setOrbState('', 'AWAITING YOUR COMMAND...');
+      };
+
+      audio.onerror = () => {
+        this.isSpeaking = false;
+        setOrbState('', 'AWAITING YOUR COMMAND...');
+        // fallback to browser voice if ElevenLabs fails
+        VoiceOutput.fallbackSpeak(cleanText);
+      };
+
+      audio.play();
+
+    } catch(e) {
+      console.error('ElevenLabs voice error:', e);
+      this.isSpeaking = false;
+      // fallback to browser voice
+      this.fallbackSpeak(text);
+    }
+  },
+
+  // backup voice if ElevenLabs fails
+  fallbackSpeak: function(text) {
+    try {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'en-US';
+      utterance.pitch = 0.8;
+      utterance.rate = 0.95;
+      utterance.volume = 1.0;
+
+      const voices = window.speechSynthesis.getVoices();
+      const preferred = voices.find(v =>
+        v.name.includes('Google') ||
+        v.name.includes('Daniel') ||
+        v.name.includes('Alex')
+      );
+      if (preferred) utterance.voice = preferred;
+
+      utterance.onstart = () => setOrbState('speaking', 'SCORPION SPEAKING...');
+      utterance.onend = () => setOrbState('', 'AWAITING YOUR COMMAND...');
+
+      window.speechSynthesis.speak(utterance);
+    } catch(e) {
+      setOrbState('', 'AWAITING YOUR COMMAND...');
+    }
   },
 
   stop: function() {
-    window.speechSynthesis.cancel();
-    document.getElementById('orb-status').innerText = 'AWAITING YOUR COMMAND...';
+    try {
+      if (this.currentAudio) {
+        this.currentAudio.pause();
+        this.currentAudio.currentTime = 0;
+        this.currentAudio = null;
+      }
+      window.speechSynthesis.cancel();
+      this.isSpeaking = false;
+      setOrbState('', 'AWAITING YOUR COMMAND...');
+    } catch(e) {
+      console.error('Stop error:', e);
+    }
   }
 
 };
