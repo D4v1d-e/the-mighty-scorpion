@@ -97,11 +97,13 @@
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
       recognition = new SR();
       recognition.continuous = false;
-      recognition.interimResults = false;
+      recognition.interimResults = true;
       recognition.lang = 'en-US';
 
       recognition.onresult = function(event) {
-        const transcript = event.results[0][0].transcript;
+        const result = event.results[0];
+        if (!result.isFinal) return; // still talking, wait for final transcript
+        const transcript = result[0].transcript;
         document.getElementById('cmd').value = transcript;
         setOrbState('thinking', 'HEARD: ' + transcript.toUpperCase());
         isListening = false;
@@ -109,8 +111,16 @@
       };
 
       recognition.onerror = function(event) {
-        setOrbState('', 'MIC ERROR: ' + event.error.toUpperCase());
         isListening = false;
+        if (event.error === 'no-speech') {
+          setOrbState('', "DIDN'T CATCH THAT - TAP & SPEAK RIGHT AWAY");
+        } else if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+          setOrbState('', 'MIC BLOCKED - CHECK SITE PERMISSIONS');
+        } else if (event.error === 'audio-capture') {
+          setOrbState('', 'NO MIC FOUND - CHECK DEVICE');
+        } else {
+          setOrbState('', 'MIC ERROR: ' + event.error.toUpperCase());
+        }
       };
 
       recognition.onend = function() {
