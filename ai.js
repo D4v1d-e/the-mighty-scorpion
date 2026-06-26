@@ -1,5 +1,5 @@
-// SCORPION AI - AI BRAIN ENGINE
-// Uses OpenRouter API - free models, no login needed
+// SCORPION AI - AI BRAIN
+// Calls our secure Vercel backend - key never exposed
 
 const AI = {
 
@@ -7,31 +7,14 @@ const AI = {
     try {
       setOrbState('thinking', 'THINKING...');
 
-      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      const response = await fetch('/api/chat', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + window.SCORPION_KEY,
-          'HTTP-Referer': 'https://the-mighty-scorpion.vercel.app',
-          'X-Title': 'Scorpion AI'
-        },
-        body: JSON.stringify({
-          model: 'meta-llama/llama-3.3-70b-instruct:free',
-          messages: [
-            {
-              role: 'system',
-              content: 'You are Scorpion, a powerful personal AI assistant. You are sharp, direct, and intelligent. Keep responses clear and concise.'
-            },
-            {
-              role: 'user',
-              content: prompt
-            }
-          ]
-        })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: prompt })
       });
 
       const data = await response.json();
-      const reply = data.choices[0].message.content;
+      const reply = data.reply;
 
       document.getElementById('output').innerText = '🦂 ' + reply;
       setOrbState('speaking', 'SCORPION SPEAKING...');
