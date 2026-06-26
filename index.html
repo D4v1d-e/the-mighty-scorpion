@@ -144,7 +144,7 @@
       recognition.start();
     }
 
-    // ─── VOICE OUTPUT ────────────────────────────────────
+    // ─── VOICE OUTPUT - ELEVENLABS ONLY ──────────────────
     let currentAudio = null;
 
     async function speakReply(text) {
@@ -153,46 +153,29 @@
           currentAudio.pause();
           currentAudio = null;
         }
-        window.speechSynthesis.cancel();
 
         const cleanText = text
           .replace(/\*\*/g, '').replace(/\*/g, '')
           .replace(/#{1,6}/g, '').replace(/`/g, '')
+          .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1')
           .trim();
 
         setOrbState('speaking', 'SCORPION SPEAKING...');
 
-        // try ElevenLabs via Puter first
-        try {
-          const audio = await puter.ai.txt2speech(cleanText, {
-            provider: 'elevenlabs',
-            voice: '21m00Tcm4TlvDq8ikWAM',
-            model: 'eleven_multilingual_v2'
-          });
-          currentAudio = audio;
-          audio.onended = () => setOrbState('', 'TAP THE ORB TO SPEAK');
-          audio.play();
-          return;
-        } catch(e) {
-          console.log('ElevenLabs failed, using browser voice');
-        }
+        const audio = await puter.ai.txt2speech(cleanText, {
+          provider: 'elevenlabs',
+          voice: '21m00Tcm4TlvDq8ikWAM',
+          model: 'eleven_multilingual_v2'
+        });
 
-        // fallback to browser voice
-        const utterance = new SpeechSynthesisUtterance(cleanText);
-        utterance.lang = 'en-US';
-        utterance.pitch = 0.8;
-        utterance.rate = 0.95;
-        utterance.volume = 1.0;
-        const voices = window.speechSynthesis.getVoices();
-        const preferred = voices.find(v =>
-          v.name.includes('Google') || v.name.includes('Daniel') || v.name.includes('Alex')
-        );
-        if (preferred) utterance.voice = preferred;
-        utterance.onend = () => setOrbState('', 'TAP THE ORB TO SPEAK');
-        window.speechSynthesis.speak(utterance);
+        currentAudio = audio;
+        audio.onended = () => setOrbState('', 'TAP THE ORB TO SPEAK');
+        audio.onerror = () => setOrbState('', 'VOICE ERROR - TAP ORB TO RETRY');
+        audio.play();
 
       } catch(e) {
-        setOrbState('', 'TAP THE ORB TO SPEAK');
+        console.error('Voice error:', e);
+        setOrbState('', 'VOICE UNAVAILABLE - CHECK PUTER LOGIN');
       }
     }
 
