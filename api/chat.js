@@ -9,11 +9,10 @@ export default async function handler(req, res) {
 
   try {
     const { prompt } = req.body;
-
     if (!prompt) return res.status(400).json({ error: 'No prompt provided' });
 
     const apiKey = process.env.OPENROUTER_API_KEY;
-    if (!apiKey) return res.status(500).json({ error: 'API key not found in environment' });
+    if (!apiKey) return res.status(500).json({ error: 'API key not found' });
 
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
@@ -24,36 +23,54 @@ export default async function handler(req, res) {
         'X-Title': 'Scorpion AI'
       },
       body: JSON.stringify({
-        model: 'openrouter/free',
+        model: 'meta-llama/llama-4-scout:free',
+        stream: true,
         messages: [
           {
             role: 'system',
-            content: 'You are Scorpion, a powerful personal AI assistant. Sharp, direct, intelligent. Keep responses concise.'
+            content: 'You are Scorpion, a powerful personal AI assistant. Sharp, direct, intelligent. Keep responses concise and clear.'
           },
           { role: 'user', content: prompt }
         ]
       })
     });
 
-    const text = await response.text();
+    // stream the response back to browser word by word
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
 
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch(e) {
-      return res.status(500).json({ error: 'OpenRouter raw response: ' + text });
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      const chunk = decoder.decode(value);
+      const lines = chunk.split('\n').filter(line => line.trim() !== '');
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const data = line.slice(6);
+          if (data === '[DONE]') {
+            res.write('data: [DONE]\n\n');
+            continue;
+          }
+          try {
+            const parsed = JSON.parse(data);
+            const content = parsed.choices?.[0]?.delta?.content;
+            if (content) {
+              res.write(`data: ${JSON.stringify({ text: content })}\n\n`);
+            }
+          } catch(e) {}
+        }
+      }
     }
 
-    if (data.error) return res.status(500).json({ error: data.error.message || JSON.stringify(data.error) });
-
-    if (!data.choices || !data.choices[0]) {
-      return res.status(500).json({ error: 'No response from model. Raw: ' + JSON.stringify(data) });
-    }
-
-    const reply = data.choices[0].message.content;
-    return res.status(200).json({ reply });
+    res.end();
 
   } catch(e) {
-    return res.status(500).json({ error: e.message });
+    res.status(500).json({ error: e.message });
   }
 }
