@@ -1,38 +1,48 @@
-export default async function handler(req, res) {
+async function speakReply(text) {
+      try {
+        if (currentAudio) {
+          currentAudio.pause();
+          currentAudio = null;
+        }
 
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+        const cleanText = text
+          .replace(/\*\*/g, '').replace(/\*/g, '')
+          .replace(/#{1,6}/g, '').replace(/`/g, '')
+          .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1')
+          .trim();
 
-  if (req.method === 'OPTIONS') return res.status(200).end();
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+        setOrbState('speaking', 'SCORPION SPEAKING...');
 
-  try {
-    const { text } = req.body;
-    if (!text) return res.status(400).json({ error: 'No text provided' });
+        const response = await fetch('/api/speak', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: cleanText })
+        });
 
-    const response = await fetch('https://freetts.org/api/tts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        text: text,
-        voice: 'en-US-GuyNeural',
-        rate: '-5%',
-        pitch: '-10%'
-      })
-    });
+        if (!response.ok) {
+          let errMsg = 'Voice generation failed';
+          try {
+            const errData = await response.json();
+            errMsg = errData.error || errMsg;
+          } catch(e) {}
+          console.error('Voice error:', errMsg);
+          setOrbState('', 'VOICE ERROR - TAP ORB TO RETRY');
+          return;
+        }
 
-    const data = await response.json();
+        const blob = await response.blob();
+        const audioUrl = URL.createObjectURL(blob);
+        const audio = new Audio(audioUrl);
+        currentAudio = audio;
+        audio.onended = () => {
+          URL.revokeObjectURL(audioUrl);
+          setOrbState('', 'TAP THE ORB TO SPEAK');
+        };
+        audio.onerror = () => setOrbState('', 'VOICE ERROR - TAP ORB TO RETRY');
+        audio.play();
 
-    if (!data.file_id) {
-      return res.status(500).json({ error: 'TTS failed: ' + JSON.stringify(data) });
+      } catch(e) {
+        console.error('Voice error:', e);
+        setOrbState('', 'TAP THE ORB TO SPEAK');
+      }
     }
-
-    return res.status(200).json({
-      audio_url: `https://freetts.org/api/audio/${data.file_id}`
-    });
-
-  } catch(e) {
-    return res.status(500).json({ error: e.message });
-  }
-}
