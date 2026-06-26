@@ -24,6 +24,8 @@
     <div id="input-area">
       <input id="cmd" type="text" placeholder="ask me anything..." />
       <button onclick="sendCmd()">SEND</button>
+      <button id="micBtn" onclick="VoiceInput.toggle()">🎙️ SPEAK</button>
+      <button onclick="VoiceOutput.stop()">🔇 STOP</button>
     </div>
 
     <div id="output">SCORPION AI READY.</div>
@@ -40,7 +42,7 @@
     #orb { font-size:80px; cursor:pointer; animation:float 3s ease-in-out infinite; }
     #orb-label { font-family:'Orbitron',sans-serif; font-size:12px; letter-spacing:4px; color:#00ff8866; margin-top:16px; }
     #orb-status { font-size:11px; color:#00ff8844; margin-top:8px; }
-    #input-area { display:flex; gap:8px; padding:0 24px; max-width:700px; margin:0 auto; }
+    #input-area { display:flex; gap:8px; padding:0 24px; max-width:700px; margin:0 auto; flex-wrap:wrap; }
     #cmd { flex:1; background:#00ff880a; border:1px solid #00ff4430; border-radius:6px; padding:12px 16px; color:#00ff88; font-family:'Share Tech Mono',monospace; font-size:13px; outline:none; }
     #cmd::placeholder { color:#00ff8844; }
     button { background:#00ff4420; border:1px solid #00ff4440; border-radius:6px; padding:12px 20px; color:#00ff88; font-family:'Share Tech Mono',monospace; font-size:12px; cursor:pointer; }
@@ -50,16 +52,26 @@
     @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-10px)} }
   </style>
 
+  <script src="https://js.puter.com/v2/"></script>
+  <script src="voice.js"></script>
+  <script src="voice-output.js"></script>
+  <script src="ai.js"></script>
+
   <script>
     function sendCmd() {
       const val = document.getElementById('cmd').value.trim();
       if (!val) return;
-      document.getElementById('output').innerText = '🦂 SCORPION PROCESSING: ' + val;
       document.getElementById('cmd').value = '';
+      AI.think(val);
     }
+
     document.getElementById('cmd').addEventListener('keydown', function(e) {
       if (e.key === 'Enter') sendCmd();
     });
+
+    window.speechSynthesis.onvoiceschanged = function() {
+      console.log('Voices loaded');
+    };
   </script>
 
 </body>
