@@ -24,7 +24,7 @@ export default async function handler(req, res) {
         'X-Title': 'Scorpion AI'
       },
       body: JSON.stringify({
-        model: 'meta-llama/llama-3.3-70b-instruct:free',
+        model: 'deepseek/deepseek-r1:free',
         messages: [
           {
             role: 'system',
@@ -45,6 +45,10 @@ export default async function handler(req, res) {
     }
 
     if (data.error) return res.status(500).json({ error: data.error.message || JSON.stringify(data.error) });
+
+    if (!data.choices || !data.choices[0]) {
+      return res.status(500).json({ error: 'No response from model. Raw: ' + JSON.stringify(data) });
+    }
 
     const reply = data.choices[0].message.content;
     return res.status(200).json({ reply });
