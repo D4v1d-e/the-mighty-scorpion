@@ -24,7 +24,7 @@ export default async function handler(req, res) {
         'X-Title': 'Scorpion AI'
       },
       body: JSON.stringify({
-        model: 'deepseek/deepseek-r1:free',
+        model: 'openrouter/free',
         messages: [
           {
             role: 'system',
