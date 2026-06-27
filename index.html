@@ -86,7 +86,6 @@
       } catch(e) {}
     }
 
-    // ─── AUDIO UNLOCK (fixes silent autoplay block) ──────
     let audioUnlocked = false;
     function unlockAudio() {
       if (audioUnlocked) return;
@@ -160,14 +159,10 @@
       recognition.start();
     }
 
-    let currentAudio = null;
-
-    async function speakReply(text) {
+    // ─── VOICE OUTPUT - BROWSER NATIVE (always works, zero APIs) ──
+    function speakReply(text) {
       try {
-        if (currentAudio) {
-          currentAudio.pause();
-          currentAudio = null;
-        }
+        window.speechSynthesis.cancel();
 
         const cleanText = text
           .replace(/\*\*/g, '').replace(/\*/g, '')
@@ -177,36 +172,34 @@
 
         setOrbState('speaking', 'SCORPION SPEAKING...');
 
-        const response = await fetch('/api/speak', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: cleanText })
-        });
+        const utterance = new SpeechSynthesisUtterance(cleanText);
+        utterance.lang = 'en-US';
+        utterance.pitch = 0.85;
+        utterance.rate = 1.0;
+        utterance.volume = 1.0;
 
-        if (!response.ok) {
-          let errMsg = 'Voice generation failed';
-          try {
-            const errData = await response.json();
-            errMsg = errData.error || errMsg;
-          } catch(e) {}
-          console.error('Voice error:', errMsg);
-          setOrbState('', 'VOICE ERROR - TAP ORB TO RETRY');
-          return;
+        function pickVoiceAndSpeak() {
+          const voices = window.speechSynthesis.getVoices();
+          const preferred = voices.find(v =>
+            v.name.includes('Google US English') ||
+            v.name.includes('Google') ||
+            v.name.includes('Daniel') ||
+            v.name.includes('Microsoft Guy') ||
+            v.name.includes('Alex')
+          );
+          if (preferred) utterance.voice = preferred;
+
+          utterance.onend = () => setOrbState('', 'TAP THE ORB TO SPEAK');
+          utterance.onerror = () => setOrbState('', 'TAP THE ORB TO SPEAK');
+
+          window.speechSynthesis.speak(utterance);
         }
 
-        const blob = await response.blob();
-        const audioUrl = URL.createObjectURL(blob);
-        const audio = new Audio(audioUrl);
-        currentAudio = audio;
-        audio.onended = () => {
-          URL.revokeObjectURL(audioUrl);
-          setOrbState('', 'TAP THE ORB TO SPEAK');
-        };
-        audio.onerror = () => setOrbState('', 'VOICE ERROR - TAP ORB TO RETRY');
-        audio.play().catch(e => {
-          console.error('Play blocked:', e);
-          setOrbState('', 'TAP ANYWHERE THEN RETRY');
-        });
+        if (window.speechSynthesis.getVoices().length === 0) {
+          window.speechSynthesis.onvoiceschanged = pickVoiceAndSpeak;
+        } else {
+          pickVoiceAndSpeak();
+        }
 
       } catch(e) {
         console.error('Voice error:', e);
@@ -252,4 +245,3 @@
 
 </body>
 </html>
-<!-- redeploy trigger -->
