@@ -11,35 +11,18 @@ export default async function handler(req, res) {
     const { text } = req.body;
     if (!text) return res.status(400).json({ error: 'No text provided' });
 
-    // Step 1 - generate TTS
-    const ttsResponse = await fetch('https://freetts.org/api/tts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        text: text.slice(0, 1000),
-        voice: 'en-US-GuyNeural',
-        rate: '-5%',
-        pitch: '-10%'
-      })
+    // Google Translate TTS - free, no key, no limit
+    const clean = text.slice(0, 200);
+    const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(clean)}&tl=en&client=tw-ob`;
+
+    const audioResponse = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      }
     });
 
-    const ttsText = await ttsResponse.text();
-    let ttsData;
-    try {
-      ttsData = JSON.parse(ttsText);
-    } catch(e) {
-      return res.status(500).json({ error: 'FreeTTS bad response: ' + ttsText });
-    }
-
-    if (!ttsData.file_id) {
-      return res.status(500).json({ error: 'No file_id returned: ' + JSON.stringify(ttsData) });
-    }
-
-    // Step 2 - fetch audio and stream back
-    const audioResponse = await fetch(`https://freetts.org/api/audio/${ttsData.file_id}`);
-
     if (!audioResponse.ok) {
-      return res.status(500).json({ error: 'Audio fetch failed: ' + audioResponse.status });
+      return res.status(500).json({ error: 'Google TTS failed: ' + audioResponse.status });
     }
 
     const audioBuffer = await audioResponse.arrayBuffer();
