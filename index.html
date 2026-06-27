@@ -17,7 +17,7 @@
     <div id="orb-area">
       <div id="orb" onclick="orbTapped()">🦂</div>
       <div id="orb-label">SCORPION CORE</div>
-      <div id="orb-status">TAP THE ORB TO SPEAK</div>
+      <div id="orb-status">TAP THE ORB TO ACTIVATE</div>
     </div>
 
     <div id="input-area">
@@ -41,6 +41,7 @@
     #orb.listening { animation:orbPulse 0.6s ease-in-out infinite; filter:drop-shadow(0 0 40px #00ff88cc); }
     #orb.thinking { filter:drop-shadow(0 0 40px #ffaa00cc); }
     #orb.speaking { animation:orbPulse 0.4s ease-in-out infinite; filter:drop-shadow(0 0 40px #00aaffcc); }
+    #orb.active { filter:drop-shadow(0 0 30px #00ff8899); }
     #orb-label { font-family:'Orbitron',sans-serif; font-size:12px; letter-spacing:4px; color:#00ff8866; margin-top:16px; }
     #orb-status { font-size:13px; color:#00ff88aa; margin-top:10px; letter-spacing:2px; text-align:center; }
     #input-area { display:flex; gap:8px; padding:0 24px; max-width:700px; margin:0 auto; }
@@ -55,89 +56,85 @@
   </style>
 
   <script>
-    let state = 'idle';
+    // ─── STATE ───────────────────────────────────────────
+    let state = 'idle';       // idle | listening | thinking | speaking
+    let alwaysOn = false;     // always-on mode toggled
     let recognition = null;
     let audioUnlocked = false;
     let resumeTimer = null;
+    let interimBuffer = '';   // live interim transcript while Scorpion speaks
 
+    // ─── ORB UI ──────────────────────────────────────────
     function setOrbState(newState, statusText) {
       state = newState;
       document.getElementById('orb').className = newState;
       document.getElementById('orb-status').innerText = statusText;
     }
 
+    // ─── AUDIO UNLOCK ────────────────────────────────────
     function unlockAudio() {
       if (audioUnlocked) return;
       try {
-        const s = new Audio("data:audio/mp3;base64,//uQxAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAACcQCA");
-        s.play().catch(()=>{});
+        new Audio("data:audio/mp3;base64,//uQxAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAACcQCA").play().catch(()=>{});
         audioUnlocked = true;
       } catch(e) {}
     }
 
-    function playActivationSound() {
-      try {
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        const osc1 = ctx.createOscillator();
-        const gain1 = ctx.createGain();
-        osc1.connect(gain1); gain1.connect(ctx.destination);
-        osc1.frequency.setValueAtTime(200, ctx.currentTime);
-        osc1.frequency.exponentialRampToValueAtTime(600, ctx.currentTime + 0.3);
-        gain1.gain.setValueAtTime(0.3, ctx.currentTime);
-        gain1.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
-        osc1.start(ctx.currentTime); osc1.stop(ctx.currentTime + 0.4);
-        const osc2 = ctx.createOscillator();
-        const gain2 = ctx.createGain();
-        osc2.connect(gain2); gain2.connect(ctx.destination);
-        osc2.type = 'sine';
-        osc2.frequency.setValueAtTime(880, ctx.currentTime + 0.35);
-        gain2.gain.setValueAtTime(0.2, ctx.currentTime + 0.35);
-        gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.7);
-        osc2.start(ctx.currentTime + 0.35); osc2.stop(ctx.currentTime + 0.7);
-      } catch(e) {}
-    }
-
-    function playStopSound() {
+    // ─── SOUNDS ──────────────────────────────────────────
+    function playTone(freqStart, freqEnd, duration, volume=0.25) {
       try {
         const ctx = new (window.AudioContext || window.webkitAudioContext)();
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.connect(gain); gain.connect(ctx.destination);
-        osc.frequency.setValueAtTime(500, ctx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(150, ctx.currentTime + 0.25);
-        gain.gain.setValueAtTime(0.25, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
-        osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.3);
+        osc.frequency.setValueAtTime(freqStart, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(freqEnd, ctx.currentTime + duration);
+        gain.gain.setValueAtTime(volume, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration + 0.05);
+        osc.start(ctx.currentTime); osc.stop(ctx.currentTime + duration + 0.1);
       } catch(e) {}
     }
 
+    function playActivationSound() {
+      playTone(200, 600, 0.3);
+      setTimeout(() => playTone(880, 880, 0.2, 0.2), 350);
+    }
+
+    function playInterruptSound() {
+      playTone(600, 200, 0.2, 0.15);
+    }
+
+    function playStopSound() {
+      playTone(500, 150, 0.25);
+    }
+
+    // ─── STOP SPEAKING ───────────────────────────────────
     function stopSpeaking() {
       if (resumeTimer) { clearInterval(resumeTimer); resumeTimer = null; }
       window.speechSynthesis.cancel();
     }
 
+    // ─── ORB TAP ─────────────────────────────────────────
     function orbTapped() {
       unlockAudio();
 
-      if (state === 'speaking' || state === 'thinking') {
-        stopSpeaking();
-        if (recognition) try { recognition.abort(); } catch(e) {}
+      // if idle — turn on always-on mode
+      if (!alwaysOn) {
+        alwaysOn = true;
         playActivationSound();
-        setTimeout(() => startListening(), 300);
+        startContinuousListening();
         return;
       }
 
-      if (state === 'listening') {
-        if (recognition) try { recognition.abort(); } catch(e) {}
-        playStopSound();
-        setOrbState('idle', 'TAP THE ORB TO SPEAK');
-        return;
-      }
-
-      playActivationSound();
-      startListening();
+      // if already on — turn off everything
+      alwaysOn = false;
+      stopSpeaking();
+      stopRecognition();
+      playStopSound();
+      setOrbState('idle', 'TAP THE ORB TO ACTIVATE');
     }
 
+    // ─── CONTINUOUS VOICE RECOGNITION ────────────────────
     function initVoice() {
       if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
         setOrbState('idle', 'VOICE NOT SUPPORTED - USE CHROME');
@@ -145,48 +142,155 @@
       }
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
       recognition = new SR();
-      recognition.continuous = false;
-      recognition.interimResults = true;
+      recognition.continuous = true;      // keeps mic open always
+      recognition.interimResults = true;  // gets words as you speak
       recognition.lang = 'en-US';
 
       recognition.onresult = function(event) {
-        const result = event.results[event.results.length - 1];
-        if (!result.isFinal) return;
-        const transcript = result[0].transcript.trim();
-        if (!transcript) return;
-        document.getElementById('cmd').value = transcript;
-        setOrbState('thinking', 'HEARD: ' + transcript.toUpperCase());
-        sendCmd();
+        let interim = '';
+        let finalTranscript = '';
+
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          if (event.results[i].isFinal) {
+            finalTranscript += event.results[i][0].transcript;
+          } else {
+            interim += event.results[i][0].transcript;
+          }
+        }
+
+        interimBuffer = interim;
+
+        // INTERRUPT — if Scorpion is speaking and you say anything
+        if (state === 'speaking' && (interim.length > 2 || finalTranscript.length > 2)) {
+          stopSpeaking();
+          playInterruptSound();
+          // wait for your final words before processing
+        }
+
+        // FINAL TRANSCRIPT — process your command
+        if (finalTranscript.trim()) {
+          const cmd = finalTranscript.trim();
+          document.getElementById('cmd').value = cmd;
+          document.getElementById('output').innerText = '🎙️ ' + cmd;
+
+          // detect SING command
+          if (isSingCommand(cmd)) {
+            handleSing(cmd);
+            return;
+          }
+
+          setOrbState('thinking', 'HEARD: ' + cmd.toUpperCase().slice(0, 40));
+          sendCmd();
+        }
       };
 
       recognition.onerror = function(event) {
-        if (event.error === 'aborted') return;
-        if (event.error === 'no-speech') {
-          setOrbState('idle', "DIDN'T CATCH THAT — TAP & SPEAK RIGHT AWAY");
-        } else if (event.error === 'not-allowed') {
+        if (event.error === 'aborted' || event.error === 'no-speech') return;
+        if (event.error === 'not-allowed') {
+          alwaysOn = false;
           setOrbState('idle', 'MIC BLOCKED — CHECK SITE PERMISSIONS');
-        } else {
-          setOrbState('idle', 'MIC ERROR: ' + event.error.toUpperCase());
         }
       };
 
       recognition.onend = function() {
-        if (state === 'listening') {
-          setOrbState('idle', 'TAP THE ORB TO SPEAK');
+        // auto-restart if always-on mode is still active
+        if (alwaysOn && state !== 'thinking') {
+          setTimeout(() => {
+            if (alwaysOn) startContinuousListening();
+          }, 200);
         }
       };
 
       return true;
     }
 
-    function startListening() {
+    function startContinuousListening() {
       if (!recognition) {
         if (!initVoice()) return;
       }
-      setOrbState('listening', 'LISTENING... SPEAK NOW');
+      if (state !== 'thinking') {
+        setOrbState('listening', 'ALWAYS ON — SPEAK ANYTIME');
+      }
       try { recognition.start(); } catch(e) {}
     }
 
+    function stopRecognition() {
+      if (recognition) {
+        try { recognition.abort(); } catch(e) {}
+      }
+    }
+
+    // ─── SING DETECTION ──────────────────────────────────
+    function isSingCommand(text) {
+      const t = text.toLowerCase();
+      return t.includes('sing') || t.includes('song') || t.includes('hum');
+    }
+
+    // ─── SING MODE — makes voice melodic ─────────────────
+    function handleSing(cmd) {
+      setOrbState('speaking', '🎵 SCORPION SINGING...');
+
+      // ask AI for song lyrics first
+      fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: cmd + ' — respond with short song lyrics only, 4 lines max, simple rhyming words, no markdown'
+        })
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.reply) {
+          singText(data.reply);
+          document.getElementById('output').innerText = '🎵 ' + data.reply;
+        }
+      })
+      .catch(() => {
+        singText("I am Scorpion, sharp and bright, here to help you day and night.");
+      });
+    }
+
+    function singText(lyrics) {
+      stopSpeaking();
+      setOrbState('speaking', '🎵 SCORPION SINGING...');
+
+      const lines = lyrics.split(/[\n.!?]+/).filter(l => l.trim());
+      let i = 0;
+
+      function singLine() {
+        if (i >= lines.length || !alwaysOn) {
+          if (alwaysOn) setOrbState('listening', 'ALWAYS ON — SPEAK ANYTIME');
+          return;
+        }
+
+        const utterance = new SpeechSynthesisUtterance(lines[i].trim());
+        utterance.lang = 'en-US';
+        utterance.volume = 1.0;
+
+        // alternate pitch to create melody effect
+        const pitches = [1.3, 1.1, 1.4, 1.0, 1.5, 1.2];
+        const rates   = [0.85, 0.9, 0.8, 0.95, 0.75, 0.88];
+        utterance.pitch = pitches[i % pitches.length];
+        utterance.rate  = rates[i % rates.length];
+
+        const voices = window.speechSynthesis.getVoices();
+        const preferred = voices.find(v =>
+          v.name.includes('Google US English') || v.name.includes('Daniel') || v.name.includes('Alex')
+        );
+        if (preferred) utterance.voice = preferred;
+
+        utterance.onend = () => {
+          i++;
+          setTimeout(singLine, 300); // small pause between lines
+        };
+
+        window.speechSynthesis.speak(utterance);
+      }
+
+      singLine();
+    }
+
+    // ─── NORMAL VOICE OUTPUT ─────────────────────────────
     function speakReply(text) {
       try {
         stopSpeaking();
@@ -198,7 +302,7 @@
           .replace(/\n+/g,' ')
           .trim();
 
-        setOrbState('speaking', 'SCORPION SPEAKING... TAP TO INTERRUPT');
+        setOrbState('speaking', 'SCORPION SPEAKING... JUST TALK TO INTERRUPT');
 
         const utterance = new SpeechSynthesisUtterance(cleanText);
         utterance.lang = 'en-US';
@@ -216,18 +320,23 @@
 
         utterance.onend = () => {
           if (resumeTimer) { clearInterval(resumeTimer); resumeTimer = null; }
-          if (state === 'speaking') setOrbState('idle', 'TAP THE ORB TO SPEAK');
-        };
-        utterance.onerror = () => {
-          if (resumeTimer) { clearInterval(resumeTimer); resumeTimer = null; }
-          if (state === 'speaking') setOrbState('idle', 'TAP THE ORB TO SPEAK');
+          if (state === 'speaking' && alwaysOn) {
+            setOrbState('listening', 'ALWAYS ON — SPEAK ANYTIME');
+          } else if (state === 'speaking') {
+            setOrbState('idle', 'TAP THE ORB TO SPEAK');
+          }
         };
 
-        // fix Chrome freezing on long speech
+        utterance.onerror = () => {
+          if (resumeTimer) { clearInterval(resumeTimer); resumeTimer = null; }
+          if (alwaysOn) setOrbState('listening', 'ALWAYS ON — SPEAK ANYTIME');
+          else setOrbState('idle', 'TAP THE ORB TO SPEAK');
+        };
+
+        // fix Chrome freeze bug on long speech
         resumeTimer = setInterval(() => {
           if (!window.speechSynthesis.speaking) {
-            clearInterval(resumeTimer);
-            resumeTimer = null;
+            clearInterval(resumeTimer); resumeTimer = null;
           } else {
             window.speechSynthesis.resume();
           }
@@ -240,12 +349,14 @@
       }
     }
 
+    // ─── AI BRAIN ────────────────────────────────────────
     async function sendCmd() {
       unlockAudio();
       const val = document.getElementById('cmd').value.trim();
       if (!val) return;
       document.getElementById('cmd').value = '';
-      setOrbState('thinking', 'THINKING...');
+
+      if (state !== 'thinking') setOrbState('thinking', 'THINKING...');
 
       try {
         const response = await fetch('/api/chat', {
@@ -254,13 +365,12 @@
           body: JSON.stringify({ prompt: val })
         });
 
-        if (state !== 'thinking') return;
-
         const data = await response.json();
 
         if (data.error) {
-          setOrbState('idle', 'ERROR — TAP ORB TO RETRY');
           document.getElementById('output').innerText = '❌ ' + data.error;
+          if (alwaysOn) setOrbState('listening', 'ALWAYS ON — SPEAK ANYTIME');
+          else setOrbState('idle', 'ERROR — TAP ORB TO RETRY');
           return;
         }
 
@@ -268,8 +378,9 @@
         speakReply(data.reply);
 
       } catch(e) {
-        setOrbState('idle', 'ERROR — TAP ORB TO RETRY');
         document.getElementById('output').innerText = '❌ ERROR: ' + e.message;
+        if (alwaysOn) setOrbState('listening', 'ALWAYS ON — SPEAK ANYTIME');
+        else setOrbState('idle', 'ERROR — TAP ORB TO RETRY');
       }
     }
 
