@@ -11,73 +11,110 @@ export default async function handler(req, res) {
     const { prompt } = req.body;
     if (!prompt) return res.status(400).json({ error: 'No prompt provided' });
 
-    const apiKey = process.env.OPENROUTER_API_KEY;
-    if (!apiKey) return res.status(500).json({ error: 'API key not found' });
+    const SYSTEM = 'You are Scorpion, a powerful personal AI assistant for Johnson. Sharp, direct, intelligent. Keep responses concise and clear — max 3 sentences unless asked for more.';
 
-    // openrouter/free auto-picks best available free model
-    // specific models as fallback
-    const models = [
-      'openrouter/free',
-      'nvidia/llama-3.1-nemotron-ultra-253b-v1:free',
-      'google/gemma-4-31b-it:free',
-      'mistralai/mistral-small-3.2-24b-instruct:free',
-      'qwen/qwen3-30b-a3b:free'
-    ];
-
-    let lastError = '';
-
-    for (const model of models) {
+    // ── BRAIN 1: CEREBRAS (fastest) ──────────────────────
+    const cerebrasKey = process.env.CEREBRAS_API_KEY;
+    if (cerebrasKey) {
       try {
-        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        const r = await fetch('https://api.cerebras.ai/v1/chat/completions', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + apiKey,
-            'HTTP-Referer': 'https://the-mighty-scorpion.vercel.app',
-            'X-Title': 'Scorpion AI'
+            'Authorization': 'Bearer ' + cerebrasKey
           },
           body: JSON.stringify({
-            model: model,
+            model: 'llama-4-scout-17b-16e-instruct',
             messages: [
-              {
-                role: 'system',
-                content: 'You are Scorpion, a powerful personal AI assistant. Sharp, direct, intelligent. Keep responses concise — maximum 3 sentences unless asked for more.'
-              },
+              { role: 'system', content: SYSTEM },
               { role: 'user', content: prompt }
-            ]
+            ],
+            max_tokens: 500
           })
         });
-
-        const text = await response.text();
-        let data;
-
-        try {
-          data = JSON.parse(text);
-        } catch(e) {
-          lastError = 'Bad JSON from ' + model;
-          continue;
+        const d = await r.json();
+        if (d.choices?.[0]?.message?.content) {
+          return res.status(200).json({ reply: d.choices[0].message.content, brain: 'CEREBRAS' });
         }
-
-        if (data.error) {
-          lastError = data.error.message || JSON.stringify(data.error);
-          continue;
-        }
-
-        if (!data.choices || !data.choices[0]) {
-          lastError = 'No choices from ' + model;
-          continue;
-        }
-
-        const reply = data.choices[0].message.content;
-        return res.status(200).json({ reply, model_used: model });
-
-      } catch(e) {
-        lastError = e.message;
-        continue;
-      }
+      } catch(e) {}
     }
 
-    return res.status(500).json({ error: 'All models failed. Last: ' + lastError });
+    // ── BRAIN 2: GROQ (fast backup) ──────────────────────
+    const groqKey = process.env.GROQ_API_KEY;
+    if (groqKey) {
+      try {
+        const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + groqKey
+          },
+          body: JSON.stringify({
+            model: 'llama-3.3-70b-versatile',
+            messages: [
+              { role: 'system', content: SYSTEM },
+              { role: 'user', content: prompt }
+            ],
+            max_tokens: 500
+          })
+        });
+        const d = await r.json();
+        if (d.choices?.[0]?.message?.content) {
+          return res.status(200).json({ reply: d.choices[0].message.content, brain: 'GROQ' });
+        }
+      } catch(e) {}
+    }
+
+    // ── BRAIN 3: GEMINI (volume) ──────────────────────────
+    const geminiKey = process.env.GEMINI_API_KEY;
+    if (geminiKey) {
+      try {
+        const r = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              systemInstruction: { parts: [{ text: SYSTEM }] },
+              contents: [{ role: 'user', parts: [{ text: prompt }] }]
+            })
+          }
+        );
+        const d = await r.json();
+        const text = d.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (text) {
+          return res.status(200).json({ reply: text, brain: 'GEMINI' });
+        }
+      } catch(e) {}
+    }
+
+    // ── BRAIN 4: MISTRAL (smart fallback) ────────────────
+    const mistralKey = process.env.MISTRAL_API_KEY;
+    if (mistralKey) {
+      try {
+        const r = await fetch('https://api.mistral.ai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + mistralKey
+          },
+          body: JSON.stringify({
+            model: 'mistral-small-latest',
+            messages: [
+              { role: 'system', content: SYSTEM },
+              { role: 'user', content: prompt }
+            ],
+            max_tokens: 500
+          })
+        });
+        const d = await r.json();
+        if (d.choices?.[0]?.message?.content) {
+          return res.status(200).json({ reply: d.choices[0].message.content, brain: 'MISTRAL' });
+        }
+      } catch(e) {}
+    }
+
+    return res.status(500).json({ error: 'All 4 brains failed. Check your API keys in Vercel.' });
 
   } catch(e) {
     return res.status(500).json({ error: e.message });
