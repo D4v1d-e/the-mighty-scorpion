@@ -15,7 +15,7 @@
     </div>
 
     <div id="orb-area">
-      <div id="orb" onclick="activateScorpion()">🦂</div>
+      <div id="orb" onclick="orbTapped()">🦂</div>
       <div id="orb-label">SCORPION CORE</div>
       <div id="orb-status">TAP THE ORB TO SPEAK</div>
     </div>
@@ -42,7 +42,7 @@
     #orb.thinking { filter:drop-shadow(0 0 40px #ffaa00cc); }
     #orb.speaking { animation:orbPulse 0.4s ease-in-out infinite; filter:drop-shadow(0 0 40px #00aaffcc); }
     #orb-label { font-family:'Orbitron',sans-serif; font-size:12px; letter-spacing:4px; color:#00ff8866; margin-top:16px; }
-    #orb-status { font-size:13px; color:#00ff88aa; margin-top:10px; letter-spacing:2px; }
+    #orb-status { font-size:13px; color:#00ff88aa; margin-top:10px; letter-spacing:2px; text-align:center; }
     #input-area { display:flex; gap:8px; padding:0 24px; max-width:700px; margin:0 auto; }
     #cmd { flex:1; background:#00ff880a; border:1px solid #00ff4430; border-radius:6px; padding:12px 16px; color:#00ff88; font-family:'Share Tech Mono',monospace; font-size:13px; outline:none; }
     #cmd::placeholder { color:#00ff8833; }
@@ -55,10 +55,28 @@
   </style>
 
   <script>
-    // ─── ORB STATE ───────────────────────────────────────
-    function setOrbState(state, statusText) {
-      document.getElementById('orb').className = state;
+    // ─── STATE ───────────────────────────────────────────
+    // STATES: idle | listening | thinking | speaking
+    let state = 'idle';
+    let recognition = null;
+    let currentAudio = null;
+    let audioUnlocked = false;
+
+    // ─── ORB STATE DISPLAY ───────────────────────────────
+    function setOrbState(newState, statusText) {
+      state = newState;
+      document.getElementById('orb').className = newState;
       document.getElementById('orb-status').innerText = statusText;
+    }
+
+    // ─── AUDIO UNLOCK ────────────────────────────────────
+    function unlockAudio() {
+      if (audioUnlocked) return;
+      try {
+        const s = new Audio("data:audio/mp3;base64,//uQxAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAACcQCA");
+        s.play().catch(()=>{});
+        audioUnlocked = true;
+      } catch(e) {}
     }
 
     // ─── ACTIVATION SOUND ────────────────────────────────
@@ -67,141 +85,186 @@
         const ctx = new (window.AudioContext || window.webkitAudioContext)();
         const osc1 = ctx.createOscillator();
         const gain1 = ctx.createGain();
-        osc1.connect(gain1);
-        gain1.connect(ctx.destination);
+        osc1.connect(gain1); gain1.connect(ctx.destination);
         osc1.frequency.setValueAtTime(200, ctx.currentTime);
         osc1.frequency.exponentialRampToValueAtTime(600, ctx.currentTime + 0.3);
         gain1.gain.setValueAtTime(0.3, ctx.currentTime);
         gain1.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
-        osc1.start(ctx.currentTime);
-        osc1.stop(ctx.currentTime + 0.4);
+        osc1.start(ctx.currentTime); osc1.stop(ctx.currentTime + 0.4);
         const osc2 = ctx.createOscillator();
         const gain2 = ctx.createGain();
-        osc2.connect(gain2);
-        gain2.connect(ctx.destination);
+        osc2.connect(gain2); gain2.connect(ctx.destination);
         osc2.type = 'sine';
         osc2.frequency.setValueAtTime(880, ctx.currentTime + 0.35);
         gain2.gain.setValueAtTime(0.2, ctx.currentTime + 0.35);
         gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.7);
-        osc2.start(ctx.currentTime + 0.35);
-        osc2.stop(ctx.currentTime + 0.7);
+        osc2.start(ctx.currentTime + 0.35); osc2.stop(ctx.currentTime + 0.7);
       } catch(e) {}
     }
 
-    // ─── VOICE INPUT ─────────────────────────────────────
-    let recognition = null;
-    let isListening = false;
+    function playStopSound() {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.frequency.setValueAtTime(500, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(150, ctx.currentTime + 0.25);
+        gain.gain.setValueAtTime(0.25, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+        osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.3);
+      } catch(e) {}
+    }
 
+    // ─── STOP EVERYTHING ─────────────────────────────────
+    function stopEverything() {
+      // stop voice output
+      if (currentAudio) {
+        currentAudio.pause();
+        currentAudio = null;
+      }
+      window.speechSynthesis.cancel();
+
+      // stop voice input
+      if (recognition) {
+        try { recognition.abort(); } catch(e) {}
+      }
+
+      playStopSound();
+      setOrbState('idle', 'TAP THE ORB TO SPEAK');
+    }
+
+    // ─── ORB TAP — SMART INTERRUPT ───────────────────────
+    function orbTapped() {
+      unlockAudio();
+
+      // IF speaking or thinking → INTERRUPT and start listening
+      if (state === 'speaking' || state === 'thinking') {
+        if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+        window.speechSynthesis.cancel();
+        playActivationSound();
+        startListening();
+        return;
+      }
+
+      // IF already listening → stop
+      if (state === 'listening') {
+        stopEverything();
+        return;
+      }
+
+      // IF idle → start listening
+      playActivationSound();
+      startListening();
+    }
+
+    // ─── VOICE INPUT ─────────────────────────────────────
     function initVoice() {
       if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-        setOrbState('', 'VOICE NOT SUPPORTED - USE CHROME');
+        setOrbState('idle', 'VOICE NOT SUPPORTED - USE CHROME');
         return false;
       }
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
       recognition = new SR();
       recognition.continuous = false;
-      recognition.interimResults = false;
+      recognition.interimResults = true;
       recognition.lang = 'en-US';
 
       recognition.onresult = function(event) {
-        const transcript = event.results[0][0].transcript;
+        const result = event.results[event.results.length - 1];
+        if (!result.isFinal) return;
+        const transcript = result[0].transcript.trim();
+        if (!transcript) return;
         document.getElementById('cmd').value = transcript;
         setOrbState('thinking', 'HEARD: ' + transcript.toUpperCase());
-        isListening = false;
         sendCmd();
       };
 
       recognition.onerror = function(event) {
-        isListening = false;
+        if (event.error === 'aborted') return;
         if (event.error === 'no-speech') {
-          setOrbState('', 'NO SPEECH DETECTED - TAP & TRY AGAIN');
+          setOrbState('idle', "DIDN'T CATCH THAT — TAP & SPEAK RIGHT AWAY");
         } else if (event.error === 'not-allowed') {
-          setOrbState('', 'MIC BLOCKED - CHECK PERMISSIONS');
+          setOrbState('idle', 'MIC BLOCKED — CHECK SITE PERMISSIONS');
         } else {
-          setOrbState('', 'MIC ERROR: ' + event.error.toUpperCase());
+          setOrbState('idle', 'MIC ERROR: ' + event.error.toUpperCase());
         }
       };
 
       recognition.onend = function() {
-        if (isListening) {
-          isListening = false;
-          setOrbState('', 'TAP THE ORB TO SPEAK');
+        if (state === 'listening') {
+          setOrbState('idle', 'TAP THE ORB TO SPEAK');
         }
       };
+
       return true;
     }
 
-    function activateScorpion() {
-      playActivationSound();
+    function startListening() {
       if (!recognition) {
         if (!initVoice()) return;
       }
-      if (isListening) {
-        recognition.stop();
-        isListening = false;
-        setOrbState('', 'TAP THE ORB TO SPEAK');
-        return;
-      }
-      isListening = true;
       setOrbState('listening', 'LISTENING... SPEAK NOW');
-      recognition.start();
+      try { recognition.start(); } catch(e) {}
     }
 
-    // ─── VOICE OUTPUT - FREETTS VIA BACKEND ──────────────
-    let currentAudio = null;
-
-    async function speakReply(text) {
+    // ─── VOICE OUTPUT ────────────────────────────────────
+    function speakReply(text) {
       try {
-        if (currentAudio) {
-          currentAudio.pause();
-          currentAudio = null;
-        }
+        window.speechSynthesis.cancel();
 
         const cleanText = text
-          .replace(/\*\*/g, '').replace(/\*/g, '')
-          .replace(/#{1,6}/g, '').replace(/`/g, '')
-          .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1')
+          .replace(/\*\*/g,'').replace(/\*/g,'')
+          .replace(/#{1,6}/g,'').replace(/`/g,'')
+          .replace(/\[([^\]]+)\]\([^\)]+\)/g,'$1')
           .trim();
 
-        setOrbState('speaking', 'GENERATING VOICE...');
+        setOrbState('speaking', 'SCORPION SPEAKING... TAP TO INTERRUPT');
 
-        const response = await fetch('/api/speak', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: cleanText })
-        });
+        const utterance = new SpeechSynthesisUtterance(cleanText);
+        utterance.lang = 'en-US';
+        utterance.pitch = 0.85;
+        utterance.rate = 1.0;
+        utterance.volume = 1.0;
 
-        if (!response.ok) {
-          const err = await response.json().catch(() => ({ error: 'Unknown error' }));
-          console.error('Voice error:', err);
-          setOrbState('', 'VOICE ERROR - TAP ORB TO RETRY');
-          return;
+        function go() {
+          const voices = window.speechSynthesis.getVoices();
+          const preferred = voices.find(v =>
+            v.name.includes('Google US English') ||
+            v.name.includes('Google') ||
+            v.name.includes('Daniel') ||
+            v.name.includes('Alex')
+          );
+          if (preferred) utterance.voice = preferred;
+
+          utterance.onend = () => {
+            if (state === 'speaking') {
+              setOrbState('idle', 'TAP THE ORB TO SPEAK');
+            }
+          };
+          utterance.onerror = () => {
+            if (state === 'speaking') {
+              setOrbState('idle', 'TAP THE ORB TO SPEAK');
+            }
+          };
+
+          window.speechSynthesis.speak(utterance);
         }
 
-        const blob = await response.blob();
-        const audioUrl = URL.createObjectURL(blob);
-        const audio = new Audio(audioUrl);
-        currentAudio = audio;
-
-        audio.onended = () => {
-          URL.revokeObjectURL(audioUrl);
-          setOrbState('', 'TAP THE ORB TO SPEAK');
-        };
-        audio.onerror = () => {
-          setOrbState('', 'VOICE ERROR - TAP ORB TO RETRY');
-        };
-
-        setOrbState('speaking', 'SCORPION SPEAKING...');
-        audio.play();
+        if (window.speechSynthesis.getVoices().length === 0) {
+          window.speechSynthesis.onvoiceschanged = go;
+        } else {
+          go();
+        }
 
       } catch(e) {
-        console.error('Voice error:', e);
-        setOrbState('', 'TAP THE ORB TO SPEAK');
+        setOrbState('idle', 'TAP THE ORB TO SPEAK');
       }
     }
 
     // ─── AI BRAIN ────────────────────────────────────────
     async function sendCmd() {
+      unlockAudio();
       const val = document.getElementById('cmd').value.trim();
       if (!val) return;
       document.getElementById('cmd').value = '';
@@ -214,10 +277,13 @@
           body: JSON.stringify({ prompt: val })
         });
 
+        // if user interrupted while thinking, don't speak
+        if (state !== 'thinking') return;
+
         const data = await response.json();
 
         if (data.error) {
-          setOrbState('', 'ERROR - TAP ORB TO RETRY');
+          setOrbState('idle', 'ERROR — TAP ORB TO RETRY');
           document.getElementById('output').innerText = '❌ ' + data.error;
           return;
         }
@@ -226,7 +292,7 @@
         speakReply(data.reply);
 
       } catch(e) {
-        setOrbState('', 'ERROR - TAP ORB TO RETRY');
+        setOrbState('idle', 'ERROR — TAP ORB TO RETRY');
         document.getElementById('output').innerText = '❌ ERROR: ' + e.message;
       }
     }
