@@ -11,110 +11,97 @@ export default async function handler(req, res) {
     const { prompt } = req.body;
     if (!prompt) return res.status(400).json({ error: 'No prompt provided' });
 
-    const SYSTEM = 'You are Scorpion, a powerful personal AI assistant for Johnson. Sharp, direct, intelligent. Keep responses concise and clear — max 3 sentences unless asked for more.';
+    const SYSTEM = 'You are Scorpion, a powerful personal AI assistant for Johnson. Sharp, direct, intelligent. Keep responses concise — max 2 sentences unless asked for more. Never use bullet points or markdown.';
 
-    // ── BRAIN 1: CEREBRAS (fastest) ──────────────────────
+    async function tryBrain(fetchFn, timeoutMs) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const result = await fetchFn(controller.signal);
+        clearTimeout(timer);
+        return result;
+      } catch(e) {
+        clearTimeout(timer);
+        return null;
+      }
+    }
+
     const cerebrasKey = process.env.CEREBRAS_API_KEY;
     if (cerebrasKey) {
-      try {
+      const reply = await tryBrain(async (signal) => {
         const r = await fetch('https://api.cerebras.ai/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + cerebrasKey
-          },
+          method: 'POST', signal,
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cerebrasKey },
           body: JSON.stringify({
             model: 'llama-4-scout-17b-16e-instruct',
-            messages: [
-              { role: 'system', content: SYSTEM },
-              { role: 'user', content: prompt }
-            ],
-            max_tokens: 500
+            messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: prompt }],
+            max_tokens: 300
           })
         });
         const d = await r.json();
-        if (d.choices?.[0]?.message?.content) {
-          return res.status(200).json({ reply: d.choices[0].message.content, brain: 'CEREBRAS' });
-        }
-      } catch(e) {}
+        return d.choices?.[0]?.message?.content || null;
+      }, 4000);
+      if (reply) return res.status(200).json({ reply, brain: 'CEREBRAS' });
     }
 
-    // ── BRAIN 2: GROQ (fast backup) ──────────────────────
     const groqKey = process.env.GROQ_API_KEY;
     if (groqKey) {
-      try {
+      const reply = await tryBrain(async (signal) => {
         const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + groqKey
-          },
+          method: 'POST', signal,
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + groqKey },
           body: JSON.stringify({
             model: 'llama-3.3-70b-versatile',
-            messages: [
-              { role: 'system', content: SYSTEM },
-              { role: 'user', content: prompt }
-            ],
-            max_tokens: 500
+            messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: prompt }],
+            max_tokens: 300
           })
         });
         const d = await r.json();
-        if (d.choices?.[0]?.message?.content) {
-          return res.status(200).json({ reply: d.choices[0].message.content, brain: 'GROQ' });
-        }
-      } catch(e) {}
+        return d.choices?.[0]?.message?.content || null;
+      }, 5000);
+      if (reply) return res.status(200).json({ reply, brain: 'GROQ' });
     }
 
-    // ── BRAIN 3: GEMINI (volume) ──────────────────────────
     const geminiKey = process.env.GEMINI_API_KEY;
     if (geminiKey) {
-      try {
+      const reply = await tryBrain(async (signal) => {
         const r = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
           {
-            method: 'POST',
+            method: 'POST', signal,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               systemInstruction: { parts: [{ text: SYSTEM }] },
-              contents: [{ role: 'user', parts: [{ text: prompt }] }]
+              contents: [{ role: 'user', parts: [{ text: prompt }] }],
+              generationConfig: { maxOutputTokens: 300 }
             })
           }
         );
         const d = await r.json();
-        const text = d.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (text) {
-          return res.status(200).json({ reply: text, brain: 'GEMINI' });
-        }
-      } catch(e) {}
+        return d.candidates?.[0]?.content?.parts?.[0]?.text || null;
+      }, 6000);
+      if (reply) return res.status(200).json({ reply, brain: 'GEMINI' });
     }
 
-    // ── BRAIN 4: MISTRAL (smart fallback) ────────────────
     const mistralKey = process.env.MISTRAL_API_KEY;
     if (mistralKey) {
-      try {
+      const reply = await tryBrain(async (signal) => {
         const r = await fetch('https://api.mistral.ai/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + mistralKey
-          },
+          method: 'POST', signal,
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + mistralKey },
           body: JSON.stringify({
             model: 'mistral-small-latest',
-            messages: [
-              { role: 'system', content: SYSTEM },
-              { role: 'user', content: prompt }
-            ],
-            max_tokens: 500
+            messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: prompt }],
+            max_tokens: 300
           })
         });
         const d = await r.json();
-        if (d.choices?.[0]?.message?.content) {
-          return res.status(200).json({ reply: d.choices[0].message.content, brain: 'MISTRAL' });
-        }
-      } catch(e) {}
+        return d.choices?.[0]?.message?.content || null;
+      }, 7000);
+      if (reply) return res.status(200).json({ reply, brain: 'MISTRAL' });
     }
 
-    return res.status(500).json({ error: 'All 4 brains failed. Check your API keys in Vercel.' });
+    return res.status(500).json({ error: 'All brains timed out or failed. Check API keys in Vercel.' });
 
   } catch(e) {
     return res.status(500).json({ error: e.message });
