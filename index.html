@@ -55,11 +55,13 @@
   </style>
 
   <script>
+    // ─── ORB STATE ───────────────────────────────────────
     function setOrbState(state, statusText) {
       document.getElementById('orb').className = state;
       document.getElementById('orb-status').innerText = statusText;
     }
 
+    // ─── ACTIVATION SOUND ────────────────────────────────
     function playActivationSound() {
       try {
         const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -86,16 +88,7 @@
       } catch(e) {}
     }
 
-    let audioUnlocked = false;
-    function unlockAudio() {
-      if (audioUnlocked) return;
-      try {
-        const silence = new Audio("data:audio/mp3;base64,//uQxAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAACcQCA");
-        silence.play().catch(()=>{});
-        audioUnlocked = true;
-      } catch(e) {}
-    }
-
+    // ─── VOICE INPUT ─────────────────────────────────────
     let recognition = null;
     let isListening = false;
 
@@ -107,13 +100,11 @@
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
       recognition = new SR();
       recognition.continuous = false;
-      recognition.interimResults = true;
+      recognition.interimResults = false;
       recognition.lang = 'en-US';
 
       recognition.onresult = function(event) {
-        const result = event.results[0];
-        if (!result.isFinal) return;
-        const transcript = result[0].transcript;
+        const transcript = event.results[0][0].transcript;
         document.getElementById('cmd').value = transcript;
         setOrbState('thinking', 'HEARD: ' + transcript.toUpperCase());
         isListening = false;
@@ -123,11 +114,9 @@
       recognition.onerror = function(event) {
         isListening = false;
         if (event.error === 'no-speech') {
-          setOrbState('', "DIDN'T CATCH THAT - TAP & SPEAK RIGHT AWAY");
-        } else if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-          setOrbState('', 'MIC BLOCKED - CHECK SITE PERMISSIONS');
-        } else if (event.error === 'audio-capture') {
-          setOrbState('', 'NO MIC FOUND - CHECK DEVICE');
+          setOrbState('', 'NO SPEECH DETECTED - TAP & TRY AGAIN');
+        } else if (event.error === 'not-allowed') {
+          setOrbState('', 'MIC BLOCKED - CHECK PERMISSIONS');
         } else {
           setOrbState('', 'MIC ERROR: ' + event.error.toUpperCase());
         }
@@ -143,7 +132,6 @@
     }
 
     function activateScorpion() {
-      unlockAudio();
       playActivationSound();
       if (!recognition) {
         if (!initVoice()) return;
@@ -159,10 +147,15 @@
       recognition.start();
     }
 
-    // ─── VOICE OUTPUT - BROWSER NATIVE (always works, zero APIs) ──
-    function speakReply(text) {
+    // ─── VOICE OUTPUT - FREETTS VIA BACKEND ──────────────
+    let currentAudio = null;
+
+    async function speakReply(text) {
       try {
-        window.speechSynthesis.cancel();
+        if (currentAudio) {
+          currentAudio.pause();
+          currentAudio = null;
+        }
 
         const cleanText = text
           .replace(/\*\*/g, '').replace(/\*/g, '')
@@ -170,36 +163,36 @@
           .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1')
           .trim();
 
+        setOrbState('speaking', 'GENERATING VOICE...');
+
+        const response = await fetch('/api/speak', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: cleanText })
+        });
+
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({ error: 'Unknown error' }));
+          console.error('Voice error:', err);
+          setOrbState('', 'VOICE ERROR - TAP ORB TO RETRY');
+          return;
+        }
+
+        const blob = await response.blob();
+        const audioUrl = URL.createObjectURL(blob);
+        const audio = new Audio(audioUrl);
+        currentAudio = audio;
+
+        audio.onended = () => {
+          URL.revokeObjectURL(audioUrl);
+          setOrbState('', 'TAP THE ORB TO SPEAK');
+        };
+        audio.onerror = () => {
+          setOrbState('', 'VOICE ERROR - TAP ORB TO RETRY');
+        };
+
         setOrbState('speaking', 'SCORPION SPEAKING...');
-
-        const utterance = new SpeechSynthesisUtterance(cleanText);
-        utterance.lang = 'en-US';
-        utterance.pitch = 0.85;
-        utterance.rate = 1.0;
-        utterance.volume = 1.0;
-
-        function pickVoiceAndSpeak() {
-          const voices = window.speechSynthesis.getVoices();
-          const preferred = voices.find(v =>
-            v.name.includes('Google US English') ||
-            v.name.includes('Google') ||
-            v.name.includes('Daniel') ||
-            v.name.includes('Microsoft Guy') ||
-            v.name.includes('Alex')
-          );
-          if (preferred) utterance.voice = preferred;
-
-          utterance.onend = () => setOrbState('', 'TAP THE ORB TO SPEAK');
-          utterance.onerror = () => setOrbState('', 'TAP THE ORB TO SPEAK');
-
-          window.speechSynthesis.speak(utterance);
-        }
-
-        if (window.speechSynthesis.getVoices().length === 0) {
-          window.speechSynthesis.onvoiceschanged = pickVoiceAndSpeak;
-        } else {
-          pickVoiceAndSpeak();
-        }
+        audio.play();
 
       } catch(e) {
         console.error('Voice error:', e);
@@ -207,8 +200,8 @@
       }
     }
 
+    // ─── AI BRAIN ────────────────────────────────────────
     async function sendCmd() {
-      unlockAudio();
       const val = document.getElementById('cmd').value.trim();
       if (!val) return;
       document.getElementById('cmd').value = '';
