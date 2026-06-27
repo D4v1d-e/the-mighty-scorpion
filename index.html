@@ -17,7 +17,7 @@
     <div id="orb-area">
       <div id="orb" onclick="activateScorpion()">🦂</div>
       <div id="orb-label">SCORPION CORE</div>
-      <div id="orb-status">TAP THE ORB TO SPEAK</div>
+      <div id="orb-status">TAP THE ORB TO ENABLE ALWAYS-ON VOICE</div>
     </div>
 
     <div id="input-area">
@@ -86,6 +86,22 @@
       } catch(e) {}
     }
 
+    function playDisableSound() {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.setValueAtTime(500, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(150, ctx.currentTime + 0.3);
+        gain.gain.setValueAtTime(0.25, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.35);
+      } catch(e) {}
+    }
+
     let audioUnlocked = false;
     function unlockAudio() {
       if (audioUnlocked) return;
@@ -96,8 +112,10 @@
       } catch(e) {}
     }
 
+    // ─── ALWAYS-ON VOICE STATE ────────────────────────────
     let recognition = null;
-    let isListening = false;
+    let alwaysOn = false;     // is always-on mode toggled on
+    let isProcessing = false; // true while thinking/speaking - pauses mic restart
 
     function initVoice() {
       if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
@@ -106,57 +124,83 @@
       }
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
       recognition = new SR();
-      recognition.continuous = false;
+      recognition.continuous = true;
       recognition.interimResults = true;
       recognition.lang = 'en-US';
 
       recognition.onresult = function(event) {
-        const result = event.results[0];
+        const result = event.results[event.results.length - 1];
         if (!result.isFinal) return;
-        const transcript = result[0].transcript;
+        const transcript = result[0].transcript.trim();
+        if (!transcript) return;
+
         document.getElementById('cmd').value = transcript;
         setOrbState('thinking', 'HEARD: ' + transcript.toUpperCase());
-        isListening = false;
+        isProcessing = true;
+        try { recognition.stop(); } catch(e) {}
         sendCmd();
       };
 
       recognition.onerror = function(event) {
-        isListening = false;
+        if (event.error === 'aborted') return; // we caused this ourselves
+
         if (event.error === 'no-speech') {
-          setOrbState('', "DIDN'T CATCH THAT - TAP & SPEAK RIGHT AWAY");
+          setOrbState(alwaysOn ? 'listening' : '', "DIDN'T CATCH THAT - TAP & SPEAK RIGHT AWAY");
         } else if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+          alwaysOn = false;
           setOrbState('', 'MIC BLOCKED - CHECK SITE PERMISSIONS');
         } else if (event.error === 'audio-capture') {
+          alwaysOn = false;
           setOrbState('', 'NO MIC FOUND - CHECK DEVICE');
         } else {
-          setOrbState('', 'MIC ERROR: ' + event.error.toUpperCase());
+          setOrbState(alwaysOn ? 'listening' : '', 'MIC ERROR: ' + event.error.toUpperCase());
         }
       };
 
       recognition.onend = function() {
-        if (isListening) {
-          isListening = false;
-          setOrbState('', 'TAP THE ORB TO SPEAK');
+        // auto-restart if always-on mode is still active and we're not mid-response
+        if (alwaysOn && !isProcessing) {
+          setTimeout(() => {
+            if (alwaysOn && !isProcessing) startListening();
+          }, 300);
         }
       };
+
       return true;
+    }
+
+    function startListening() {
+      if (!alwaysOn) return;
+      try {
+        setOrbState('listening', 'LISTENING... SPEAK ANYTIME');
+        recognition.start();
+      } catch(e) {
+        // already started - ignore InvalidStateError
+      }
     }
 
     function activateScorpion() {
       unlockAudio();
-      playActivationSound();
+
       if (!recognition) {
         if (!initVoice()) return;
       }
-      if (isListening) {
-        recognition.stop();
-        isListening = false;
-        setOrbState('', 'TAP THE ORB TO SPEAK');
+
+      if (alwaysOn) {
+        // turning OFF
+        alwaysOn = false;
+        isProcessing = false;
+        playDisableSound();
+        try { recognition.stop(); } catch(e) {}
+        window.speechSynthesis.cancel();
+        setOrbState('', 'TAP THE ORB TO ENABLE ALWAYS-ON VOICE');
         return;
       }
-      isListening = true;
-      setOrbState('listening', 'LISTENING... SPEAK NOW');
-      recognition.start();
+
+      // turning ON
+      alwaysOn = true;
+      playActivationSound();
+      startListening();
     }
 
     // ─── VOICE OUTPUT - BROWSER NATIVE (always works, zero APIs) ──
@@ -178,6 +222,15 @@
         utterance.rate = 1.0;
         utterance.volume = 1.0;
 
+        function afterSpeaking() {
+          isProcessing = false;
+          if (alwaysOn) {
+            startListening();
+          } else {
+            setOrbState('', 'TAP THE ORB TO ENABLE ALWAYS-ON VOICE');
+          }
+        }
+
         function pickVoiceAndSpeak() {
           const voices = window.speechSynthesis.getVoices();
           const preferred = voices.find(v =>
@@ -189,8 +242,8 @@
           );
           if (preferred) utterance.voice = preferred;
 
-          utterance.onend = () => setOrbState('', 'TAP THE ORB TO SPEAK');
-          utterance.onerror = () => setOrbState('', 'TAP THE ORB TO SPEAK');
+          utterance.onend = afterSpeaking;
+          utterance.onerror = afterSpeaking;
 
           window.speechSynthesis.speak(utterance);
         }
@@ -203,15 +256,18 @@
 
       } catch(e) {
         console.error('Voice error:', e);
-        setOrbState('', 'TAP THE ORB TO SPEAK');
+        isProcessing = false;
+        if (alwaysOn) startListening();
+        else setOrbState('', 'TAP THE ORB TO ENABLE ALWAYS-ON VOICE');
       }
     }
 
     async function sendCmd() {
       unlockAudio();
       const val = document.getElementById('cmd').value.trim();
-      if (!val) return;
+      if (!val) { isProcessing = false; if (alwaysOn) startListening(); return; }
       document.getElementById('cmd').value = '';
+      isProcessing = true;
       setOrbState('thinking', 'THINKING...');
 
       try {
@@ -224,8 +280,10 @@
         const data = await response.json();
 
         if (data.error) {
-          setOrbState('', 'ERROR - TAP ORB TO RETRY');
           document.getElementById('output').innerText = '❌ ' + data.error;
+          isProcessing = false;
+          if (alwaysOn) startListening();
+          else setOrbState('', 'ERROR - TAP ORB TO RETRY');
           return;
         }
 
@@ -233,8 +291,10 @@
         speakReply(data.reply);
 
       } catch(e) {
-        setOrbState('', 'ERROR - TAP ORB TO RETRY');
         document.getElementById('output').innerText = '❌ ERROR: ' + e.message;
+        isProcessing = false;
+        if (alwaysOn) startListening();
+        else setOrbState('', 'ERROR - TAP ORB TO RETRY');
       }
     }
 
