@@ -583,13 +583,6 @@ function initAndStartListening(){
 }
 function stopRecognition(){if(recognition){try{recognition.abort()}catch(e){}recognition=null}}
 
-const SCORPION_SONGS=[
-  ["I am Scorpion sharp and bright,","Here to help you day and night,","Ask me anything you need,","I respond at lightning speed!"],
-  ["Born in the matrix, code and light,","My neural core burns green at night,","No question too hard, no task too tall,","The Mighty Scorpion answers all!"],
-  ["Digits and charts and forex gold,","Volatility stories yet to be told,","I scan the markets fast as light,","Scorpion never loses the fight!"],
-  ["From Deriv bots to trading lore,","My stinger strikes the signal core,","Over or under, rise or fall,","Scorpion calculates it all!"]
-];
-
 function getVoice(){
   const voices=window.speechSynthesis.getVoices();
   return voices.find(v=>v.name.includes('Google US English'))
@@ -603,41 +596,68 @@ function getVoice(){
 function handleSing(cmd){
   processingCmd=true;
   setOrbState('thinking','COMPOSING A SONG...');
-  const song=SCORPION_SONGS[Math.floor(Math.random()*SCORPION_SONGS.length)];
-  const lyrics=song.join('\n');
-  document.getElementById('output').innerText='🎵 '+lyrics;
-  addLog('a',lyrics);
-  processingCmd=false;
-  function doSing(){
-    singLines(song);
-  }
-  const voices=window.speechSynthesis.getVoices();
-  if(voices.length>0){doSing();}
-  else{window.speechSynthesis.onvoiceschanged=()=>{window.speechSynthesis.onvoiceschanged=null;doSing();};setTimeout(doSing,800);}
+  
+  // Request AI to generate song lyrics
+  addLog('u',cmd);
+  conversationHistory.push({role:'user',text:cmd});
+  if(conversationHistory.length>MAX_HISTORY)conversationHistory=conversationHistory.slice(-MAX_HISTORY);
+  
+  fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:conversationHistory})})
+    .then(r=>r.json())
+    .then(data=>{
+      processingCmd=false;
+      if(data.error){
+        document.getElementById('output').textContent='Error generating song: '+data.error;
+        setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');
+        return;
+      }
+      
+      const lyrics=data.reply;
+      // Split by newlines or periods to get individual lines
+      const lines=lyrics.split(/[\n.]+/).map(l=>l.trim()).filter(l=>l.length>0);
+      
+      document.getElementById('output').innerText='🎵 '+lyrics;
+      conversationHistory.push({role:'assistant',text:lyrics});
+      if(conversationHistory.length>MAX_HISTORY)conversationHistory=conversationHistory.slice(-MAX_HISTORY);
+      addLog('a',lyrics,'SONG');
+      bumpQ();
+      
+      // Now sing the lyrics
+      singLines(lines);
+    })
+    .catch(e=>{
+      processingCmd=false;
+      document.getElementById('output').textContent='Error: '+e.message;
+      setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');
+    });
 }
 
 function singLines(lines){
   stopSpeaking();
   setOrbState('speaking','🎵 SCORPION SINGING...');
-  const pitches=[1.4,1.1,1.6,1.0],rates=[.8,.88,.76,.9];
+  const pitches=[1.4,1.1,1.6,1.0,1.2,0.9,1.3],rates=[.8,.88,.76,.9,.82,.85,.80];
   let i=0;
   function next(){
     if(i>=lines.length){
       setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE ALWAYS-ON MODE');
       return;
     }
-    const utt=new SpeechSynthesisUtterance(lines[i]);
+    const line=lines[i];
+    if(!line||line.length===0){i++;setTimeout(next,200);return}
+    
+    const utt=new SpeechSynthesisUtterance(line);
     utt.lang='en-US';utt.volume=1;
     utt.pitch=pitches[i%pitches.length];
     utt.rate=rates[i%rates.length];
     const v=getVoice();if(v)utt.voice=v;
-    utt.onend=()=>{i++;setTimeout(next,420)};
-    utt.onerror=(e)=>{console.warn('sing err',e.error);i++;setTimeout(next,420)};
+    utt.onend=()=>{i++;setTimeout(next,300)};
+    utt.onerror=(e)=>{console.warn('sing err',e.error);i++;setTimeout(next,300)};
     window.speechSynthesis.cancel();
-    setTimeout(()=>window.speechSynthesis.speak(utt),80);
+    setTimeout(()=>window.speechSynthesis.speak(utt),100);
   }
   next();
 }
+
 function speakReply(text){
   stopSpeaking();
   const clean=text.replace(/\*\*/g,'').replace(/\*/g,'').replace(/#{1,6}\s/g,'').replace(/`/g,'')
@@ -680,6 +700,7 @@ async function sendCmdText(val){
     setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'ERROR — TAP ORB TO RETRY');
   }
 }
+
 async function sendCmd(){
   unlockAudio();const val=document.getElementById('cmd').value.trim();if(!val)return;
   document.getElementById('cmd').value='';
