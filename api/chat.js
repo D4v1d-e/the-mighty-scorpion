@@ -14,13 +14,14 @@ export default async function handler(req, res) {
     const apiKey = process.env.OPENROUTER_API_KEY;
     if (!apiKey) return res.status(500).json({ error: 'API key not found' });
 
-    // confirmed free models June 2026 - auto fallback
+    // openrouter/free auto-picks best available free model
+    // specific models as fallback
     const models = [
-      'google/gemma-4-31b-it:free',
+      'openrouter/free',
       'nvidia/llama-3.1-nemotron-ultra-253b-v1:free',
+      'google/gemma-4-31b-it:free',
       'mistralai/mistral-small-3.2-24b-instruct:free',
-      'qwen/qwen3-235b-a22b:free',
-      'tngtech/deepseek-r1t2-chimera:free'
+      'qwen/qwen3-30b-a3b:free'
     ];
 
     let lastError = '';
@@ -40,7 +41,7 @@ export default async function handler(req, res) {
             messages: [
               {
                 role: 'system',
-                content: 'You are Scorpion, a powerful personal AI assistant. Sharp, direct, intelligent. Keep responses concise and clear. Maximum 3 sentences unless asked for more.'
+                content: 'You are Scorpion, a powerful personal AI assistant. Sharp, direct, intelligent. Keep responses concise — maximum 3 sentences unless asked for more.'
               },
               { role: 'user', content: prompt }
             ]
@@ -76,7 +77,7 @@ export default async function handler(req, res) {
       }
     }
 
-    return res.status(500).json({ error: 'All models failed. Last error: ' + lastError });
+    return res.status(500).json({ error: 'All models failed. Last: ' + lastError });
 
   } catch(e) {
     return res.status(500).json({ error: e.message });
