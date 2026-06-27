@@ -8,10 +8,31 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
-    const { prompt } = req.body;
-    if (!prompt) return res.status(400).json({ error: 'No prompt provided' });
+    const { messages, prompt } = req.body;
+
+    // accept either {messages:[{role,text}]} (new, with memory) or {prompt:"..."} (old, single-shot)
+    let history;
+    if (messages && Array.isArray(messages) && messages.length > 0) {
+      history = messages;
+    } else if (prompt) {
+      history = [{ role: 'user', text: prompt }];
+    } else {
+      return res.status(400).json({ error: 'No messages or prompt provided' });
+    }
 
     const SYSTEM = 'You are Scorpion, a powerful personal AI assistant for Johnson. Sharp, direct, intelligent. Keep responses concise — max 2 sentences unless asked for more. Never use bullet points or markdown.';
+
+    // OpenAI-style messages array (Cerebras, Groq, Mistral all use this format)
+    const openaiMessages = [
+      { role: 'system', content: SYSTEM },
+      ...history.map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.text }))
+    ];
+
+    // Gemini uses its own contents format with role: 'model' instead of 'assistant'
+    const geminiContents = history.map(m => ({
+      role: m.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: m.text }]
+    }));
 
     async function tryBrain(fetchFn, timeoutMs) {
       const controller = new AbortController();
@@ -34,7 +55,7 @@ export default async function handler(req, res) {
           headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cerebrasKey },
           body: JSON.stringify({
             model: 'llama-4-scout-17b-16e-instruct',
-            messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: prompt }],
+            messages: openaiMessages,
             max_tokens: 300
           })
         });
@@ -52,7 +73,7 @@ export default async function handler(req, res) {
           headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + groqKey },
           body: JSON.stringify({
             model: 'llama-3.3-70b-versatile',
-            messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: prompt }],
+            messages: openaiMessages,
             max_tokens: 300
           })
         });
@@ -72,7 +93,7 @@ export default async function handler(req, res) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               systemInstruction: { parts: [{ text: SYSTEM }] },
-              contents: [{ role: 'user', parts: [{ text: prompt }] }],
+              contents: geminiContents,
               generationConfig: { maxOutputTokens: 300 }
             })
           }
@@ -91,7 +112,7 @@ export default async function handler(req, res) {
           headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + mistralKey },
           body: JSON.stringify({
             model: 'mistral-small-latest',
-            messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: prompt }],
+            messages: openaiMessages,
             max_tokens: 300
           })
         });
