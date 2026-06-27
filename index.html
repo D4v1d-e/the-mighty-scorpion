@@ -5,261 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>The Mighty Scorpion AI</title>
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
-<style>
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{
-  --bg:#000d05;--deep:#010f07;--panel:#021409;--border:#0a3018;
-  --G:#00ff66;--G2:rgba(0,255,102,.18);--G3:rgba(0,255,102,.07);
-  --Gdim:#00cc55;--Gbright:#99ffbb;
-  --amber:#ffaa00;--cyan:#00e5ff;--red:#ff3355;--purple:#b366ff;
-  --text:#b0f0c8;--muted:#1a4a2a;
-  --display:'Orbitron',sans-serif;--mono:'Share Tech Mono',monospace;
-}
-body{background:var(--bg);color:var(--text);font-family:var(--mono);min-height:100vh;overflow-x:hidden}
-
-/* ── MATRIX RAIN ── */
-#matrix-canvas{position:fixed;inset:0;z-index:0;opacity:.12;pointer-events:none}
-
-/* ── GRID ── */
-#grid{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.025;
-  background-image:linear-gradient(var(--G) 1px,transparent 1px),linear-gradient(90deg,var(--G) 1px,transparent 1px);
-  background-size:60px 60px}
-
-/* ── SCANLINES ── */
-body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:9998;
-  background:repeating-linear-gradient(0deg,transparent,transparent 2px,#00000016 2px,#00000016 4px)}
-
-/* ── CORNER BRACKETS ── */
-.brk{position:fixed;width:54px;height:54px;pointer-events:none;z-index:9997}
-.brk svg{width:100%;height:100%}
-.brk-tl{top:8px;left:8px}.brk-tr{top:8px;right:8px;transform:scaleX(-1)}
-.brk-bl{bottom:8px;left:8px;transform:scaleY(-1)}.brk-br{bottom:8px;right:8px;transform:scale(-1)}
-
-/* ── APP ── */
-#app{position:relative;z-index:1;display:grid;grid-template-rows:auto 1fr auto;
-  min-height:100vh;max-width:1140px;margin:0 auto;padding:0 20px 28px}
-
-/* ══ HEADER ══ */
-header{display:flex;align-items:center;justify-content:space-between;
-  padding:16px 0 12px;border-bottom:1px solid var(--border);margin-bottom:4px}
-.logo{display:flex;align-items:center;gap:14px}
-.logo-main{font-family:var(--display);font-size:14px;font-weight:900;
-  letter-spacing:.3em;color:var(--G);text-shadow:0 0 22px rgba(0,255,102,.6);line-height:1.15}
-.logo-sub{font-size:7px;letter-spacing:.4em;color:var(--muted);margin-top:2px}
-.hdr-right{display:flex;align-items:center;gap:18px}
-.status-pill{display:flex;align-items:center;gap:7px;border:1px solid var(--border);
-  border-radius:2px;padding:5px 13px;background:var(--deep)}
-.s-dot{width:6px;height:6px;border-radius:50%;background:var(--G);box-shadow:0 0 8px var(--G);
-  animation:sdot 2s ease-in-out infinite}
-@keyframes sdot{0%,100%{opacity:1}50%{opacity:.2}}
-.s-label{font-family:var(--display);font-size:7.5px;font-weight:700;letter-spacing:.28em;color:var(--G)}
-#clock{font-size:9px;letter-spacing:.18em;color:var(--muted)}
-
-/* ══ MAIN ══ */
-main{display:flex;flex-direction:column;gap:14px;padding:14px 0}
-
-/* ══ HERO ══ */
-.hero{display:grid;grid-template-columns:195px 1fr 195px;gap:12px;align-items:start}
-
-/* SIDE PANELS */
-.side-panels{display:flex;flex-direction:column;gap:10px}
-.holo-panel{background:var(--panel);border:1px solid var(--border);border-radius:3px;
-  padding:11px 13px;position:relative;overflow:hidden}
-.holo-panel::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;
-  background:linear-gradient(90deg,transparent,var(--G2),transparent)}
-.hp-title{font-family:var(--display);font-size:5.5px;font-weight:700;letter-spacing:.35em;
-  color:var(--Gdim);margin-bottom:8px;display:flex;align-items:center;gap:5px}
-.hp-title::before{content:'';width:4px;height:4px;border-radius:50%;background:var(--G);box-shadow:0 0 6px var(--G)}
-.hp-line{display:flex;justify-content:space-between;align-items:center;font-size:9.5px;margin-bottom:4px}
-.hp-key{color:var(--muted)}.hp-val{color:var(--G);text-shadow:0 0 8px rgba(0,255,102,.4)}
-.bar-wrap{display:flex;align-items:flex-end;gap:2px;height:28px;margin-top:6px}
-.bar{flex:1;border-radius:1px 1px 0 0;
-  background:linear-gradient(180deg,var(--G),rgba(0,255,102,.25));
-  box-shadow:0 0 4px rgba(0,255,102,.3);
-  animation:barBob var(--bd,1.4s) ease-in-out infinite var(--bdl,0s)}
-@keyframes barBob{0%,100%{transform:scaleY(1)}50%{transform:scaleY(.55)}}
-
-/* ══ CENTER ORB ZONE ══ */
-.orb-center{display:flex;flex-direction:column;align-items:center;gap:16px;padding:10px 0}
-
-/* ── THE LIVE ORB STAGE ── */
-#orb-stage{
-  position:relative;width:340px;height:340px;
-  cursor:pointer;flex-shrink:0;
-  display:flex;align-items:center;justify-content:center;
-}
-
-/* OUTER TICK RING */
-#tick-ring{
-  position:absolute;inset:0;
-  animation:spin 18s linear infinite;
-}
-/* MIDDLE RING */
-#mid-ring{
-  position:absolute;inset:24px;
-  border:1px solid rgba(0,255,102,.2);border-radius:50%;
-  animation:spinR 12s linear infinite;
-}
-/* INNER RING */
-#inner-ring{
-  position:absolute;inset:48px;
-  border:1px solid rgba(0,255,102,.12);border-radius:50%;
-  animation:spin 22s linear infinite;
-}
-@keyframes spin{to{transform:rotate(360deg)}}
-@keyframes spinR{to{transform:rotate(-360deg)}}
-
-/* ENERGY CORE — layered radial glows */
-#energy-core{
-  position:absolute;inset:64px;border-radius:50%;
-  background:
-    radial-gradient(circle at 50% 50%,rgba(0,255,102,.55) 0%,rgba(0,255,102,.25) 28%,rgba(0,255,102,.06) 60%,transparent 75%);
-  animation:corePulse 2.2s ease-in-out infinite;
-}
-@keyframes corePulse{0%,100%{opacity:.75;transform:scale(1)}50%{opacity:1;transform:scale(1.12)}}
-
-/* INNER PLASMA BALL */
-#plasma{
-  position:absolute;inset:90px;border-radius:50%;
-  background:
-    radial-gradient(circle at 40% 38%,#aaffcc 0%,#00ff66 22%,rgba(0,200,80,.6) 50%,transparent 72%);
-  animation:plasmaShift 3s ease-in-out infinite alternate;
-  box-shadow:0 0 40px rgba(0,255,102,.8),inset 0 0 30px rgba(0,255,102,.4);
-}
-@keyframes plasmaShift{
-  0%{background:radial-gradient(circle at 40% 38%,#aaffcc 0%,#00ff66 22%,rgba(0,200,80,.6) 50%,transparent 72%)}
-  50%{background:radial-gradient(circle at 60% 55%,#ccffdd 0%,#33ff88 18%,rgba(0,180,70,.5) 48%,transparent 70%)}
-  100%{background:radial-gradient(circle at 35% 42%,#bbffcc 0%,#00ff55 25%,rgba(0,220,90,.65) 52%,transparent 74%)}
-}
-
-/* THE SVG SCORPION — drawn in SVG, animated */
-#scorp-svg{
-  position:absolute;z-index:5;
-  width:180px;height:180px;
-  filter:drop-shadow(0 0 12px rgba(0,255,102,.9)) drop-shadow(0 0 28px rgba(0,255,102,.5));
-  animation:scorpFloat 4s ease-in-out infinite;
-}
-@keyframes scorpFloat{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-7px) scale(1.03)}}
-
-/* state-based glow colors on svg */
-#orb-stage.listening #scorp-svg{filter:drop-shadow(0 0 18px rgba(0,255,102,1)) drop-shadow(0 0 40px rgba(0,255,102,.7))}
-#orb-stage.thinking  #scorp-svg{filter:drop-shadow(0 0 18px rgba(255,170,0,.9)) drop-shadow(0 0 40px rgba(255,170,0,.6))}
-#orb-stage.speaking  #scorp-svg{filter:drop-shadow(0 0 18px rgba(179,102,255,.9)) drop-shadow(0 0 40px rgba(179,102,255,.6))}
-
-/* state plasma */
-#orb-stage.listening #plasma{box-shadow:0 0 60px rgba(0,255,102,1),inset 0 0 40px rgba(0,255,102,.5)}
-#orb-stage.thinking  #plasma{box-shadow:0 0 60px rgba(255,170,0,.9),inset 0 0 40px rgba(255,170,0,.4);background:radial-gradient(circle at 50% 50%,#ffe066,#ffaa00 30%,rgba(200,100,0,.5) 55%,transparent 72%)}
-#orb-stage.speaking  #plasma{box-shadow:0 0 60px rgba(179,102,255,.9),inset 0 0 40px rgba(179,102,255,.4);background:radial-gradient(circle at 50% 50%,#d4aaff,#b366ff 30%,rgba(100,30,200,.5) 55%,transparent 72%)}
-
-/* LIGHTNING arcs */
-.arc{
-  position:absolute;border-radius:50%;
-  border:1px solid transparent;
-  animation:arcSpin var(--as,6s) linear infinite var(--adir,normal);
-  pointer-events:none;
-}
-.arc::before{
-  content:'';position:absolute;
-  width:8px;height:8px;border-radius:50%;
-  background:var(--G);box-shadow:0 0 10px var(--G),0 0 20px var(--G);
-  top:-4px;left:50%;transform:translateX(-50%);
-}
-.arc1{inset:30px;--as:4.5s}
-.arc2{inset:18px;--as:7s;--adir:reverse}
-.arc2::before{top:auto;bottom:-4px}
-.arc3{inset:54px;--as:3.2s}
-.arc3::before{left:auto;right:-4px;top:50%;transform:translateY(-50%)}
-@keyframes arcSpin{to{transform:rotate(360deg)}}
-
-/* ORB STATUS */
-#orb-status{font-family:var(--display);font-size:9px;font-weight:400;
-  letter-spacing:.28em;color:var(--G);text-align:center;max-width:320px;
-  text-shadow:0 0 14px rgba(0,255,102,.6);min-height:22px}
-.matrix-status{font-size:8px;letter-spacing:.15em;color:var(--muted);text-align:center}
-
-/* ══ METRICS ══ */
-.metrics{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
-.met{background:var(--panel);border:1px solid var(--border);border-radius:3px;
-  padding:9px 10px;position:relative;overflow:hidden}
-.met::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;
-  background:linear-gradient(90deg,transparent,var(--G3),transparent)}
-.met-lbl{font-family:var(--display);font-size:5.5px;font-weight:700;
-  letter-spacing:.25em;color:var(--muted);margin-bottom:4px}
-.met-val{font-size:18px;color:var(--G);text-shadow:0 0 10px rgba(0,255,102,.4);line-height:1.1}
-.met-unit{font-size:8px;color:var(--muted);margin-left:1px}
-
-/* ══ SPARKLINE ══ */
-.spark{width:100%;height:26px;margin-top:6px}
-
-/* ══ AUDIO VIZ ══ */
-#viz{display:flex;align-items:flex-end;gap:2px;height:32px}
-.vb{width:3px;min-height:2px;border-radius:1px 1px 0 0;
-  background:linear-gradient(180deg,var(--G),rgba(0,255,102,.25));
-  box-shadow:0 0 4px rgba(0,255,102,.25);opacity:.3}
-.vb.on{opacity:1;animation:vbp var(--vd) ease-in-out infinite var(--vdl)}
-@keyframes vbp{0%,100%{transform:scaleY(1)}50%{transform:scaleY(2)}}
-
-/* ══ GAUGE ══ */
-.gauge-arc{width:100%;height:42px}
-
-/* ══ PANELS ══ */
-.panel{background:var(--panel);border:1px solid var(--border);border-radius:3px;
-  padding:14px 16px;position:relative;overflow:hidden}
-.panel::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;
-  background:linear-gradient(90deg,transparent,var(--G2),transparent)}
-.plabel{font-family:var(--display);font-size:7px;font-weight:700;
-  letter-spacing:.35em;color:var(--muted);margin-bottom:12px;
-  display:flex;align-items:center;gap:8px}
-.plabel::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,var(--border),transparent)}
-
-/* ══ OUTPUT ══ */
-#output{min-height:68px;max-height:260px;overflow-y:auto;
-  font-size:13px;line-height:1.8;color:var(--text);
-  white-space:pre-wrap;word-break:break-word;
-  scrollbar-width:thin;scrollbar-color:var(--border) transparent}
-.out-think::after{content:' ▋';animation:blink .7s infinite;color:var(--amber)}
-@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
-
-/* ══ INPUT ══ */
-.irow{display:flex;gap:8px;align-items:center;margin-top:12px}
-#cmd{flex:1;background:#010f07;border:1px solid var(--border);border-radius:3px;
-  color:var(--text);font-family:var(--mono);font-size:13px;
-  padding:10px 14px;outline:none;caret-color:var(--G);transition:border-color .2s}
-#cmd:focus{border-color:rgba(0,255,102,.35);box-shadow:0 0 0 1px rgba(0,255,102,.1)}
-#cmd::placeholder{color:var(--muted)}
-#send-btn{background:transparent;border:1px solid rgba(0,255,102,.3);border-radius:3px;
-  color:var(--G);font-family:var(--display);font-size:8px;font-weight:700;
-  letter-spacing:.22em;padding:10px 18px;cursor:pointer;transition:all .2s}
-#send-btn:hover{background:rgba(0,255,102,.1);box-shadow:0 0 16px rgba(0,255,102,.25)}
-#send-btn:active{transform:scale(.97)}
-
-/* ══ HISTORY ══ */
-#history{display:flex;flex-direction:column;gap:7px}
-.hitem{display:flex;gap:9px;padding:8px 11px;background:var(--deep);
-  border-left:2px solid;border-radius:0 3px 3px 0;font-size:11px;line-height:1.55}
-.hitem.u{border-color:var(--muted)}.hitem.a{border-color:var(--G)}
-.hrole{font-family:var(--display);font-size:6px;font-weight:700;
-  letter-spacing:.2em;min-width:28px;padding-top:2px}
-.hitem.u .hrole{color:var(--muted)}.hitem.a .hrole{color:var(--G)}
-.htext{color:var(--text);flex:1}
-
-/* ══ FOOTER ══ */
-footer{border-top:1px solid var(--border);padding-top:10px;
-  display:flex;justify-content:space-between;align-items:center}
-.ftxt{font-size:7px;letter-spacing:.2em;color:var(--muted)}
-#clear-btn{background:none;border:none;cursor:pointer;font-family:var(--mono);
-  font-size:9px;color:var(--muted);transition:color .2s}
-#clear-btn:hover{color:var(--red)}
-
-@media(max-width:760px){
-  .hero{grid-template-columns:1fr}
-  .side-panels{flex-direction:row;flex-wrap:wrap}
-  .side-panels .holo-panel{flex:1;min-width:140px}
-  #orb-stage{width:260px;height:260px}
-  #scorp-svg{width:140px;height:140px}
-  .metrics{grid-template-columns:repeat(3,1fr)}
-}
-</style>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
 
@@ -276,28 +22,19 @@ footer{border-top:1px solid var(--border);padding-top:10px;
 
 <header>
   <div class="logo">
-    <!-- MINI LIVE SCORPION IN LOGO -->
     <svg width="38" height="38" viewBox="0 0 100 100" style="filter:drop-shadow(0 0 8px #00ff66);flex-shrink:0">
       <g id="logo-scorp" fill="none" stroke="#00ff66" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-        <!-- body -->
         <ellipse cx="50" cy="52" rx="13" ry="18" fill="rgba(0,255,102,.18)" stroke="#00ff66" stroke-width="2"/>
-        <!-- head -->
         <ellipse cx="50" cy="34" rx="9" ry="7" fill="rgba(0,255,102,.22)" stroke="#00ff66"/>
-        <!-- pincers -->
         <path d="M41 30 Q30 20 24 24 Q18 28 22 35"/>
         <path d="M59 30 Q70 20 76 24 Q82 28 78 35"/>
         <circle cx="21" cy="35" r="3" fill="#00ff66"/>
         <circle cx="79" cy="35" r="3" fill="#00ff66"/>
-        <!-- legs left -->
         <path d="M38 48 Q28 44 22 46"/><path d="M38 54 Q26 52 20 56"/><path d="M38 60 Q28 62 22 67"/>
-        <!-- legs right -->
         <path d="M62 48 Q72 44 78 46"/><path d="M62 54 Q74 52 80 56"/><path d="M62 60 Q72 62 78 67"/>
-        <!-- tail segments -->
         <path d="M50 70 Q52 80 54 88 Q56 94 58 97 Q62 102 58 105" stroke-width="3"/>
         <path d="M50 70 Q52 80 54 88" stroke-width="3.5"/>
-        <!-- stinger -->
         <path d="M56 97 Q64 102 62 108 Q60 114 56 110" fill="rgba(0,255,102,.5)" stroke="#00ff66" stroke-width="2"/>
-        <!-- eyes -->
         <circle cx="46" cy="33" r="1.8" fill="#00ff66"/><circle cx="54" cy="33" r="1.8" fill="#00ff66"/>
       </g>
       <animateTransform attributeName="transform" type="translate" values="0,0;0,-2;0,0" dur="3s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1"/>
@@ -315,10 +52,8 @@ footer{border-top:1px solid var(--border);padding-top:10px;
 
 <main>
 
-<!-- HERO 3-COLUMN -->
 <div class="hero">
 
-  <!-- LEFT -->
   <div class="side-panels">
     <div class="holo-panel">
       <div class="hp-title">NEURAL PROCESSING</div>
@@ -346,37 +81,26 @@ footer{border-top:1px solid var(--border);padding-top:10px;
     </div>
   </div>
 
-  <!-- CENTER — LIVE ORB -->
   <div class="orb-center">
 
     <div id="orb-stage" class="idle" onclick="orbTapped()" title="Tap to activate voice">
 
-      <!-- TICK RING SVG -->
       <svg id="tick-ring" viewBox="0 0 340 340" style="position:absolute;inset:0;width:100%;height:100%">
-        <!-- outer circle -->
         <circle cx="170" cy="170" r="164" stroke="rgba(0,255,102,.2)" stroke-width="1" fill="none"/>
-        <!-- 36 tick marks -->
         <g id="ticks" stroke="#00ff66" stroke-width="1.5"></g>
-        <!-- dashed inner ring -->
         <circle cx="170" cy="170" r="140" stroke="rgba(0,255,102,.1)" stroke-width="1" fill="none" stroke-dasharray="4 8"/>
       </svg>
 
-      <!-- spinning mid ring -->
       <div id="mid-ring"></div>
-      <!-- spinning inner ring -->
       <div id="inner-ring"></div>
 
-      <!-- ENERGY CORE -->
       <div id="energy-core"></div>
-      <!-- PLASMA BALL -->
       <div id="plasma"></div>
 
-      <!-- ORBITING ARCS -->
       <div class="arc arc1"></div>
       <div class="arc arc2"></div>
       <div class="arc arc3"></div>
 
-      <!-- THE LIVE SVG SCORPION -->
       <svg id="scorp-svg" viewBox="0 0 200 220" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <radialGradient id="bodyGrad" cx="40%" cy="35%">
@@ -398,55 +122,40 @@ footer{border-top:1px solid var(--border);padding-top:10px;
           </filter>
         </defs>
 
-        <!-- GLOW HALO behind scorpion -->
         <ellipse cx="100" cy="105" rx="55" ry="55" fill="url(#glowGrad)" opacity="0.7">
           <animate attributeName="rx" values="55;65;55" dur="2.5s" repeatCount="indefinite"/>
           <animate attributeName="opacity" values="0.7;1;0.7" dur="2.5s" repeatCount="indefinite"/>
         </ellipse>
 
-        <!-- TAIL — animated curl -->
         <g filter="url(#glow)">
-          <!-- tail segment 5 (base) -->
           <path d="M100 148 Q108 162 112 175" stroke="url(#bodyGrad)" stroke-width="10" fill="none" stroke-linecap="round"/>
-          <!-- segment 4 -->
           <path d="M112 175 Q118 188 115 200" stroke="url(#bodyGrad)" stroke-width="8.5" fill="none" stroke-linecap="round">
             <animateTransform attributeName="transform" type="rotate" values="0 114 188;3 114 188;0 114 188;-2 114 188;0 114 188" dur="3s" repeatCount="indefinite"/>
           </path>
-          <!-- segment 3 -->
           <path d="M115 200 Q108 212 102 218" stroke="url(#bodyGrad)" stroke-width="7" fill="none" stroke-linecap="round">
             <animateTransform attributeName="transform" type="rotate" values="0 110 210;5 110 210;0 110 210;-3 110 210;0 110 210" dur="3.4s" repeatCount="indefinite"/>
           </path>
-          <!-- stinger -->
           <path d="M102 218 Q94 224 90 220 Q84 214 92 208" fill="url(#bodyGrad)" stroke="#00ff66" stroke-width="1.5">
             <animateTransform attributeName="transform" type="rotate" values="0 96 216;6 96 216;0 96 216;-4 96 216;0 96 216" dur="3.4s" repeatCount="indefinite"/>
           </path>
-          <!-- stinger tip glow -->
           <circle cx="88" cy="212" r="4" fill="#aaffcc">
             <animate attributeName="r" values="3;6;3" dur="1.2s" repeatCount="indefinite"/>
             <animate attributeName="opacity" values="0.8;1;0.8" dur="1.2s" repeatCount="indefinite"/>
           </circle>
         </g>
 
-        <!-- MAIN BODY SEGMENTS -->
         <g filter="url(#glow)">
-          <!-- abdomen -->
           <ellipse cx="100" cy="118" rx="22" ry="30" fill="url(#bodyGrad)" stroke="#00ff66" stroke-width="1.2" opacity="0.95"/>
-          <!-- body segments lines -->
           <path d="M80 108 Q100 110 120 108" stroke="rgba(0,255,102,.5)" stroke-width="1" fill="none"/>
           <path d="M79 118 Q100 120 121 118" stroke="rgba(0,255,102,.5)" stroke-width="1" fill="none"/>
           <path d="M80 128 Q100 130 120 128" stroke="rgba(0,255,102,.5)" stroke-width="1" fill="none"/>
-          <!-- thorax -->
           <ellipse cx="100" cy="88" rx="20" ry="22" fill="url(#bodyGrad)" stroke="#00ff66" stroke-width="1.2"/>
-          <!-- body highlight -->
           <ellipse cx="94" cy="82" rx="8" ry="11" fill="rgba(200,255,220,.18)"/>
         </g>
 
-        <!-- HEAD -->
         <g filter="url(#glow)">
           <ellipse cx="100" cy="66" rx="18" ry="14" fill="url(#bodyGrad)" stroke="#00ff66" stroke-width="1.5"/>
-          <!-- head highlight -->
           <ellipse cx="95" cy="61" rx="7" ry="5" fill="rgba(200,255,220,.2)"/>
-          <!-- eyes -->
           <circle cx="91" cy="64" r="3.5" fill="#001a08" stroke="#00ff66" stroke-width="1"/>
           <circle cx="109" cy="64" r="3.5" fill="#001a08" stroke="#00ff66" stroke-width="1"/>
           <circle cx="91" cy="64" r="1.8" fill="#00ff88">
@@ -455,47 +164,35 @@ footer{border-top:1px solid var(--border);padding-top:10px;
           <circle cx="109" cy="64" r="1.8" fill="#00ff88">
             <animate attributeName="opacity" values="1;0.4;1" dur="2s" begin="0.3s" repeatCount="indefinite"/>
           </circle>
-          <!-- mandibles -->
           <path d="M86 72 Q80 78 76 76 Q72 73 75 68" stroke="url(#bodyGrad)" stroke-width="2.5" fill="none" stroke-linecap="round"/>
           <path d="M114 72 Q120 78 124 76 Q128 73 125 68" stroke="url(#bodyGrad)" stroke-width="2.5" fill="none" stroke-linecap="round"/>
         </g>
 
-        <!-- PINCERS (chelae) — animated open/close -->
         <g filter="url(#glow2)">
-          <!-- left arm -->
           <path d="M82 74 Q68 62 56 58" stroke="url(#bodyGrad)" stroke-width="5" fill="none" stroke-linecap="round"/>
-          <!-- left claw top -->
           <path id="lct" d="M56 58 Q44 50 40 52" stroke="url(#bodyGrad)" stroke-width="4" fill="none" stroke-linecap="round">
             <animateTransform attributeName="transform" type="rotate" values="0 50 54;-8 50 54;0 50 54" dur="2.8s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1"/>
           </path>
-          <!-- left claw bottom -->
           <path id="lcb" d="M56 58 Q46 64 44 68" stroke="url(#bodyGrad)" stroke-width="3.5" fill="none" stroke-linecap="round">
             <animateTransform attributeName="transform" type="rotate" values="0 50 60;8 50 60;0 50 60" dur="2.8s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1"/>
           </path>
-          <!-- left claw glow dot -->
           <circle cx="41" cy="53" r="3.5" fill="#00ff88" opacity="0.9">
             <animate attributeName="opacity" values="0.9;0.3;0.9" dur="2.8s" repeatCount="indefinite"/>
           </circle>
 
-          <!-- right arm -->
           <path d="M118 74 Q132 62 144 58" stroke="url(#bodyGrad)" stroke-width="5" fill="none" stroke-linecap="round"/>
-          <!-- right claw top -->
           <path id="rct" d="M144 58 Q156 50 160 52" stroke="url(#bodyGrad)" stroke-width="4" fill="none" stroke-linecap="round">
             <animateTransform attributeName="transform" type="rotate" values="0 150 54;8 150 54;0 150 54" dur="2.8s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1"/>
           </path>
-          <!-- right claw bottom -->
           <path id="rcb" d="M144 58 Q154 64 156 68" stroke="url(#bodyGrad)" stroke-width="3.5" fill="none" stroke-linecap="round">
             <animateTransform attributeName="transform" type="rotate" values="0 150 60;-8 150 60;0 150 60" dur="2.8s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1"/>
           </path>
-          <!-- right claw glow dot -->
           <circle cx="159" cy="53" r="3.5" fill="#00ff88" opacity="0.9">
             <animate attributeName="opacity" values="0.9;0.3;0.9" dur="2.8s" begin="0.2s" repeatCount="indefinite"/>
           </circle>
         </g>
 
-        <!-- LEGS — 3 pairs, animated walk -->
         <g stroke="url(#bodyGrad)" stroke-width="2.5" fill="none" stroke-linecap="round" filter="url(#glow)">
-          <!-- left legs -->
           <path d="M83 92 Q70 86 62 88">
             <animateTransform attributeName="transform" type="rotate" values="0 75 90;4 75 90;0 75 90;-3 75 90;0 75 90" dur="1.8s" repeatCount="indefinite"/>
           </path>
@@ -505,7 +202,6 @@ footer{border-top:1px solid var(--border);padding-top:10px;
           <path d="M80 110 Q66 110 58 116">
             <animateTransform attributeName="transform" type="rotate" values="0 68 112;3 68 112;0 68 112;-3 68 112;0 68 112" dur="2s" repeatCount="indefinite" begin="0.6s"/>
           </path>
-          <!-- right legs -->
           <path d="M117 92 Q130 86 138 88">
             <animateTransform attributeName="transform" type="rotate" values="0 125 90;-4 125 90;0 125 90;3 125 90;0 125 90" dur="1.8s" repeatCount="indefinite"/>
           </path>
@@ -517,7 +213,6 @@ footer{border-top:1px solid var(--border);padding-top:10px;
           </path>
         </g>
 
-        <!-- CIRCUIT LINES on body -->
         <g stroke="rgba(0,255,102,.4)" stroke-width="0.8" fill="none">
           <path d="M96 88 L96 82 L88 82"><animate attributeName="opacity" values="0.4;1;0.4" dur="1.5s" repeatCount="indefinite"/></path>
           <path d="M104 88 L104 82 L112 82"><animate attributeName="opacity" values="0.4;1;0.4" dur="1.5s" begin="0.5s" repeatCount="indefinite"/></path>
@@ -525,17 +220,15 @@ footer{border-top:1px solid var(--border);padding-top:10px;
           <circle cx="112" cy="82" r="1.5" fill="#00ff66"><animate attributeName="opacity" values="0;1;0" dur="1.5s" begin="0.5s" repeatCount="indefinite"/></circle>
         </g>
 
-        <!-- float animation on whole scorpion -->
         <animateTransform attributeName="transform" type="translate" values="0,0;0,-6;0,0" dur="4s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1"/>
       </svg>
 
-    </div><!-- /orb-stage -->
+    </div>
 
     <div id="orb-status">TAP TO ACTIVATE ALWAYS-ON MODE</div>
     <div class="matrix-status" id="matrix-status">SYSTEM STATUS: OPTIMAL // CONSCIOUSNESS MATRIX STABLE</div>
   </div>
 
-  <!-- RIGHT -->
   <div class="side-panels">
     <div class="holo-panel">
       <div class="hp-title">AUTONOMOUS DECISION</div>
@@ -564,9 +257,8 @@ footer{border-top:1px solid var(--border);padding-top:10px;
     </div>
   </div>
 
-</div><!-- /hero -->
+</div>
 
-<!-- METRICS -->
 <div class="metrics">
   <div class="met"><div class="met-lbl">QUERIES PROCESSED</div><div class="met-val" id="m-q">0</div></div>
   <div class="met"><div class="met-lbl">UPTIME</div><div class="met-val" id="m-up">00<span class="met-unit">s</span></div></div>
@@ -575,7 +267,6 @@ footer{border-top:1px solid var(--border);padding-top:10px;
   <div class="met"><div class="met-lbl">SIGNAL</div><div class="met-val" id="m-sig">100<span class="met-unit">%</span></div></div>
 </div>
 
-<!-- OUTPUT -->
 <div class="panel">
   <div class="plabel">SCORPION RESPONSE CORE</div>
   <div id="output">SCORPION AI READY.</div>
@@ -585,7 +276,6 @@ footer{border-top:1px solid var(--border);padding-top:10px;
   </div>
 </div>
 
-<!-- HISTORY -->
 <div class="panel">
   <div class="plabel">INTERACTION LOG <button id="clear-btn" onclick="clearLog()">[ CLEAR ]</button></div>
   <div id="history"></div>
@@ -599,275 +289,9 @@ footer{border-top:1px solid var(--border);padding-top:10px;
 </footer>
 </div>
 
-<script>
-/* ── MATRIX RAIN ── */
-(function(){
-  const c=document.getElementById('matrix-canvas'),ctx=c.getContext('2d');
-  function resize(){c.width=innerWidth;c.height=innerHeight} resize();
-  window.addEventListener('resize',resize);
-  const ch='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%&*アイウエオカキクケコ';
-  const sz=13;let drops=[];
-  function init(){drops=Array(Math.floor(c.width/sz)).fill(1)}
-  init();window.addEventListener('resize',init);
-  setInterval(()=>{
-    ctx.fillStyle='rgba(0,13,5,.18)';ctx.fillRect(0,0,c.width,c.height);
-    ctx.fillStyle='#00ff66';ctx.font=sz+'px Share Tech Mono';
-    drops.forEach((y,i)=>{
-      ctx.globalAlpha=Math.random()*.7+.2;
-      ctx.fillText(ch[Math.floor(Math.random()*ch.length)],i*sz,y*sz);
-      if(y*sz>c.height&&Math.random()>.975)drops[i]=0; drops[i]++;
-    });
-    ctx.globalAlpha=1;
-  },55);
-})();
-
-/* ── TICK MARKS ── */
-(function(){
-  const g=document.getElementById('ticks');
-  for(let i=0;i<36;i++){
-    const a=(i/36)*Math.PI*2-Math.PI/2;
-    const r=164,r2=i%3===0?152:156;
-    const x1=170+r*Math.cos(a),y1=170+r*Math.sin(a);
-    const x2=170+r2*Math.cos(a),y2=170+r2*Math.sin(a);
-    const line=document.createElementNS('http://www.w3.org/2000/svg','line');
-    line.setAttribute('x1',x1);line.setAttribute('y1',y1);
-    line.setAttribute('x2',x2);line.setAttribute('y2',y2);
-    line.setAttribute('stroke-width',i%3===0?'2':'1');
-    line.setAttribute('opacity',i%3===0?'0.8':'0.35');
-    g.appendChild(line);
-  }
-})();
-
-/* ── BARS ── */
-function makeBars(id,n){
-  const el=document.getElementById(id);
-  for(let i=0;i<n;i++){
-    const b=document.createElement('div');b.className='bar';
-    b.style.height=(Math.random()*18+6)+'px';
-    b.style.setProperty('--bd',(Math.random()*.8+.6).toFixed(2)+'s');
-    b.style.setProperty('--bdl',(-Math.random()*.5).toFixed(2)+'s');
-    el.appendChild(b);
-  }
-}
-makeBars('q-bars',10);makeBars('n-bars',10);makeBars('c-bars',10);
-
-/* ── VIZ BARS ── */
-(function(){
-  const v=document.getElementById('viz');
-  for(let i=0;i<28;i++){
-    const b=document.createElement('div');b.className='vb';
-    b.style.setProperty('--vd',(Math.random()*.3+.28).toFixed(2)+'s');
-    b.style.setProperty('--vdl',(-Math.random()*.5).toFixed(2)+'s');
-    b.style.height=(Math.random()*10+2)+'px';
-    v.appendChild(b);
-  }
-})();
-
-/* ── SPARKLINE ── */
-(function(){
-  const pts=Array(20).fill(0).map(()=>Math.random()*18+4);
-  function render(){
-    const sl=document.getElementById('sl1'),sf=document.getElementById('sf1');
-    if(!sl)return;
-    const w=160,h=26,mn=Math.min(...pts),mx=Math.max(...pts),rng=mx-mn||1;
-    const c=pts.map((v,i)=>`${(i/(pts.length-1))*w},${h-((v-mn)/rng)*(h-4)-2}`);
-    sl.setAttribute('points',c.join(' '));
-    sf.setAttribute('points',`0,${h} ${c.join(' ')} ${w},${h}`);
-  }
-  render();setInterval(()=>{pts.shift();pts.push(Math.random()*18+4);render();},1100);
-})();
-
-/* ── CLOCK/UPTIME ── */
-const t0=Date.now();
-setInterval(()=>{
-  const n=new Date();
-  document.getElementById('clock').textContent=
-    `${n.getHours().toString().padStart(2,'0')}:${n.getMinutes().toString().padStart(2,'0')}:${n.getSeconds().toString().padStart(2,'0')}`;
-  const up=Math.floor((Date.now()-t0)/1000);
-  const el=document.getElementById('m-up');
-  el.innerHTML=up<60?`${up}<span class="met-unit">s</span>`:up<3600?`${Math.floor(up/60)}<span class="met-unit">m</span>`:`${Math.floor(up/3600)}<span class="met-unit">h</span>`;
-},1000);
-
-/* ── LIVE METRICS ── */
-setInterval(()=>{
-  document.getElementById('d-cpu').textContent=(87+Math.random()*11).toFixed(1)+'%';
-  document.getElementById('d-lat').textContent=Math.floor(Math.random()*6+2)+'ms';
-  document.getElementById('d-ent').textContent=(99+Math.random()*.9).toFixed(2)+'%';
-  document.getElementById('d-ul').textContent='↑ '+(7+Math.random()*5).toFixed(1)+'TB';
-  document.getElementById('m-sig').innerHTML=Math.floor(95+Math.random()*5)+'<span class="met-unit">%</span>';
-},2200);
-
-/* ── COUNTERS ── */
-let qcount=0,dcount=0;
-function bumpQ(){
-  document.getElementById('m-q').textContent=++qcount;
-  document.getElementById('d-dec').textContent=++dcount;
-}
-
-/* ════════════════════════════════════════════
-   CORE LOGIC — NOW WITH CONVERSATION MEMORY
-════════════════════════════════════════════ */
-let state='idle',alwaysOn=false,recognition=null,audioUnlocked=false,resumeTimer=null,processingCmd=false;
-
-// ─── MEMORY ───
-let conversationHistory = [];
-const MAX_HISTORY = 20; // keeps last ~10 exchanges so it doesn't grow forever
-
-function setOrbState(newState,statusText){
-  state=newState;
-  document.getElementById('orb-stage').className=newState;
-  document.getElementById('orb-status').innerText=statusText;
-  document.getElementById('m-st').textContent=newState.toUpperCase();
-  document.getElementById('d-mic').textContent=newState==='listening'?'ACTIVE':newState==='speaking'?'PLAYBACK':'STANDBY';
-  document.querySelectorAll('.vb').forEach(b=>b.classList.toggle('on',newState==='listening'||newState==='speaking'));
-  const ms=document.getElementById('matrix-status');
-  ms.textContent={
-    idle:'SYSTEM STATUS: OPTIMAL // CONSCIOUSNESS MATRIX STABLE',
-    listening:'NEURAL RECEPTORS ACTIVE // AWAITING VOICE INPUT',
-    thinking:'QUANTUM PROCESSING // CALCULATING OPTIMAL RESPONSE',
-    speaking:'VOCAL SYNTHESIS ACTIVE // NEURAL OUTPUT STREAM',
-  }[newState]||'';
-}
-
-function unlockAudio(){
-  if(audioUnlocked)return;
-  try{new Audio("data:audio/mp3;base64,//uQxAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAACcQCA").play().catch(()=>{});audioUnlocked=true;}catch(e){}
-}
-function playTone(f1,f2,dur,vol,delay){
-  setTimeout(()=>{
-    try{
-      const ctx=new(window.AudioContext||window.webkitAudioContext)();
-      const osc=ctx.createOscillator(),gain=ctx.createGain();
-      osc.connect(gain);gain.connect(ctx.destination);
-      osc.frequency.setValueAtTime(f1,ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(f2,ctx.currentTime+dur);
-      gain.gain.setValueAtTime(vol||.25,ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+dur+.05);
-      osc.start(ctx.currentTime);osc.stop(ctx.currentTime+dur+.1);
-    }catch(e){}
-  },delay||0);
-}
-function playActivationSound(){playTone(200,600,.3,.3,0);playTone(880,880,.15,.2,350)}
-function playInterruptSound(){playTone(800,300,.15,.2,0)}
-function playStopSound(){playTone(500,150,.25,.25,0)}
-function stopSpeaking(){if(resumeTimer){clearInterval(resumeTimer);resumeTimer=null}window.speechSynthesis.cancel()}
-
-function orbTapped(){
-  unlockAudio();
-  if(!alwaysOn){alwaysOn=true;document.getElementById('m-vc').textContent='ON';playActivationSound();initAndStartListening();}
-  else{alwaysOn=false;document.getElementById('m-vc').textContent='OFF';stopSpeaking();stopRecognition();processingCmd=false;playStopSound();setOrbState('idle','TAP TO ACTIVATE ALWAYS-ON MODE');}
-}
-
-function initAndStartListening(){
-  if(!('webkitSpeechRecognition' in window)&&!('SpeechRecognition' in window)){setOrbState('idle','VOICE NOT SUPPORTED - USE CHROME');alwaysOn=false;return}
-  if(recognition){try{recognition.abort()}catch(e){}recognition=null}
-  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-  recognition=new SR();recognition.continuous=true;recognition.interimResults=true;recognition.lang='en-US';
-  recognition.onresult=function(event){
-    let ft='';
-    for(let i=event.resultIndex;i<event.results.length;i++){
-      if(event.results[i].isFinal){ft+=event.results[i][0].transcript;}
-      else{
-        const it=event.results[i][0].transcript;
-        document.getElementById('d-conf').textContent=Math.floor((event.results[i][0].confidence||.85)*100)+'%';
-        if(state==='speaking'&&it.length>2){stopSpeaking();playInterruptSound();setOrbState('listening','INTERRUPTED — LISTENING...');}
-      }
-    }
-    if(ft.trim()&&!processingCmd){
-      const cmd=ft.trim();
-      const inputBox=document.getElementById('cmd');
-      if(document.activeElement===inputBox)return;
-      inputBox.value=cmd;
-      if(/^(stop|quiet|silence|shut up|enough)$/i.test(cmd)){stopSpeaking();setOrbState('listening','ALWAYS ON — SPEAK ANYTIME');return}
-      if(/sing|song|hum|melody/i.test(cmd)){handleSing(cmd);return}
-      setOrbState('thinking','HEARD: '+cmd.toUpperCase().slice(0,45));
-      sendCmdText(cmd);
-    }
-  };
-  recognition.onerror=function(e){
-    if(e.error==='aborted'||e.error==='no-speech')return;
-    if(e.error==='not-allowed'){alwaysOn=false;setOrbState('idle','MIC BLOCKED — CHECK SITE PERMISSIONS')}
-  };
-  recognition.onend=function(){if(alwaysOn)setTimeout(()=>{if(alwaysOn&&recognition)try{recognition.start()}catch(e){}},150)};
-  setOrbState('listening','ALWAYS ON — SPEAK ANYTIME');
-  try{recognition.start()}catch(e){}
-}
-function stopRecognition(){if(recognition){try{recognition.abort()}catch(e){}recognition=null}}
-
-function handleSing(cmd){
-  processingCmd=true;setOrbState('thinking','COMPOSING A SONG...');
-  fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({messages:[{role:'user',text:cmd+' — write exactly 4 short rhyming song lines, plain text only, no numbers, no markdown, no emojis'}]})
-  }).then(r=>r.json()).then(data=>{
-    processingCmd=false;
-    const lyrics=data.reply||'I am Scorpion sharp and bright, here to help you day and night, ask me anything you need, I respond at lightning speed.';
-    document.getElementById('output').innerText='🎵 '+lyrics;addLog('a',lyrics);singLines(lyrics);
-  }).catch(()=>{processingCmd=false;singLines('I am Scorpion sharp and bright, here to help you day and night.')});
-}
-function singLines(lyrics){
-  stopSpeaking();setOrbState('speaking','🎵 SCORPION SINGING...');
-  const lines=lyrics.split(/\n+/).map(l=>l.replace(/^[\d.\-*]+\s*/,'').trim()).filter(l=>l.length>2);
-  const pitches=[1.3,1.1,1.5,1.0,1.4,1.2],rates=[.82,.88,.78,.92,.75,.85];let i=0;
-  function next(){
-    if(i>=lines.length||!alwaysOn){setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE ALWAYS-ON MODE');return}
-    const utt=new SpeechSynthesisUtterance(lines[i]);utt.lang='en-US';utt.volume=1;
-    utt.pitch=pitches[i%pitches.length];utt.rate=rates[i%rates.length];
-    const v=window.speechSynthesis.getVoices().find(v=>v.name.includes('Google US English')||v.name.includes('Daniel')||v.name.includes('Alex'));
-    if(v)utt.voice=v;utt.onend=utt.onerror=()=>{i++;setTimeout(next,350)};
-    window.speechSynthesis.speak(utt);
-  }next();
-}
-function speakReply(text){
-  stopSpeaking();
-  const clean=text.replace(/\*\*/g,'').replace(/\*/g,'').replace(/#{1,6}\s/g,'').replace(/`/g,'')
-    .replace(/\[([^\]]+)\]\([^)]+\)/g,'$1').replace(/\n+/g,' ').trim();
-  setOrbState('speaking','SPEAKING... JUST TALK TO INTERRUPT');
-  const utt=new SpeechSynthesisUtterance(clean);utt.lang='en-US';utt.pitch=.85;utt.rate=1.15;utt.volume=1;
-  const pref=window.speechSynthesis.getVoices().find(v=>v.name.includes('Google US English')||v.name.includes('Daniel')||v.name.includes('Alex'));
-  if(pref)utt.voice=pref;
-  const after=()=>{if(resumeTimer){clearInterval(resumeTimer);resumeTimer=null}if(state==='speaking')setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE ALWAYS-ON MODE')};
-  utt.onend=utt.onerror=after;
-  resumeTimer=setInterval(()=>{if(!window.speechSynthesis.speaking){clearInterval(resumeTimer);resumeTimer=null}else window.speechSynthesis.resume()},8000);
-  window.speechSynthesis.speak(utt);
-}
-
-async function sendCmdText(val){
-  processingCmd=true;document.getElementById('cmd').value='';
-  const out=document.getElementById('output');out.className='out-think';out.textContent='NEURAL PROCESSING';
-  addLog('u',val);
-
-  conversationHistory.push({ role: 'user', text: val });
-  if (conversationHistory.length > MAX_HISTORY) conversationHistory = conversationHistory.slice(-MAX_HISTORY);
-
-  try{
-    const response=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages: conversationHistory})});
-    const data=await response.json();processingCmd=false;
-    if(data.error){out.className='';out.innerHTML=`<span style="color:var(--red)">⚠ ${data.error}</span>`;setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'ERROR — TAP ORB TO RETRY');return}
-    out.className='';out.textContent='🦂 '+data.reply;
-
-    conversationHistory.push({ role: 'assistant', text: data.reply });
-    if (conversationHistory.length > MAX_HISTORY) conversationHistory = conversationHistory.slice(-MAX_HISTORY);
-
-    bumpQ();addLog('a',data.reply);speakReply(data.reply);
-  }catch(e){
-    processingCmd=false;out.className='';out.innerHTML=`<span style="color:var(--red)">⚠ ERROR: ${e.message}</span>`;
-    setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'ERROR — TAP ORB TO RETRY');
-  }
-}
-async function sendCmd(){
-  unlockAudio();const val=document.getElementById('cmd').value.trim();if(!val)return;
-  document.getElementById('cmd').value='';
-  if(/sing|song|hum|melody/i.test(val)){handleSing(val);return}
-  setOrbState('thinking','THINKING...');sendCmdText(val);
-}
-document.getElementById('cmd').addEventListener('keydown',e=>{if(e.key==='Enter')sendCmd()});
-function addLog(role,text){
-  const h=document.getElementById('history');
-  const d=document.createElement('div');d.className='hitem '+(role==='u'?'u':'a');
-  d.innerHTML=`<div class="hrole">${role==='u'?'YOU':'SCORP'}</div><div class="htext">${text.slice(0,240)}${text.length>240?'…':''}</div>`;
-  h.appendChild(d);while(h.children.length>14)h.removeChild(h.firstChild);h.scrollTop=h.scrollHeight;
-}
-function clearLog(){document.getElementById('history').innerHTML='';const o=document.getElementById('output');o.className='';o.textContent='SCORPION AI READY.';conversationHistory=[]}
-</script>
+<script src="js/ui-effects.js"></script>
+<script src="js/chat-core.js"></script>
+<script src="js/voice-engine.js"></script>
+<script src="js/actions.js"></script>
 </body>
 </html>
