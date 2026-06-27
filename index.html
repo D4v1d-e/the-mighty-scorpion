@@ -55,21 +55,17 @@
   </style>
 
   <script>
-    // ─── STATE ───────────────────────────────────────────
-    // STATES: idle | listening | thinking | speaking
     let state = 'idle';
     let recognition = null;
-    let currentAudio = null;
     let audioUnlocked = false;
+    let resumeTimer = null;
 
-    // ─── ORB STATE DISPLAY ───────────────────────────────
     function setOrbState(newState, statusText) {
       state = newState;
       document.getElementById('orb').className = newState;
       document.getElementById('orb-status').innerText = statusText;
     }
 
-    // ─── AUDIO UNLOCK ────────────────────────────────────
     function unlockAudio() {
       if (audioUnlocked) return;
       try {
@@ -79,7 +75,6 @@
       } catch(e) {}
     }
 
-    // ─── ACTIVATION SOUND ────────────────────────────────
     function playActivationSound() {
       try {
         const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -116,49 +111,33 @@
       } catch(e) {}
     }
 
-    // ─── STOP EVERYTHING ─────────────────────────────────
-    function stopEverything() {
-      // stop voice output
-      if (currentAudio) {
-        currentAudio.pause();
-        currentAudio = null;
-      }
+    function stopSpeaking() {
+      if (resumeTimer) { clearInterval(resumeTimer); resumeTimer = null; }
       window.speechSynthesis.cancel();
-
-      // stop voice input
-      if (recognition) {
-        try { recognition.abort(); } catch(e) {}
-      }
-
-      playStopSound();
-      setOrbState('idle', 'TAP THE ORB TO SPEAK');
     }
 
-    // ─── ORB TAP — SMART INTERRUPT ───────────────────────
     function orbTapped() {
       unlockAudio();
 
-      // IF speaking or thinking → INTERRUPT and start listening
       if (state === 'speaking' || state === 'thinking') {
-        if (currentAudio) { currentAudio.pause(); currentAudio = null; }
-        window.speechSynthesis.cancel();
+        stopSpeaking();
+        if (recognition) try { recognition.abort(); } catch(e) {}
         playActivationSound();
-        startListening();
+        setTimeout(() => startListening(), 300);
         return;
       }
 
-      // IF already listening → stop
       if (state === 'listening') {
-        stopEverything();
+        if (recognition) try { recognition.abort(); } catch(e) {}
+        playStopSound();
+        setOrbState('idle', 'TAP THE ORB TO SPEAK');
         return;
       }
 
-      // IF idle → start listening
       playActivationSound();
       startListening();
     }
 
-    // ─── VOICE INPUT ─────────────────────────────────────
     function initVoice() {
       if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
         setOrbState('idle', 'VOICE NOT SUPPORTED - USE CHROME');
@@ -208,15 +187,15 @@
       try { recognition.start(); } catch(e) {}
     }
 
-    // ─── VOICE OUTPUT ────────────────────────────────────
     function speakReply(text) {
       try {
-        window.speechSynthesis.cancel();
+        stopSpeaking();
 
         const cleanText = text
           .replace(/\*\*/g,'').replace(/\*/g,'')
           .replace(/#{1,6}/g,'').replace(/`/g,'')
           .replace(/\[([^\]]+)\]\([^\)]+\)/g,'$1')
+          .replace(/\n+/g,' ')
           .trim();
 
         setOrbState('speaking', 'SCORPION SPEAKING... TAP TO INTERRUPT');
@@ -224,45 +203,43 @@
         const utterance = new SpeechSynthesisUtterance(cleanText);
         utterance.lang = 'en-US';
         utterance.pitch = 0.85;
-        utterance.rate = 1.0;
+        utterance.rate = 1.15;
         utterance.volume = 1.0;
 
-        function go() {
-          const voices = window.speechSynthesis.getVoices();
-          const preferred = voices.find(v =>
-            v.name.includes('Google US English') ||
-            v.name.includes('Google') ||
-            v.name.includes('Daniel') ||
-            v.name.includes('Alex')
-          );
-          if (preferred) utterance.voice = preferred;
+        const voices = window.speechSynthesis.getVoices();
+        const preferred = voices.find(v =>
+          v.name.includes('Google US English') ||
+          v.name.includes('Daniel') ||
+          v.name.includes('Alex')
+        );
+        if (preferred) utterance.voice = preferred;
 
-          utterance.onend = () => {
-            if (state === 'speaking') {
-              setOrbState('idle', 'TAP THE ORB TO SPEAK');
-            }
-          };
-          utterance.onerror = () => {
-            if (state === 'speaking') {
-              setOrbState('idle', 'TAP THE ORB TO SPEAK');
-            }
-          };
+        utterance.onend = () => {
+          if (resumeTimer) { clearInterval(resumeTimer); resumeTimer = null; }
+          if (state === 'speaking') setOrbState('idle', 'TAP THE ORB TO SPEAK');
+        };
+        utterance.onerror = () => {
+          if (resumeTimer) { clearInterval(resumeTimer); resumeTimer = null; }
+          if (state === 'speaking') setOrbState('idle', 'TAP THE ORB TO SPEAK');
+        };
 
-          window.speechSynthesis.speak(utterance);
-        }
+        // fix Chrome freezing on long speech
+        resumeTimer = setInterval(() => {
+          if (!window.speechSynthesis.speaking) {
+            clearInterval(resumeTimer);
+            resumeTimer = null;
+          } else {
+            window.speechSynthesis.resume();
+          }
+        }, 8000);
 
-        if (window.speechSynthesis.getVoices().length === 0) {
-          window.speechSynthesis.onvoiceschanged = go;
-        } else {
-          go();
-        }
+        window.speechSynthesis.speak(utterance);
 
       } catch(e) {
         setOrbState('idle', 'TAP THE ORB TO SPEAK');
       }
     }
 
-    // ─── AI BRAIN ────────────────────────────────────────
     async function sendCmd() {
       unlockAudio();
       const val = document.getElementById('cmd').value.trim();
@@ -277,7 +254,6 @@
           body: JSON.stringify({ prompt: val })
         });
 
-        // if user interrupted while thinking, don't speak
         if (state !== 'thinking') return;
 
         const data = await response.json();
