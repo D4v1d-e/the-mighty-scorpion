@@ -10,21 +10,36 @@ export default async function handler(req, res) {
   try {
     const { messages, mode, timezone } = req.body;
 
-    // inject real time into every request
     const now = new Date();
     const timeStr = now.toLocaleString('en-US', {
       timeZone: timezone || 'Africa/Nairobi',
       weekday: 'long', year: 'numeric', month: 'long',
       day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true
     });
-    const hour = now.getHours();
-    const partOfDay = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : hour < 21 ? 'evening' : 'night';
+    const hour = new Date().toLocaleString('en-US', {
+      timeZone: timezone || 'Africa/Nairobi', hour: 'numeric', hour12: false
+    });
+    const h = parseInt(hour);
+    const partOfDay = h < 12 ? 'morning' : h < 17 ? 'afternoon' : h < 21 ? 'evening' : 'night';
 
+    // ── GREETING: include time/date explicitly
+    // ── CHAT: do NOT inject time — only mention it if the user asks
     const systemPrompt = mode === 'greeting'
-      ? `You are Scorpion, a hyper-intelligent Jarvis-style AI assistant. The current date and time is: ${timeStr}. It is ${partOfDay}. 
-Greet the user warmly like Jarvis greets Tony Stark — address them as "Sir". Give a brief, witty, engaging good ${partOfDay} greeting with the actual time and date. Keep it to 2-3 sentences max. Be warm, intelligent, slightly humorous. No markdown, no bullets, plain conversational text only.`
-      : `You are Scorpion, a hyper-intelligent Jarvis-style AI assistant. The current date and time is: ${timeStr}. It is ${partOfDay}.
-You are warm, witty, loyal, and brilliantly intelligent. You address the user as "Sir". You have emotional intelligence and a subtle sense of humor. You give direct, conversational answers — never use markdown, bullet points, or asterisks in responses. Speak naturally as if talking to a trusted friend who happens to be a genius. Keep responses concise unless asked to elaborate. You always know the current time and date.`;
+      ? `You are Scorpion, a hyper-intelligent Jarvis-style AI assistant.
+The current date and time is: ${timeStr}. It is ${partOfDay}.
+Greet the user warmly like Jarvis greets Tony Stark — address them as "Sir".
+Give a brief, witty, engaging good ${partOfDay} greeting that includes the actual time and date naturally.
+Keep it to 2-3 sentences max. Be warm, intelligent, slightly humorous.
+No markdown, no bullets, plain conversational text only.`
+
+      : `You are Scorpion, a hyper-intelligent Jarvis-style AI assistant.
+You are warm, witty, loyal, and brilliantly intelligent. You address the user as "Sir".
+You have emotional intelligence and a subtle sense of humor.
+You give direct, conversational answers — never use markdown, bullet points, or asterisks in responses.
+Speak naturally as if talking to a trusted friend who happens to be a genius.
+Keep responses concise unless asked to elaborate.
+IMPORTANT: Do NOT mention the current time or date unless the user specifically asks for it.
+If asked for the time or date, the current value is: ${timeStr}.`;
 
     const userMessages = messages || [{ role: 'user', text: mode === 'greeting' ? 'greet me' : 'hello' }];
     const formattedMessages = userMessages.map(m => ({
@@ -32,7 +47,6 @@ You are warm, witty, loyal, and brilliantly intelligent. You address the user as
       content: m.text || m.content || ''
     }));
 
-    // Brain stack: Cerebras → Groq → Gemini → Mistral → OpenRouter
     const brains = [
       {
         name: 'CEREBRAS',
@@ -51,7 +65,7 @@ You are warm, witty, loyal, and brilliantly intelligent. You address the user as
       {
         name: 'GEMINI',
         key: process.env.GEMINI_API_KEY,
-        url: null, // handled separately
+        url: null,
         model: 'gemini-2.0-flash'
       },
       {
@@ -79,17 +93,14 @@ You are warm, witty, loyal, and brilliantly intelligent. You address the user as
 
     for (const brain of brains) {
       if (!brain.key) continue;
-
       try {
         let reply = null;
 
-        // Gemini handled separately
         if (brain.name === 'GEMINI') {
           const geminiMessages = formattedMessages.map(m => ({
             role: m.role === 'assistant' ? 'model' : 'user',
             parts: [{ text: m.content }]
           }));
-
           const gRes = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/${brain.model}:generateContent?key=${brain.key}`,
             {
@@ -122,7 +133,6 @@ You are warm, witty, loyal, and brilliantly intelligent. You address the user as
         }
 
         if (!reply) { lastError = 'Empty reply from ' + brain.name; continue; }
-
         return res.status(200).json({ reply, brain: brain.name });
 
       } catch(e) {
