@@ -17,7 +17,6 @@
 }
 html,body{height:100%;overflow:hidden}
 body{background:var(--bg);color:var(--text);font-family:var(--mono);display:flex;flex-direction:column}
-
 #matrix-canvas{position:fixed;inset:0;z-index:0;opacity:.12;pointer-events:none}
 #grid{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.025;
   background-image:linear-gradient(var(--G) 1px,transparent 1px),linear-gradient(90deg,var(--G) 1px,transparent 1px);
@@ -28,11 +27,8 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:9998;
 .brk svg{width:100%;height:100%}
 .brk-tl{top:8px;left:8px}.brk-tr{top:8px;right:8px;transform:scaleX(-1)}
 .brk-bl{bottom:8px;left:8px;transform:scaleY(-1)}.brk-br{bottom:8px;right:8px;transform:scale(-1)}
-
 #app{position:relative;z-index:1;display:flex;flex-direction:column;height:100vh;width:100%;padding:0 28px}
-
-header{display:flex;align-items:center;justify-content:space-between;
-  padding:12px 0 10px;border-bottom:1px solid var(--border);flex-shrink:0}
+header{display:flex;align-items:center;justify-content:space-between;padding:12px 0 10px;border-bottom:1px solid var(--border);flex-shrink:0}
 .logo{display:flex;align-items:center;gap:14px}
 .logo-main{font-family:var(--display);font-size:13px;font-weight:900;letter-spacing:.3em;color:var(--G);text-shadow:0 0 22px rgba(0,255,102,.6);line-height:1.15}
 .logo-sub{font-size:7px;letter-spacing:.4em;color:var(--muted);margin-top:2px}
@@ -42,12 +38,8 @@ header{display:flex;align-items:center;justify-content:space-between;
 @keyframes sdot{0%,100%{opacity:1}50%{opacity:.2}}
 .s-label{font-family:var(--display);font-size:7.5px;font-weight:700;letter-spacing:.28em;color:var(--G)}
 #clock{font-size:9px;letter-spacing:.18em;color:var(--muted)}
-
 main{flex:1;overflow:hidden;display:flex;flex-direction:column;gap:8px;padding:8px 0;min-height:0}
-
-/* ══ HERO ROW ══ */
 .hero{display:grid;grid-template-columns:175px 1fr 175px;gap:10px;align-items:start;flex-shrink:0}
-
 .side-panels{display:flex;flex-direction:column;gap:8px}
 .holo-panel{background:var(--panel);border:1px solid var(--border);border-radius:3px;padding:10px 12px;position:relative;overflow:hidden}
 .holo-panel::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--G2),transparent)}
@@ -58,8 +50,6 @@ main{flex:1;overflow:hidden;display:flex;flex-direction:column;gap:8px;padding:8
 .bar-wrap{display:flex;align-items:flex-end;gap:2px;height:22px;margin-top:5px}
 .bar{flex:1;border-radius:1px 1px 0 0;background:linear-gradient(180deg,var(--G),rgba(0,255,102,.25));box-shadow:0 0 4px rgba(0,255,102,.3);animation:barBob var(--bd,1.4s) ease-in-out infinite var(--bdl,0s)}
 @keyframes barBob{0%,100%{transform:scaleY(1)}50%{transform:scaleY(.55)}}
-
-/* ══ ORB ══ */
 .orb-center{display:flex;flex-direction:column;align-items:center;gap:8px;padding:4px 0}
 #orb-stage{position:relative;width:260px;height:260px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center}
 #tick-ring{position:absolute;inset:0;animation:spin 18s linear infinite}
@@ -89,25 +79,25 @@ main{flex:1;overflow:hidden;display:flex;flex-direction:column;gap:8px;padding:8
 @keyframes arcSpin{to{transform:rotate(360deg)}}
 #orb-status{font-family:var(--display);font-size:8px;font-weight:400;letter-spacing:.28em;color:var(--G);text-align:center;max-width:300px;text-shadow:0 0 14px rgba(0,255,102,.6);min-height:16px}
 .matrix-status{font-size:7px;letter-spacing:.12em;color:var(--muted);text-align:center}
-
-/* ══ METRICS ══ */
 .metrics{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;flex-shrink:0}
 .met{background:var(--panel);border:1px solid var(--border);border-radius:3px;padding:6px 10px;position:relative;overflow:hidden}
 .met::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--G3),transparent)}
 .met-lbl{font-family:var(--display);font-size:5.5px;font-weight:700;letter-spacing:.25em;color:var(--muted);margin-bottom:2px}
 .met-val{font-size:14px;color:var(--G);text-shadow:0 0 10px rgba(0,255,102,.4);line-height:1.1}
 .met-unit{font-size:7px;color:var(--muted);margin-left:1px}
-
-/* ══ 3-PANEL BOTTOM ══ */
 .bottom-tri{display:grid;grid-template-columns:300px 1fr 260px;gap:8px;flex:1;min-height:0;overflow:hidden}
-
-/* LEFT — YouTube panel (always visible, shows placeholder when idle) */
 .yt-pane{background:var(--panel);border:1px solid var(--border);border-radius:3px;position:relative;overflow:hidden;display:flex;flex-direction:column}
 .yt-pane::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(255,51,85,.25),transparent)}
 .yt-pane-header{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--border);flex-shrink:0}
-.yt-pane-title{font-family:var(--display);font-size:7px;font-weight:700;letter-spacing:.35em;color:var(--red);display:flex;align-items:center;gap:6px}
+.yt-pane-title{font-family:var(--display);font-size:7px;font-weight:700;letter-spacing:.35em;color:var(--red);display:flex;align-items:center;gap:6px;width:100%}
 .yt-pane-title::before{content:'▶';font-size:8px}
 .yt-pane-title::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,rgba(255,51,85,.3),transparent)}
+/* yt status badge */
+#yt-status-badge{font-family:var(--display);font-size:6px;font-weight:700;letter-spacing:.15em;padding:2px 7px;border-radius:2px;border:1px solid;margin-left:6px;flex-shrink:0;transition:all .3s}
+#yt-status-badge.idle{color:var(--muted);border-color:var(--muted)}
+#yt-status-badge.playing{color:var(--G);border-color:var(--G);box-shadow:0 0 6px rgba(0,255,102,.3)}
+#yt-status-badge.paused{color:var(--amber);border-color:var(--amber)}
+#yt-status-badge.muted{color:var(--red);border-color:var(--red)}
 .yt-idle{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:20px}
 .yt-idle-icon{font-size:36px;opacity:.2}
 .yt-idle-text{font-family:var(--display);font-size:7px;letter-spacing:.2em;color:var(--muted);text-align:center;line-height:1.8}
@@ -122,9 +112,8 @@ main{flex:1;overflow:hidden;display:flex;flex-direction:column;gap:8px;padding:8
 .yt-btn:hover{background:rgba(0,255,102,.08);border-color:rgba(0,255,102,.3)}
 .yt-btn.danger{color:var(--red);border-color:rgba(255,51,85,.3)}
 .yt-btn.danger:hover{background:rgba(255,51,85,.08)}
+.yt-btn.active-mute{color:var(--amber);border-color:var(--amber)}
 .yt-track-info{display:flex;justify-content:space-between;font-size:7px;color:var(--muted);flex-shrink:0}
-
-/* CENTER — Chat panel */
 .panel{background:var(--panel);border:1px solid var(--border);border-radius:3px;padding:10px 12px;position:relative;overflow:hidden;display:flex;flex-direction:column}
 .panel::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--G2),transparent)}
 .plabel{font-family:var(--display);font-size:7px;font-weight:700;letter-spacing:.35em;color:var(--muted);margin-bottom:8px;display:flex;align-items:center;gap:8px;flex-shrink:0}
@@ -139,8 +128,6 @@ main{flex:1;overflow:hidden;display:flex;flex-direction:column;gap:8px;padding:8
 #send-btn{background:transparent;border:1px solid rgba(0,255,102,.3);border-radius:3px;color:var(--G);font-family:var(--display);font-size:7px;font-weight:700;letter-spacing:.22em;padding:8px 14px;cursor:pointer;transition:all .2s;white-space:nowrap}
 #send-btn:hover{background:rgba(0,255,102,.1);box-shadow:0 0 16px rgba(0,255,102,.25)}
 #send-btn:active{transform:scale(.97)}
-
-/* RIGHT — History panel */
 .history-panel{background:var(--panel);border:1px solid var(--border);border-radius:3px;position:relative;overflow:hidden;display:flex;flex-direction:column}
 .history-panel::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--G2),transparent)}
 .hist-header{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid var(--border);flex-shrink:0}
@@ -157,39 +144,26 @@ main{flex:1;overflow:hidden;display:flex;flex-direction:column;gap:8px;padding:8
 .hist-footer{display:flex;justify-content:flex-end;padding:6px 10px;border-top:1px solid var(--border);flex-shrink:0}
 #clear-btn{background:none;border:none;cursor:pointer;font-family:var(--mono);font-size:8px;color:var(--muted);transition:color .2s}
 #clear-btn:hover{color:var(--red)}
-
-/* misc */
 #viz{display:flex;align-items:flex-end;gap:2px;height:22px}
 .vb{width:3px;min-height:2px;border-radius:1px 1px 0 0;background:linear-gradient(180deg,var(--G),rgba(0,255,102,.25));box-shadow:0 0 4px rgba(0,255,102,.25);opacity:.3}
 .vb.on{opacity:1;animation:vbp var(--vd) ease-in-out infinite var(--vdl)}
 @keyframes vbp{0%,100%{transform:scaleY(1)}50%{transform:scaleY(2)}}
 .spark{width:100%;height:22px;margin-top:5px}
 .gauge-arc{width:100%;height:38px}
-
 footer{border-top:1px solid var(--border);padding:6px 0;display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
 .ftxt{font-size:7px;letter-spacing:.2em;color:var(--muted)}
-
-@media(max-width:1100px){
-  .bottom-tri{grid-template-columns:260px 1fr 220px}
-}
+@media(max-width:1100px){.bottom-tri{grid-template-columns:260px 1fr 220px}}
 @media(max-width:900px){
-  .hero{grid-template-columns:1fr}
-  .side-panels{flex-direction:row;flex-wrap:wrap}
+  .hero{grid-template-columns:1fr}.side-panels{flex-direction:row;flex-wrap:wrap}
   .side-panels .holo-panel{flex:1;min-width:130px}
-  #orb-stage{width:200px;height:200px}
-  #scorp-svg{width:110px;height:110px}
-  .metrics{grid-template-columns:repeat(3,1fr)}
-  .bottom-tri{grid-template-columns:1fr}
-  html,body{overflow:auto}
-  main{overflow:visible}
-  .bottom-tri{min-height:600px}
-  .yt-pane{min-height:260px}
-  .history-panel{min-height:220px}
+  #orb-stage{width:200px;height:200px}#scorp-svg{width:110px;height:110px}
+  .metrics{grid-template-columns:repeat(3,1fr)}.bottom-tri{grid-template-columns:1fr}
+  html,body{overflow:auto}main{overflow:visible}.bottom-tri{min-height:600px}
+  .yt-pane{min-height:260px}.history-panel{min-height:220px}
 }
 </style>
 </head>
 <body>
-
 <canvas id="matrix-canvas"></canvas>
 <div id="grid"></div>
 <div class="brk brk-tl"><svg viewBox="0 0 54 54" fill="none"><path d="M0 54V0h54" stroke="rgba(0,255,102,.4)" stroke-width="1.2"/></svg></div>
@@ -198,17 +172,14 @@ footer{border-top:1px solid var(--border);padding:6px 0;display:flex;justify-con
 <div class="brk brk-br"><svg viewBox="0 0 54 54" fill="none"><path d="M0 54V0h54" stroke="rgba(0,255,102,.4)" stroke-width="1.2"/></svg></div>
 
 <div id="app">
-
 <header>
   <div class="logo">
     <svg width="36" height="36" viewBox="0 0 100 100" style="filter:drop-shadow(0 0 8px #00ff66);flex-shrink:0">
       <g fill="none" stroke="#00ff66" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
         <ellipse cx="50" cy="52" rx="13" ry="18" fill="rgba(0,255,102,.18)" stroke="#00ff66" stroke-width="2"/>
         <ellipse cx="50" cy="34" rx="9" ry="7" fill="rgba(0,255,102,.22)" stroke="#00ff66"/>
-        <path d="M41 30 Q30 20 24 24 Q18 28 22 35"/>
-        <path d="M59 30 Q70 20 76 24 Q82 28 78 35"/>
-        <circle cx="21" cy="35" r="3" fill="#00ff66"/>
-        <circle cx="79" cy="35" r="3" fill="#00ff66"/>
+        <path d="M41 30 Q30 20 24 24 Q18 28 22 35"/><path d="M59 30 Q70 20 76 24 Q82 28 78 35"/>
+        <circle cx="21" cy="35" r="3" fill="#00ff66"/><circle cx="79" cy="35" r="3" fill="#00ff66"/>
         <path d="M38 48 Q28 44 22 46"/><path d="M38 54 Q26 52 20 56"/><path d="M38 60 Q28 62 22 67"/>
         <path d="M62 48 Q72 44 78 46"/><path d="M62 54 Q74 52 80 56"/><path d="M62 60 Q72 62 78 67"/>
         <path d="M50 70 Q52 80 54 88 Q56 94 58 97 Q62 102 58 105" stroke-width="3"/>
@@ -229,8 +200,6 @@ footer{border-top:1px solid var(--border);padding:6px 0;display:flex;justify-con
 </header>
 
 <main>
-
-<!-- HERO -->
 <div class="hero">
   <div class="side-panels">
     <div class="holo-panel">
@@ -266,23 +235,16 @@ footer{border-top:1px solid var(--border);padding:6px 0;display:flex;justify-con
         <g id="ticks" stroke="#00ff66" stroke-width="1.5"></g>
         <circle cx="150" cy="150" r="122" stroke="rgba(0,255,102,.1)" stroke-width="1" fill="none" stroke-dasharray="4 8"/>
       </svg>
-      <div id="mid-ring"></div>
-      <div id="inner-ring"></div>
-      <div id="energy-core"></div>
-      <div id="plasma"></div>
-      <div class="arc arc1"></div>
-      <div class="arc arc2"></div>
-      <div class="arc arc3"></div>
+      <div id="mid-ring"></div><div id="inner-ring"></div>
+      <div id="energy-core"></div><div id="plasma"></div>
+      <div class="arc arc1"></div><div class="arc arc2"></div><div class="arc arc3"></div>
       <svg id="scorp-svg" viewBox="0 0 200 220" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <radialGradient id="bodyGrad" cx="40%" cy="35%">
-            <stop offset="0%" stop-color="#ccffdd"/>
-            <stop offset="40%" stop-color="#00ff66"/>
-            <stop offset="100%" stop-color="#004422"/>
+            <stop offset="0%" stop-color="#ccffdd"/><stop offset="40%" stop-color="#00ff66"/><stop offset="100%" stop-color="#004422"/>
           </radialGradient>
           <radialGradient id="glowGrad" cx="50%" cy="50%">
-            <stop offset="0%" stop-color="rgba(0,255,102,.6)"/>
-            <stop offset="100%" stop-color="rgba(0,255,102,0)"/>
+            <stop offset="0%" stop-color="rgba(0,255,102,.6)"/><stop offset="100%" stop-color="rgba(0,255,102,0)"/>
           </radialGradient>
           <filter id="glow"><feGaussianBlur stdDeviation="3" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
           <filter id="glow2"><feGaussianBlur stdDeviation="5" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
@@ -375,20 +337,18 @@ footer{border-top:1px solid var(--border);padding:6px 0;display:flex;justify-con
   <div class="met"><div class="met-lbl">SIGNAL</div><div class="met-val" id="m-sig">100<span class="met-unit">%</span></div></div>
 </div>
 
-<!-- 3-PANEL BOTTOM: YouTube | Chat | Log -->
+<!-- 3-PANEL BOTTOM -->
 <div class="bottom-tri">
 
-  <!-- LEFT: YouTube always-visible panel -->
+  <!-- LEFT: YouTube -->
   <div class="yt-pane">
     <div class="yt-pane-header">
-      <div class="yt-pane-title">YOUTUBE STREAM</div>
+      <div class="yt-pane-title">YOUTUBE STREAM<span id="yt-status-badge" class="idle">IDLE</span></div>
     </div>
-    <!-- idle placeholder -->
     <div class="yt-idle" id="yt-idle">
       <div class="yt-idle-icon">▶</div>
       <div class="yt-idle-text">SAY "PLAY [SONG]"<br>OR TYPE IT BELOW<br>TO START STREAMING</div>
     </div>
-    <!-- active player -->
     <div class="yt-active" id="yt-active">
       <div id="yt-title">—</div>
       <div id="yt-channel">—</div>
@@ -396,29 +356,30 @@ footer{border-top:1px solid var(--border);padding:6px 0;display:flex;justify-con
         <iframe id="yt-frame" allow="autoplay; encrypted-media" allowfullscreen></iframe>
       </div>
       <div class="yt-controls">
-        <button class="yt-btn" onclick="ytPrev()">⏮</button>
-        <button class="yt-btn" onclick="ytTogglePause()" id="yt-pause-btn">⏸</button>
-        <button class="yt-btn" onclick="ytNext()">⏭</button>
-        <button class="yt-btn danger" onclick="ytClose()">✕</button>
+        <button class="yt-btn" onclick="ytPrev()" title="Previous">⏮</button>
+        <button class="yt-btn" onclick="ytTogglePause()" id="yt-pause-btn" title="Pause/Resume">⏸</button>
+        <button class="yt-btn" onclick="ytNext()" title="Next">⏭</button>
+        <button class="yt-btn" onclick="ytToggleMute()" id="yt-mute-btn" title="Mute/Unmute">🔊</button>
+        <button class="yt-btn danger" onclick="ytClose()" title="Close">✕</button>
       </div>
       <div class="yt-track-info">
         <span id="yt-index">TRACK 1 OF 10</span>
-        <span style="color:var(--red)">▶ LIVE</span>
+        <span id="yt-live-status" style="color:var(--G)">▶ PLAYING</span>
       </div>
     </div>
   </div>
 
-  <!-- CENTER: Chat / Response -->
+  <!-- CENTER: Chat -->
   <div class="panel">
     <div class="plabel">SCORPION RESPONSE CORE</div>
     <div id="output">SCORPION AI READY.</div>
     <div class="irow">
-      <input type="text" id="cmd" placeholder="Type command or speak… 'play [song]'" autocomplete="off" spellcheck="false">
+      <input type="text" id="cmd" placeholder="Type or speak… 'play', 'mute', 'next', 'pause'…" autocomplete="off" spellcheck="false">
       <button id="send-btn" onclick="sendCmd()">SEND ▶</button>
     </div>
   </div>
 
-  <!-- RIGHT: Interaction log -->
+  <!-- RIGHT: Log -->
   <div class="history-panel">
     <div class="hist-header">
       <div class="hist-title">ACTION LOG</div>
@@ -431,7 +392,6 @@ footer{border-top:1px solid var(--border);padding:6px 0;display:flex;justify-con
   </div>
 
 </div>
-
 </main>
 
 <footer>
@@ -441,9 +401,8 @@ footer{border-top:1px solid var(--border);padding:6px 0;display:flex;justify-con
 </div>
 
 <script src="https://www.youtube.com/iframe_api"></script>
-
 <script>
-// ══ MATRIX BACKGROUND ══
+// ══ MATRIX BG ══
 (function(){
   const c=document.getElementById('matrix-canvas'),ctx=c.getContext('2d');
   function resize(){c.width=innerWidth;c.height=innerHeight} resize();
@@ -467,15 +426,11 @@ footer{border-top:1px solid var(--border);padding:6px 0;display:flex;justify-con
 (function(){
   const g=document.getElementById('ticks');
   for(let i=0;i<36;i++){
-    const a=(i/36)*Math.PI*2-Math.PI/2;
-    const r=144,r2=i%3===0?133:137;
-    const x1=150+r*Math.cos(a),y1=150+r*Math.sin(a);
-    const x2=150+r2*Math.cos(a),y2=150+r2*Math.sin(a);
+    const a=(i/36)*Math.PI*2-Math.PI/2,r=144,r2=i%3===0?133:137;
+    const x1=150+r*Math.cos(a),y1=150+r*Math.sin(a),x2=150+r2*Math.cos(a),y2=150+r2*Math.sin(a);
     const line=document.createElementNS('http://www.w3.org/2000/svg','line');
-    line.setAttribute('x1',x1);line.setAttribute('y1',y1);
-    line.setAttribute('x2',x2);line.setAttribute('y2',y2);
-    line.setAttribute('stroke-width',i%3===0?'2':'1');
-    line.setAttribute('opacity',i%3===0?'0.8':'0.35');
+    line.setAttribute('x1',x1);line.setAttribute('y1',y1);line.setAttribute('x2',x2);line.setAttribute('y2',y2);
+    line.setAttribute('stroke-width',i%3===0?'2':'1');line.setAttribute('opacity',i%3===0?'0.8':'0.35');
     g.appendChild(line);
   }
 })();
@@ -505,27 +460,23 @@ makeBars('q-bars',10);makeBars('n-bars',10);makeBars('c-bars',10);
 (function(){
   const pts=Array(20).fill(0).map(()=>Math.random()*14+4);
   function render(){
-    const sl=document.getElementById('sl1'),sf=document.getElementById('sf1');
-    if(!sl)return;
+    const sl=document.getElementById('sl1'),sf=document.getElementById('sf1');if(!sl)return;
     const w=160,h=22,mn=Math.min(...pts),mx=Math.max(...pts),rng=mx-mn||1;
     const c=pts.map((v,i)=>`${(i/(pts.length-1))*w},${h-((v-mn)/rng)*(h-4)-2}`);
-    sl.setAttribute('points',c.join(' '));
-    sf.setAttribute('points',`0,${h} ${c.join(' ')} ${w},${h}`);
+    sl.setAttribute('points',c.join(' '));sf.setAttribute('points',`0,${h} ${c.join(' ')} ${w},${h}`);
   }
   render();setInterval(()=>{pts.shift();pts.push(Math.random()*14+4);render();},1100);
 })();
 
-// ══ CLOCK & UPTIME ══
+// ══ CLOCK ══
 const t0=Date.now();
 setInterval(()=>{
   const n=new Date();
-  document.getElementById('clock').textContent=
-    `${n.getHours().toString().padStart(2,'0')}:${n.getMinutes().toString().padStart(2,'0')}:${n.getSeconds().toString().padStart(2,'0')}`;
+  document.getElementById('clock').textContent=`${n.getHours().toString().padStart(2,'0')}:${n.getMinutes().toString().padStart(2,'0')}:${n.getSeconds().toString().padStart(2,'0')}`;
   const up=Math.floor((Date.now()-t0)/1000);
   const el=document.getElementById('m-up');
   el.innerHTML=up<60?`${up}<span class="met-unit">s</span>`:up<3600?`${Math.floor(up/60)}<span class="met-unit">m</span>`:`${Math.floor(up/3600)}<span class="met-unit">h</span>`;
 },1000);
-
 setInterval(()=>{
   document.getElementById('d-cpu').textContent=(87+Math.random()*11).toFixed(1)+'%';
   document.getElementById('d-lat').textContent=Math.floor(Math.random()*6+2)+'ms';
@@ -567,18 +518,7 @@ function unlockAudio(){
   try{new Audio("data:audio/mp3;base64,//uQxAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAACcQCA").play().catch(()=>{});audioUnlocked=true;}catch(e){}
 }
 function playTone(f1,f2,dur,vol,delay){
-  setTimeout(()=>{
-    try{
-      const ctx=new(window.AudioContext||window.webkitAudioContext)();
-      const osc=ctx.createOscillator(),gain=ctx.createGain();
-      osc.connect(gain);gain.connect(ctx.destination);
-      osc.frequency.setValueAtTime(f1,ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(f2,ctx.currentTime+dur);
-      gain.gain.setValueAtTime(vol||.25,ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+dur+.05);
-      osc.start(ctx.currentTime);osc.stop(ctx.currentTime+dur+.1);
-    }catch(e){}
-  },delay||0);
+  setTimeout(()=>{try{const ctx=new(window.AudioContext||window.webkitAudioContext)();const osc=ctx.createOscillator(),gain=ctx.createGain();osc.connect(gain);gain.connect(ctx.destination);osc.frequency.setValueAtTime(f1,ctx.currentTime);osc.frequency.exponentialRampToValueAtTime(f2,ctx.currentTime+dur);gain.gain.setValueAtTime(vol||.25,ctx.currentTime);gain.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+dur+.05);osc.start(ctx.currentTime);osc.stop(ctx.currentTime+dur+.1);}catch(e){}},delay||0);
 }
 function playActivationSound(){playTone(200,600,.3,.3,0);playTone(880,880,.15,.2,350)}
 function playInterruptSound(){playTone(800,300,.15,.2,0)}
@@ -614,8 +554,7 @@ function initAndStartListening(){
       const cmd=ft.trim();
       const inputBox=document.getElementById('cmd');
       if(document.activeElement===inputBox)return;
-      inputBox.value=cmd;
-      routeCommand(cmd);
+      inputBox.value=cmd;routeCommand(cmd);
     }
   };
   recognition.onerror=function(e){
@@ -628,26 +567,56 @@ function initAndStartListening(){
 }
 function stopRecognition(){if(recognition){try{recognition.abort()}catch(e){}recognition=null}}
 
-// ══ COMMAND ROUTER ══
+// ══ COMMAND ROUTER — comprehensive natural language ══
 function routeCommand(cmd){
   const c=cmd.toLowerCase().trim();
-  if(/^(play|put on|i want to listen to|search youtube for|youtube)\s+.+/i.test(c)){
-    const query=cmd.replace(/^(play|put on|i want to listen to|search youtube for|youtube)\s*/i,'').replace(/\s*(on youtube|for me|please)\s*/ig,'').trim();
+
+  // ── PLAY new song
+  if(/^(play|put on|i want to (hear|listen to)|search (youtube )?for|youtube|queue|stream)\s+.+/i.test(c)){
+    const query=cmd.replace(/^(play|put on|i want to (hear|listen to)|search (youtube )?for|youtube|queue|stream)\s*/i,'').replace(/\s*(on youtube|for me|please|now)\s*/ig,'').trim();
     handleYouTube(query);return;
   }
-  if(/^(next|next song|next track|skip|skip song)/i.test(c)){ytNext();return;}
-  if(/^(previous|prev|go back|last song|previous song)/i.test(c)){ytPrev();return;}
-  if(/^(pause|pause music|pause video|pause song)/i.test(c)){ytPause();return;}
-  if(/^(resume|play|continue|unpause)/i.test(c)&&ytResults.length){ytResume();return;}
-  if(/^(close youtube|close player|stop video|hide youtube|close music)/i.test(c)){ytClose();return;}
-  if(/^(stop|quiet|silence|shut up|enough)$/i.test(c)){stopSpeaking();setOrbState('listening','ALWAYS ON — SPEAK ANYTIME');return;}
-  if(/sing|song|hum|melody/i.test(c)){handleSing(cmd);return;}
+  // ── NEXT
+  if(/\b(next|skip|forward|next song|next track|skip song|skip this)\b/i.test(c)){ytNext();return;}
+  // ── PREVIOUS
+  if(/\b(previous|prev|go back|last song|previous song|back)\b/i.test(c)){ytPrev();return;}
+  // ── PAUSE
+  if(/\b(pause|pause (it|music|video|song|the music|the video))\b/i.test(c)&&ytResults.length){ytPause();return;}
+  // ── RESUME/UNPAUSE
+  if(/\b(resume|unpause|continue|play it|play again|keep playing)\b/i.test(c)&&ytResults.length){ytResume();return;}
+  // ── MUTE
+  if(/\b(mute|mute (it|music|video|the music|the video|sound)|silence (the music|the video|it))\b/i.test(c)){ytMute();return;}
+  // ── UNMUTE
+  if(/\b(unmute|unmute (it|music|video|the music|the video)|restore (sound|audio|volume)|turn (sound|audio|volume) (on|up|back))\b/i.test(c)){ytUnmute();return;}
+  // ── CLOSE/STOP youtube
+  if(/\b(close (youtube|player|music|video)|stop (youtube|video|music|playing)|hide (youtube|player)|turn off (youtube|music|video))\b/i.test(c)){ytClose();return;}
+  // ── STOP scorpion speaking only
+  if(/^(stop|quiet|silence|shut up|enough|stop talking|be quiet)$/i.test(c)){stopSpeaking();setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');return;}
+  // ── SING
+  if(/\b(sing|hum|melody|rap|compose a song|write a song)\b/i.test(c)){handleSing(cmd);return;}
+
+  // ── DEFAULT: AI
   setOrbState('thinking','HEARD: '+cmd.toUpperCase().slice(0,45));
   sendCmdText(cmd);
 }
 
 // ══ YOUTUBE ENGINE ══
-let ytResults=[],ytIndex=0,ytPaused=false,ytPlayer=null,ytPlayerReady=false;
+let ytResults=[],ytIndex=0,ytPaused=false,ytMuted=false,ytPlayer=null,ytPlayerReady=false;
+
+// ── YT state sync badge
+function setYtBadge(s){
+  // s: 'idle' | 'playing' | 'paused' | 'muted'
+  const b=document.getElementById('yt-status-badge');
+  const live=document.getElementById('yt-live-status');
+  b.className=s;
+  const labels={idle:'IDLE',playing:'PLAYING',paused:'PAUSED',muted:'MUTED'};
+  b.textContent=labels[s]||s.toUpperCase();
+  if(live){
+    const liveLabels={playing:'▶ PLAYING',paused:'⏸ PAUSED',muted:'🔇 MUTED',idle:'—'};
+    live.textContent=liveLabels[s]||'▶ PLAYING';
+    live.style.color=s==='playing'?'var(--G)':s==='paused'?'var(--amber)':s==='muted'?'var(--red)':'var(--muted)';
+  }
+}
 
 window.onYouTubeIframeAPIReady=function(){
   ytPlayer=new YT.Player('yt-frame',{
@@ -655,7 +624,20 @@ window.onYouTubeIframeAPIReady=function(){
     playerVars:{autoplay:1,rel:0,modestbranding:1,playsinline:1},
     events:{
       onReady:()=>{ytPlayerReady=true;},
-      onStateChange:(e)=>{if(e.data===YT.PlayerState.ENDED)setTimeout(ytNext,1500);}
+      onStateChange:(e)=>{
+        // sync badge with real player state
+        if(e.data===YT.PlayerState.PLAYING){
+          ytPaused=false;
+          setYtBadge(ytMuted?'muted':'playing');
+          document.getElementById('yt-pause-btn').textContent='⏸';
+        } else if(e.data===YT.PlayerState.PAUSED){
+          ytPaused=true;
+          setYtBadge('paused');
+          document.getElementById('yt-pause-btn').textContent='▶';
+        } else if(e.data===YT.PlayerState.ENDED){
+          setTimeout(ytNext,1500);
+        }
+      }
     }
   });
 };
@@ -671,24 +653,28 @@ async function handleYouTube(query){
     const data=await r.json();processingCmd=false;
     if(data.error){document.getElementById('output').textContent='⚠ YouTube error: '+data.error;setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');return;}
     if(!data.results||data.results.length===0){document.getElementById('output').textContent='⚠ No results for: '+query;setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');return;}
-    ytResults=data.results;ytIndex=0;ytPaused=false;ytPlayIndex(0);
+    ytResults=data.results;ytIndex=0;ytPaused=false;ytMuted=false;ytPlayIndex(0);
   }catch(e){processingCmd=false;document.getElementById('output').textContent='⚠ YouTube error: '+e.message;setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');}
 }
 
 function ytPlayIndex(i){
   if(!ytResults.length)return;
   const item=ytResults[i];
-  const videoId=item.videoId;
-  // show active player, hide idle
   document.getElementById('yt-idle').style.display='none';
   document.getElementById('yt-active').classList.add('show');
   document.getElementById('yt-title').textContent=item.title;
   document.getElementById('yt-channel').textContent='📺 '+item.channel;
   document.getElementById('yt-index').textContent='TRACK '+(i+1)+' OF '+ytResults.length;
   document.getElementById('yt-pause-btn').textContent='⏸';
-  ytPaused=false;
-  if(ytPlayerReady&&ytPlayer&&ytPlayer.loadVideoById){ytPlayer.loadVideoById(videoId);}
-  else{document.getElementById('yt-frame').src='https://www.youtube.com/embed/'+videoId+'?autoplay=1&rel=0&modestbranding=1&enablejsapi=1';}
+  document.getElementById('yt-mute-btn').textContent='🔊';
+  document.getElementById('yt-mute-btn').classList.remove('active-mute');
+  ytPaused=false;ytMuted=false;
+  if(ytPlayerReady&&ytPlayer&&ytPlayer.loadVideoById){
+    ytPlayer.unMute();ytPlayer.loadVideoById(item.videoId);
+  } else {
+    document.getElementById('yt-frame').src='https://www.youtube.com/embed/'+item.videoId+'?autoplay=1&rel=0&modestbranding=1&enablejsapi=1';
+  }
+  setYtBadge('playing');
   document.getElementById('output').textContent='🎵 Now playing: '+item.title+'\n📺 '+item.channel;
   addLog('a','Now playing: '+item.title,'YOUTUBE');
   bumpQ();
@@ -696,25 +682,72 @@ function ytPlayIndex(i){
   document.getElementById('ft-brain').textContent='BRAIN: YOUTUBE // STREAMING';
 }
 
-function ytNext(){if(!ytResults.length)return;ytIndex=(ytIndex+1)%ytResults.length;ytPlayIndex(ytIndex);}
-function ytPrev(){if(!ytResults.length)return;ytIndex=(ytIndex-1+ytResults.length)%ytResults.length;ytPlayIndex(ytIndex);}
+function ytNext(){
+  if(!ytResults.length)return;
+  ytIndex=(ytIndex+1)%ytResults.length;
+  ytPlayIndex(ytIndex);
+  document.getElementById('output').textContent='⏭ Next: '+ytResults[ytIndex].title;
+}
+function ytPrev(){
+  if(!ytResults.length)return;
+  ytIndex=(ytIndex-1+ytResults.length)%ytResults.length;
+  ytPlayIndex(ytIndex);
+  document.getElementById('output').textContent='⏮ Previous: '+ytResults[ytIndex].title;
+}
 function ytPause(){
   if(!ytResults.length)return;
-  if(ytPlayerReady&&ytPlayer&&ytPlayer.pauseVideo){ytPlayer.pauseVideo();ytPaused=true;document.getElementById('yt-pause-btn').textContent='▶';document.getElementById('output').textContent='⏸ Paused: '+ytResults[ytIndex].title;}
+  if(ytPlayerReady&&ytPlayer&&ytPlayer.pauseVideo){
+    ytPlayer.pauseVideo();
+    // badge updates via onStateChange
+    document.getElementById('output').textContent='⏸ Paused: '+ytResults[ytIndex].title;
+    addLog('a','Paused music','YOUTUBE');
+  }
 }
 function ytResume(){
   if(!ytResults.length)return;
-  if(ytPlayerReady&&ytPlayer&&ytPlayer.playVideo){ytPlayer.playVideo();ytPaused=false;document.getElementById('yt-pause-btn').textContent='⏸';document.getElementById('output').textContent='▶ Resumed: '+ytResults[ytIndex].title;}
+  if(ytPlayerReady&&ytPlayer&&ytPlayer.playVideo){
+    ytPlayer.playVideo();
+    // badge updates via onStateChange
+    document.getElementById('output').textContent='▶ Resumed: '+ytResults[ytIndex].title;
+    addLog('a','Resumed music','YOUTUBE');
+  }
 }
 function ytTogglePause(){if(ytPaused)ytResume();else ytPause();}
+
+function ytMute(){
+  if(!ytResults.length)return;
+  if(ytPlayerReady&&ytPlayer&&ytPlayer.mute){
+    ytPlayer.mute();ytMuted=true;
+    document.getElementById('yt-mute-btn').textContent='🔇';
+    document.getElementById('yt-mute-btn').classList.add('active-mute');
+    setYtBadge('muted');
+    document.getElementById('output').textContent='🔇 Muted — music still playing';
+    addLog('a','Muted music','YOUTUBE');
+  }
+}
+function ytUnmute(){
+  if(!ytResults.length)return;
+  if(ytPlayerReady&&ytPlayer&&ytPlayer.unMute){
+    ytPlayer.unMute();ytMuted=false;
+    document.getElementById('yt-mute-btn').textContent='🔊';
+    document.getElementById('yt-mute-btn').classList.remove('active-mute');
+    setYtBadge(ytPaused?'paused':'playing');
+    document.getElementById('output').textContent='🔊 Unmuted';
+    addLog('a','Unmuted music','YOUTUBE');
+  }
+}
+function ytToggleMute(){if(ytMuted)ytUnmute();else ytMute();}
+
 function ytClose(){
   if(ytPlayerReady&&ytPlayer&&ytPlayer.stopVideo)ytPlayer.stopVideo();
   document.getElementById('yt-frame').src='';
   document.getElementById('yt-active').classList.remove('show');
   document.getElementById('yt-idle').style.display='';
-  ytResults=[];ytIndex=0;ytPaused=false;
+  ytResults=[];ytIndex=0;ytPaused=false;ytMuted=false;
+  setYtBadge('idle');
   document.getElementById('output').textContent='YouTube closed.';
   document.getElementById('ft-brain').textContent='BRAIN: STANDBY';
+  addLog('a','YouTube closed','YOUTUBE');
 }
 
 // ══ VOICE SPEAK ══
@@ -722,7 +755,6 @@ function getVoice(){
   const voices=window.speechSynthesis.getVoices();
   return voices.find(v=>v.name.includes('Google US English'))||voices.find(v=>v.name.includes('Daniel'))||voices.find(v=>v.name.includes('Alex'))||voices.find(v=>v.lang==='en-US')||voices[0]||null;
 }
-
 async function speakReply(text){
   stopSpeaking();
   const clean=text.replace(/\*\*/g,'').replace(/\*/g,'').replace(/#{1,6}\s/g,'').replace(/`/g,'').replace(/\[([^\]]+)\]\([^)]+\)/g,'$1').replace(/\n+/g,' ').trim();
@@ -730,15 +762,13 @@ async function speakReply(text){
   try{
     const response=await fetch('/api/speaker',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:clean})});
     if(!response.ok)throw new Error('TTS failed');
-    const blob=await response.blob();
-    const url=URL.createObjectURL(blob);
+    const blob=await response.blob();const url=URL.createObjectURL(blob);
     const audio=new Audio(url);window._currentAudio=audio;
     audio.onended=()=>{URL.revokeObjectURL(url);window._currentAudio=null;if(state==='speaking')setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE ALWAYS-ON MODE');};
     audio.onerror=()=>{URL.revokeObjectURL(url);fallbackSpeak(clean);};
     audio.play();
   }catch(e){fallbackSpeak(clean);}
 }
-
 function fallbackSpeak(text){
   const utt=new SpeechSynthesisUtterance(text);
   utt.lang='en-US';utt.pitch=.85;utt.rate=1.15;utt.volume=1;
@@ -755,8 +785,7 @@ function handleSing(cmd){
   conversationHistory.push({role:'user',text:cmd});
   if(conversationHistory.length>MAX_HISTORY)conversationHistory=conversationHistory.slice(-MAX_HISTORY);
   fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:conversationHistory})})
-    .then(r=>r.json())
-    .then(data=>{
+    .then(r=>r.json()).then(data=>{
       processingCmd=false;
       if(data.error){document.getElementById('output').textContent='Error: '+data.error;setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');return;}
       const lyrics=data.reply;
@@ -765,18 +794,15 @@ function handleSing(cmd){
       conversationHistory.push({role:'assistant',text:lyrics});
       if(conversationHistory.length>MAX_HISTORY)conversationHistory=conversationHistory.slice(-MAX_HISTORY);
       addLog('a',lyrics,'SONG');bumpQ();singLines(lines);
-    })
-    .catch(e=>{processingCmd=false;document.getElementById('output').textContent='Error: '+e.message;setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');});
+    }).catch(e=>{processingCmd=false;document.getElementById('output').textContent='Error: '+e.message;setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');});
 }
-
 function singLines(lines){
   stopSpeaking();setOrbState('speaking','🎵 SCORPION SINGING...');
   const pitches=[1.4,1.1,1.6,1.0,1.2,0.9,1.3],rates=[.8,.88,.76,.9,.82,.85,.80];
   let i=0;
   function next(){
     if(i>=lines.length){setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE ALWAYS-ON MODE');return;}
-    const line=lines[i];
-    if(!line||line.length===0){i++;setTimeout(next,200);return;}
+    const line=lines[i];if(!line||line.length===0){i++;setTimeout(next,200);return;}
     const utt=new SpeechSynthesisUtterance(line);
     utt.lang='en-US';utt.volume=1;utt.pitch=pitches[i%pitches.length];utt.rate=rates[i%rates.length];
     const v=getVoice();if(v)utt.voice=v;
