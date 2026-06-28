@@ -10,20 +10,22 @@ export default async function handler(req, res) {
   try {
     const { messages, mode, timezone } = req.body;
 
+    // ── TIME CONTEXT ──
     const now = new Date();
     const timeStr = now.toLocaleString('en-US', {
       timeZone: timezone || 'Africa/Nairobi',
       weekday: 'long', year: 'numeric', month: 'long',
       day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true
     });
-    const hour = new Date().toLocaleString('en-US', {
-      timeZone: timezone || 'Africa/Nairobi', hour: 'numeric', hour12: false
-    });
-    const h = parseInt(hour);
-    const partOfDay = h < 12 ? 'morning' : h < 17 ? 'afternoon' : h < 21 ? 'evening' : 'night';
+    const hour = parseInt(
+      new Date().toLocaleString('en-US', {
+        timeZone: timezone || 'Africa/Nairobi',
+        hour: 'numeric', hour12: false
+      })
+    );
+    const partOfDay = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : hour < 21 ? 'evening' : 'night';
 
-    // ── GREETING: include time/date explicitly
-    // ── CHAT: do NOT inject time — only mention it if the user asks
+    // ── SYSTEM PROMPTS ──
     const systemPrompt = mode === 'greeting'
       ? `You are Scorpion, a hyper-intelligent Jarvis-style AI assistant.
 The current date and time is: ${timeStr}. It is ${partOfDay}.
@@ -41,12 +43,14 @@ Keep responses concise unless asked to elaborate.
 IMPORTANT: Do NOT mention the current time or date unless the user specifically asks for it.
 If asked for the time or date, the current value is: ${timeStr}.`;
 
+    // ── FORMAT MESSAGES ──
     const userMessages = messages || [{ role: 'user', text: mode === 'greeting' ? 'greet me' : 'hello' }];
     const formattedMessages = userMessages.map(m => ({
       role: m.role === 'assistant' ? 'assistant' : 'user',
       content: m.text || m.content || ''
     }));
 
+    // ── BRAIN ROSTER ──
     const brains = [
       {
         name: 'CEREBRAS',
@@ -91,12 +95,14 @@ If asked for the time or date, the current value is: ${timeStr}.`;
 
     let lastError = '';
 
+    // ── BRAIN FALLBACK LOOP ──
     for (const brain of brains) {
       if (!brain.key) continue;
       try {
         let reply = null;
 
         if (brain.name === 'GEMINI') {
+          // Gemini uses a different message format
           const geminiMessages = formattedMessages.map(m => ({
             role: m.role === 'assistant' ? 'model' : 'user',
             parts: [{ text: m.content }]
@@ -116,7 +122,9 @@ If asked for the time or date, the current value is: ${timeStr}.`;
           const gData = await gRes.json();
           if (gData.error) { lastError = gData.error.message; continue; }
           reply = gData?.candidates?.[0]?.content?.parts?.[0]?.text;
+
         } else {
+          // OpenAI-compatible endpoint
           const oRes = await fetch(brain.url, {
             method: 'POST',
             headers: brain.headers(brain.key),
@@ -135,7 +143,7 @@ If asked for the time or date, the current value is: ${timeStr}.`;
         if (!reply) { lastError = 'Empty reply from ' + brain.name; continue; }
         return res.status(200).json({ reply, brain: brain.name });
 
-      } catch(e) {
+      } catch (e) {
         lastError = brain.name + ': ' + e.message;
         continue;
       }
@@ -143,7 +151,7 @@ If asked for the time or date, the current value is: ${timeStr}.`;
 
     return res.status(500).json({ error: 'All brains failed. Last: ' + lastError });
 
-  } catch(e) {
+  } catch (e) {
     return res.status(500).json({ error: e.message });
   }
 }
