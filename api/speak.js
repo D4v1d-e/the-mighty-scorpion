@@ -1,130 +1,82 @@
 const HF_URL = 'https://api-inference.huggingface.co/models/hexgrad/Kokoro-82M';
 
-// CRITICAL — tells Vercel to allow up to 60s instead of default 10s
-export const config = {
-  maxDuration: 60,
-};
+export const config = { maxDuration: 60 };
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   const apiKey = process.env.KOKOROVOICEAI_API_KEY;
-  if (!apiKey) return res.status(500).json({ error: 'KOKOROVOICEAI_API_KEY not set' });
 
-  const { text } = req.body;
-  if (!text?.trim()) return res.status(400).json({ error: 'No text provided' });
-
-  // Clean text — strip markdown, collapse whitespace, hard cap at 800 chars
-  const clean = text
-    .replace(/\*\*/g, '').replace(/\*/g, '')
-    .replace(/#{1,6}\s/g, '').replace(/`/g, '')
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-    .replace(/\n+/g, ' ').replace(/\s{2,}/g, ' ')
-    .trim().slice(0, 800);
-
-  if (!clean) return res.status(400).json({ error: 'Text was empty after cleaning' });
-
-  const body = JSON.stringify({
-    inputs: clean,
-    parameters: { voice: 'am_adam', speed: 1.0 }
-  });
-
-  const headers = {
-    'Authorization': 'Bearer ' + apiKey,
-    'Content-Type': 'application/json',
-    'Accept': 'audio/flac, audio/wav, audio/mpeg, */*'
-  };
-
-  const MAX_ATTEMPTS = 3;
-  const DEFAULT_RETRY_MS = 4000;
-  const PER_ATTEMPT_TIMEOUT_MS = 12000; // 12s per attempt — safe within 60s budget
-
-  async function callKokoro(attempt) {
-    // AbortController kills hung HF requests instead of waiting forever
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), PER_ATTEMPT_TIMEOUT_MS);
-
-    let hfRes;
-    try {
-      hfRes = await fetch(HF_URL, { method: 'POST', headers, body, signal: controller.signal });
-      clearTimeout(timeout);
-    } catch (e) {
-      clearTimeout(timeout);
-      if (e.name === 'AbortError') {
-        // HF hung — retry if attempts remain
-        if (attempt < MAX_ATTEMPTS) {
-          await new Promise(r => setTimeout(r, 1000));
-          return callKokoro(attempt + 1);
-        }
-        return res.status(503).json({ error: `Kokoro-82M timed out after ${attempt} attempt(s). Model may be cold — try again shortly.` });
-      }
-      throw e;
-    }
-
-    // 503 = model still warming up — use estimated_time from HF response if available
-    if (hfRes.status === 503) {
-      const errText = await hfRes.text();
-      const isLoading =
-        errText.toLowerCase().includes('loading') ||
-        errText.toLowerCase().includes('estimated_time');
-
-      if (isLoading && attempt < MAX_ATTEMPTS) {
-        // Use HF's own estimated_time if present, capped at 8s
-        let waitMs = DEFAULT_RETRY_MS;
-        try {
-          const parsed = JSON.parse(errText);
-          if (parsed.estimated_time) waitMs = Math.min(parsed.estimated_time * 1000 + 500, 8000);
-        } catch (_) {}
-
-        await new Promise(r => setTimeout(r, waitMs));
-        return callKokoro(attempt + 1);
-      }
-
-      return res.status(503).json({
-        error: `Kokoro-82M unavailable after ${attempt} attempt(s). Try again shortly.`,
-        kokoro_error: errText.slice(0, 300)
-      });
-    }
-
-    // Any other non-OK from HuggingFace
-    if (!hfRes.ok) {
-      const errText = await hfRes.text();
-      return res.status(hfRes.status).json({
-        error: `Kokoro-82M error (HTTP ${hfRes.status})`,
-        kokoro_error: errText.slice(0, 300)
-      });
-    }
-
-    // Success — stream audio back to client
-    const contentType = hfRes.headers.get('content-type') || 'audio/flac';
-    res.setHeader('Content-Type', contentType);
-    res.setHeader('Cache-Control', 'no-store');
-    res.setHeader('X-Voice-Engine', 'Kokoro-82M');
-    res.setHeader('X-Voice-Model', 'am_adam');
-    res.setHeader('Transfer-Encoding', 'chunked');
-
-    try {
-      const reader = hfRes.body.getReader();
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        res.write(value);
-      }
-      return res.end();
-    } catch (streamErr) {
-      if (!res.headersSent) return res.status(500).json({ error: 'Stream error: ' + streamErr.message });
-      return res.end();
-    }
+  // Step 1 — check key exists
+  if (!apiKey) {
+    return res.status(200).json({ step: 'KEY_CHECK', result: 'MISSING — KOKOROVOICEAI_API_KEY not set in Vercel env' });
   }
 
+  const keyPreview = apiKey.slice(0, 8) + '...' + apiKey.slice(-4);
+
+  // Step 2 — ping HF with minimal payload
   try {
-    return await callKokoro(1);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+
+    const hfRes = await fetch(HF_URL, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        'Authorization': 'Bearer ' + apiKey,
+        'Content-Type': 'application/json',
+        'Accept': 'audio/flac, audio/wav, audio/mpeg, */*'
+      },
+      body: JSON.stringify({
+        inputs: 'Hello, this is a test.',
+        parameters: { voice: 'am_adam', speed: 1.0 }
+      })
+    });
+
+    clearTimeout(timeout);
+
+    const status = hfRes.status;
+    const contentType = hfRes.headers.get('content-type') || 'none';
+    const allHeaders = Object.fromEntries(hfRes.headers.entries());
+
+    // Read body as text regardless of status
+    let bodyText = '';
+    try {
+      const buf = await hfRes.arrayBuffer();
+      // If audio came back, just note the size
+      if (contentType.includes('audio') || contentType.includes('flac')) {
+        bodyText = `[AUDIO BYTES: ${buf.byteLength}]`;
+      } else {
+        bodyText = new TextDecoder().decode(buf).slice(0, 500);
+      }
+    } catch (e) {
+      bodyText = 'Could not read body: ' + e.message;
+    }
+
+    return res.status(200).json({
+      step: 'HF_PING',
+      key_preview: keyPreview,
+      hf_status: status,
+      hf_content_type: contentType,
+      hf_headers: allHeaders,
+      hf_body: bodyText,
+      verdict:
+        status === 200 ? '✅ KOKORO OK — audio returned'
+        : status === 503 ? '⏳ MODEL LOADING — cold start, retry needed'
+        : status === 401 ? '❌ AUTH FAILED — bad API key'
+        : status === 403 ? '❌ FORBIDDEN — key lacks Inference API access'
+        : status === 404 ? '❌ MODEL NOT FOUND — check HF_URL'
+        : `⚠ UNEXPECTED STATUS ${status}`
+    });
+
   } catch (e) {
-    if (!res.headersSent) return res.status(500).json({ error: e.message });
-    return res.end();
+    return res.status(200).json({
+      step: 'HF_PING',
+      key_preview: keyPreview,
+      error: e.message,
+      error_name: e.name,
+      verdict: e.name === 'AbortError' ? '⏱ TIMEOUT — HF took >15s' : '💥 FETCH FAILED — ' + e.message
+    });
   }
 }
