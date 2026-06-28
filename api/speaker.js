@@ -1,7 +1,6 @@
-const HF_URL = 'https://api-inference.huggingface.co/models/hexgrad/Kokoro-82M';
-
-// Tells Vercel to allow up to 60s instead of the default 10s killswitch
 export const config = { maxDuration: 60 };
+
+const GEMINI_TTS_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent';
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -10,12 +9,13 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const apiKey = process.env.KOKOROVOICEAI_API_KEY;
-  if (!apiKey) return res.status(500).json({ error: 'KOKOROVOICEAI_API_KEY not set' });
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return res.status(500).json({ error: 'GEMINI_API_KEY not set' });
 
   const { text } = req.body;
   if (!text?.trim()) return res.status(400).json({ error: 'No text provided' });
 
+  // Clean text — strip markdown, collapse whitespace, cap at 800 chars
   const clean = text
     .replace(/\*\*/g, '').replace(/\*/g, '')
     .replace(/#{1,6}\s/g, '').replace(/`/g, '')
@@ -25,102 +25,132 @@ export default async function handler(req, res) {
 
   if (!clean) return res.status(400).json({ error: 'Text was empty after cleaning' });
 
+  // Voice style prompt — makes Gemini TTS sound like Jarvis
+  const voicePrompt = `You are a sophisticated AI assistant named Scorpion with a deep, calm, confident British male voice. 
+Speak with measured authority and subtle warmth — like a trusted advisor addressing someone important. 
+Pace yourself naturally, with slight pauses before key information. 
+Sound human, intelligent, and composed. Never robotic or flat.`;
+
   const body = JSON.stringify({
-    inputs: clean,
-    parameters: { voice: 'am_adam', speed: 1.0 }
+    contents: [
+      {
+        parts: [
+          { text: voicePrompt + '\n\nNow speak this:\n' + clean }
+        ]
+      }
+    ],
+    generationConfig: {
+      responseModalities: ['AUDIO'],
+      speechConfig: {
+        voiceConfig: {
+          prebuiltVoiceConfig: {
+            voiceName: 'Charon'
+          }
+        }
+      }
+    }
   });
 
-  const headers = {
-    'Authorization': 'Bearer ' + apiKey,
-    'Content-Type': 'application/json',
-    'Accept': 'audio/flac, audio/wav, audio/mpeg, */*'
-  };
-
-  const MAX_ATTEMPTS = 3;
-  const DEFAULT_RETRY_MS = 4000;
-  const PER_ATTEMPT_TIMEOUT_MS = 12000;
-
-  async function callKokoro(attempt) {
-    // Hard timeout per attempt — kills hung HF requests
+  try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), PER_ATTEMPT_TIMEOUT_MS);
+    const timeout = setTimeout(() => controller.abort(), 30000);
 
-    let hfRes;
-    try {
-      hfRes = await fetch(HF_URL, { method: 'POST', headers, body, signal: controller.signal });
-      clearTimeout(timeout);
-    } catch (e) {
-      clearTimeout(timeout);
-      if (e.name === 'AbortError') {
-        if (attempt < MAX_ATTEMPTS) {
-          await new Promise(r => setTimeout(r, 1000));
-          return callKokoro(attempt + 1);
-        }
-        return res.status(503).json({
-          error: `Kokoro-82M timed out after ${attempt} attempt(s). Model may be cold — try again shortly.`
-        });
+    const geminiRes = await fetch(`${GEMINI_TTS_URL}?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+      signal: controller.signal
+    });
+
+    clearTimeout(timeout);
+
+    if (!geminiRes.ok) {
+      const errText = await geminiRes.text();
+      if (geminiRes.status === 400) {
+        return tryFallbackVoice(apiKey, clean, voicePrompt, res);
       }
-      throw e;
-    }
-
-    // 503 = model warming up — use HF's own estimated_time if available
-    if (hfRes.status === 503) {
-      const errText = await hfRes.text();
-      const isLoading =
-        errText.toLowerCase().includes('loading') ||
-        errText.toLowerCase().includes('estimated_time');
-
-      if (isLoading && attempt < MAX_ATTEMPTS) {
-        let waitMs = DEFAULT_RETRY_MS;
-        try {
-          const parsed = JSON.parse(errText);
-          if (parsed.estimated_time) waitMs = Math.min(parsed.estimated_time * 1000 + 500, 8000);
-        } catch (_) {}
-        await new Promise(r => setTimeout(r, waitMs));
-        return callKokoro(attempt + 1);
-      }
-
-      return res.status(503).json({
-        error: `Kokoro-82M unavailable after ${attempt} attempt(s). Try again shortly.`,
-        kokoro_error: errText.slice(0, 300)
+      return res.status(geminiRes.status).json({
+        error: `Gemini TTS error (HTTP ${geminiRes.status})`,
+        details: errText.slice(0, 300)
       });
     }
 
-    // Any other non-OK from HuggingFace
-    if (!hfRes.ok) {
-      const errText = await hfRes.text();
-      return res.status(hfRes.status).json({
-        error: `Kokoro-82M error (HTTP ${hfRes.status})`,
-        kokoro_error: errText.slice(0, 300)
-      });
+    const data = await geminiRes.json();
+    const audioData = data?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    const mimeType = data?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.mimeType || 'audio/wav';
+
+    if (!audioData) {
+      return res.status(500).json({ error: 'No audio data in Gemini response' });
     }
 
-    // Success — stream audio back to client
-    const contentType = hfRes.headers.get('content-type') || 'audio/flac';
-    res.setHeader('Content-Type', contentType);
+    const audioBuffer = Buffer.from(audioData, 'base64');
+    res.setHeader('Content-Type', mimeType);
     res.setHeader('Cache-Control', 'no-store');
-    res.setHeader('X-Voice-Engine', 'Kokoro-82M');
-    res.setHeader('X-Voice-Model', 'am_adam');
-    res.setHeader('Transfer-Encoding', 'chunked');
+    res.setHeader('X-Voice-Engine', 'Gemini-TTS');
+    res.setHeader('X-Voice-Model', 'gemini-2.5-flash-preview-tts');
+    res.setHeader('X-Voice-Name', 'Charon');
+    res.send(audioBuffer);
 
-    try {
-      const reader = hfRes.body.getReader();
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        res.write(value);
-      }
-      return res.end();
-    } catch (streamErr) {
-      if (!res.headersSent) return res.status(500).json({ error: 'Stream error: ' + streamErr.message });
-      return res.end();
+  } catch (e) {
+    if (e.name === 'AbortError') {
+      return res.status(503).json({ error: 'Gemini TTS timed out — try again shortly.' });
     }
+    if (!res.headersSent) return res.status(500).json({ error: e.message });
   }
+}
+
+async function tryFallbackVoice(apiKey, clean, voicePrompt, res) {
+  const body = JSON.stringify({
+    contents: [
+      {
+        parts: [
+          { text: voicePrompt + '\n\nNow speak this:\n' + clean }
+        ]
+      }
+    ],
+    generationConfig: {
+      responseModalities: ['AUDIO'],
+      speechConfig: {
+        voiceConfig: {
+          prebuiltVoiceConfig: {
+            voiceName: 'Fenrir'
+          }
+        }
+      }
+    }
+  });
 
   try {
-    return await callKokoro(1);
+    const geminiRes = await fetch(`${GEMINI_TTS_URL}?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body
+    });
+
+    if (!geminiRes.ok) {
+      const errText = await geminiRes.text();
+      return res.status(geminiRes.status).json({
+        error: `Gemini TTS fallback error (HTTP ${geminiRes.status})`,
+        details: errText.slice(0, 300)
+      });
+    }
+
+    const data = await geminiRes.json();
+    const audioData = data?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    const mimeType = data?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.mimeType || 'audio/wav';
+
+    if (!audioData) {
+      return res.status(500).json({ error: 'No audio data in Gemini fallback response' });
+    }
+
+    const audioBuffer = Buffer.from(audioData, 'base64');
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('X-Voice-Engine', 'Gemini-TTS');
+    res.setHeader('X-Voice-Name', 'Fenrir');
+    res.send(audioBuffer);
+
   } catch (e) {
-    if (!res.headersSent) return res.status(500).json({ error: e.message });
-    return res.end();
+    if (!res.headersSent) return res.status(500).json({ error: 'Fallback voice error: ' + e.message });
   }
 }
