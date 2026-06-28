@@ -1,156 +1,137 @@
-export const config = { maxDuration: 60 };
+import { EdgeTTS } from 'edge-tts-universal';
 
-const GEMINI_TTS_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent';
+// Best human-sounding voices ranked by naturalness
+const VOICE_PROFILES = {
+  // Primary: Brian (UK) — deepest, most natural, Jarvis-like
+  jarvis: {
+    voice: 'en-GB-RyanNeural',
+    rate: '-5%',
+    pitch: '-8Hz',
+    volume: '+10%'
+  },
+  // Backup 1: Christopher — warm US male, very natural
+  christopher: {
+    voice: 'en-US-ChristopherNeural',
+    rate: '-3%',
+    pitch: '-4Hz',
+    volume: '+8%'
+  },
+  // Backup 2: Steffan (UK) — smooth, professional
+  steffan: {
+    voice: 'en-GB-ThomasNeural',
+    rate: '-4%',
+    pitch: '-6Hz',
+    volume: '+8%'
+  }
+};
+
+function buildSSML(text, profile) {
+  const { voice, rate, pitch, volume } = profile;
+
+  // Smart sentence splitting — adds micro-pauses at punctuation
+  const ssmlText = text
+    // Commas → brief pause
+    .replace(/,\s+/g, ', <break time="120ms"/> ')
+    // Periods / exclamation → medium pause
+    .replace(/\.\s+/g, '. <break time="200ms"/> ')
+    // Colons / semicolons → slight pause
+    .replace(/[:;]\s+/g, ': <break time="150ms"/> ')
+    // Dashes (em dash) → conversational pause
+    .replace(/\s*—\s*/g, ' <break time="180ms"/> ')
+    // Numbers: add slight emphasis for clarity
+    .replace(/\b(\d+(?:\.\d+)?)\b/g, '<emphasis level="moderate">$1</emphasis>')
+    // "Sir" → slight emphasis, very natural
+    .replace(/\bSir\b/g, '<emphasis level="moderate">Sir</emphasis>');
+
+  return `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis"
+    xmlns:mstts="https://www.w3.org/2001/mstts"
+    xml:lang="en-GB">
+    <voice name="${voice}">
+      <mstts:express-as style="default" styledegree="1">
+        <prosody rate="${rate}" pitch="${pitch}" volume="${volume}">
+          ${ssmlText}
+        </prosody>
+      </mstts:express-as>
+    </voice>
+  </speak>`;
+}
+
+function cleanText(text) {
+  return text
+    .replace(/\*\*/g, '').replace(/\*/g, '')
+    .replace(/#{1,6}\s/g, '').replace(/`/g, '')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/\n+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 900);
+}
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return res.status(500).json({ error: 'GEMINI_API_KEY not set' });
-
-  const { text } = req.body;
-  if (!text?.trim()) return res.status(400).json({ error: 'No text provided' });
-
-  // Clean text — strip markdown, collapse whitespace, cap at 800 chars
-  const clean = text
-    .replace(/\*\*/g, '').replace(/\*/g, '')
-    .replace(/#{1,6}\s/g, '').replace(/`/g, '')
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-    .replace(/\n+/g, ' ').replace(/\s{2,}/g, ' ')
-    .trim().slice(0, 800);
-
-  if (!clean) return res.status(400).json({ error: 'Text was empty after cleaning' });
-
-  // Voice style prompt — makes Gemini TTS sound like Jarvis
-  const voicePrompt = `You are a sophisticated AI assistant named Scorpion with a deep, calm, confident British male voice. 
-Speak with measured authority and subtle warmth — like a trusted advisor addressing someone important. 
-Pace yourself naturally, with slight pauses before key information. 
-Sound human, intelligent, and composed. Never robotic or flat.`;
-
-  const body = JSON.stringify({
-    contents: [
-      {
-        parts: [
-          { text: voicePrompt + '\n\nNow speak this:\n' + clean }
-        ]
-      }
-    ],
-    generationConfig: {
-      responseModalities: ['AUDIO'],
-      speechConfig: {
-        voiceConfig: {
-          prebuiltVoiceConfig: {
-            voiceName: 'Charon'
-          }
-        }
-      }
-    }
-  });
-
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 30000);
+    const { text, voiceProfile } = req.body;
+    if (!text || !text.trim()) return res.status(400).json({ error: 'No text provided' });
 
-    const geminiRes = await fetch(`${GEMINI_TTS_URL}?key=${apiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body,
-      signal: controller.signal
-    });
+    const clean = cleanText(text);
+    const profile = VOICE_PROFILES[voiceProfile] || VOICE_PROFILES.jarvis;
+    const ssml = buildSSML(clean, profile);
 
-    clearTimeout(timeout);
-
-    if (!geminiRes.ok) {
-      const errText = await geminiRes.text();
-      if (geminiRes.status === 400) {
-        return tryFallbackVoice(apiKey, clean, voicePrompt, res);
-      }
-      return res.status(geminiRes.status).json({
-        error: `Gemini TTS error (HTTP ${geminiRes.status})`,
-        details: errText.slice(0, 300)
-      });
-    }
-
-    const data = await geminiRes.json();
-    const audioData = data?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-    const mimeType = data?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.mimeType || 'audio/wav';
-
-    if (!audioData) {
-      return res.status(500).json({ error: 'No audio data in Gemini response' });
-    }
-
-    const audioBuffer = Buffer.from(audioData, 'base64');
-    res.setHeader('Content-Type', mimeType);
+    res.setHeader('Content-Type', 'audio/mpeg');
     res.setHeader('Cache-Control', 'no-store');
-    res.setHeader('X-Voice-Engine', 'Gemini-TTS');
-    res.setHeader('X-Voice-Model', 'gemini-2.5-flash-preview-tts');
-    res.setHeader('X-Voice-Name', 'Charon');
-    res.send(audioBuffer);
+    res.setHeader('Transfer-Encoding', 'chunked');
+
+    // Try SSML synthesis first (most human-sounding)
+    let tts;
+    try {
+      tts = new EdgeTTS(ssml, profile.voice, { ssml: true });
+    } catch {
+      // edge-tts-universal older versions: pass plain text
+      tts = new EdgeTTS(clean, profile.voice);
+    }
+
+    const result = await tts.synthesize();
+
+    // Stream path 1: .stream() method (v2+)
+    if (result.audio && typeof result.audio.stream === 'function') {
+      const stream = result.audio.stream();
+      for await (const chunk of stream) res.write(chunk);
+      return res.end();
+    }
+
+    // Stream path 2: .audioStream property
+    if (result.audioStream) {
+      for await (const chunk of result.audioStream) res.write(chunk);
+      return res.end();
+    }
+
+    // Fallback: buffer
+    const buf = Buffer.from(await result.audio.arrayBuffer());
+    res.write(buf);
+    return res.end();
 
   } catch (e) {
-    if (e.name === 'AbortError') {
-      return res.status(503).json({ error: 'Gemini TTS timed out — try again shortly.' });
-    }
-    if (!res.headersSent) return res.status(500).json({ error: e.message });
-  }
-}
-
-async function tryFallbackVoice(apiKey, clean, voicePrompt, res) {
-  const body = JSON.stringify({
-    contents: [
-      {
-        parts: [
-          { text: voicePrompt + '\n\nNow speak this:\n' + clean }
-        ]
-      }
-    ],
-    generationConfig: {
-      responseModalities: ['AUDIO'],
-      speechConfig: {
-        voiceConfig: {
-          prebuiltVoiceConfig: {
-            voiceName: 'Fenrir'
-          }
-        }
+    // If SSML failed, retry with plain text + best voice
+    if (!res.headersSent) {
+      try {
+        const clean = cleanText(req.body.text || '');
+        const tts = new EdgeTTS(clean, 'en-GB-RyanNeural');
+        const result = await tts.synthesize();
+        res.setHeader('Content-Type', 'audio/mpeg');
+        res.setHeader('Cache-Control', 'no-store');
+        const buf = Buffer.from(await result.audio.arrayBuffer());
+        res.write(buf);
+        return res.end();
+      } catch (e2) {
+        return res.status(500).json({ error: e2.message });
       }
     }
-  });
-
-  try {
-    const geminiRes = await fetch(`${GEMINI_TTS_URL}?key=${apiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body
-    });
-
-    if (!geminiRes.ok) {
-      const errText = await geminiRes.text();
-      return res.status(geminiRes.status).json({
-        error: `Gemini TTS fallback error (HTTP ${geminiRes.status})`,
-        details: errText.slice(0, 300)
-      });
-    }
-
-    const data = await geminiRes.json();
-    const audioData = data?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-    const mimeType = data?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.mimeType || 'audio/wav';
-
-    if (!audioData) {
-      return res.status(500).json({ error: 'No audio data in Gemini fallback response' });
-    }
-
-    const audioBuffer = Buffer.from(audioData, 'base64');
-    res.setHeader('Content-Type', mimeType);
-    res.setHeader('Cache-Control', 'no-store');
-    res.setHeader('X-Voice-Engine', 'Gemini-TTS');
-    res.setHeader('X-Voice-Name', 'Fenrir');
-    res.send(audioBuffer);
-
-  } catch (e) {
-    if (!res.headersSent) return res.status(500).json({ error: 'Fallback voice error: ' + e.message });
+    res.end();
   }
 }
