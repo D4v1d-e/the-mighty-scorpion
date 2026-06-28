@@ -72,7 +72,7 @@ Respond ONLY with valid JSON — no markdown, no extra text:
 }`;
 
     // ══════════════════════════════════════════════
-    // BUILD MESSAGES — same pattern as chat.js
+    // BUILD MESSAGES
     // ══════════════════════════════════════════════
 
     const userText = isClarify
@@ -94,7 +94,7 @@ Respond ONLY with valid JSON — no markdown, no extra text:
     ];
 
     // ══════════════════════════════════════════════
-    // BRAIN RUNNER — identical to chat.js
+    // BRAIN RUNNER
     // ══════════════════════════════════════════════
 
     async function tryBrain(fetchFn, timeoutMs) {
@@ -227,6 +227,7 @@ Respond ONLY with valid JSON — no markdown, no extra text:
         mnemonic: content.mnemonic || null,
         relatedConcepts: content.relatedConcepts || [],
         youtubeLinks,
+        youtubeSearch: youtubeQueries[0],
         brain: brainUsed
       });
     }
