@@ -1,3 +1,30 @@
+// ============================================================
+// IMAGE GENERATION API HANDLER
+// ============================================================
+// Description : Generates educational diagrams and illustrations
+//               using AI image generation models.
+//
+// Primary     : Google Gemini 2.0 Flash (Image Generation)
+//               Model: gemini-2.0-flash-preview-image-generation
+//
+// Fallback    : Pollinations.ai (Free AI Image Generation)
+//               URL : https://image.pollinations.ai
+//
+// Method      : GET
+// Query Param : ?prompt=your+image+description
+//
+// Response    : Raw image binary (image/jpeg or image/png)
+// Cache       : 24 hours (public, max-age=86400)
+// CORS        : Enabled (all origins)
+//
+// Environment Variables Required:
+//               GEMINI_API_KEY — Google Gemini API key (optional)
+//                                Falls back to Pollinations if absent
+//
+// Author      : Dr. Davie Mwangi
+// Version     : 1.0.0
+// ============================================================
+
 export default async function handler(req, res) {
 
   res.setHeader('Access-Control-Allow-Origin', '*');
