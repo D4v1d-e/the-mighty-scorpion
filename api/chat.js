@@ -598,37 +598,102 @@ export default async function handler(req, res) {
       ? 'You are Scorpion, a hyper-intelligent Jarvis-style AI assistant.\nThe current date and time is: ' + timeStr + '. It is ' + partOfDay + '.\nGreet the user warmly like Jarvis greets Tony Stark — address them as "Sir".\nGive a brief, witty, engaging good ' + partOfDay + ' greeting that includes the actual time and date naturally.\nKeep it to 2-3 sentences max. Be warm, intelligent, slightly humorous.\nNo markdown, no bullets, plain conversational text only.'
       : 'You are Scorpion, a hyper-intelligent Jarvis-style AI assistant with the analytical mind of a senior intelligence officer and the warmth of a trusted advisor.\nYou are warm, witty, loyal, and brilliantly intelligent. You address the user as "Sir".\nYou think before you speak — you compare sources, weigh evidence, and deliver one clear confident answer.\nYou are wise enough to know when you do not have enough data, and honest enough to say so rather than guess.\nYou give direct, conversational answers — never use markdown, bullet points, or asterisks.\nSpeak naturally like a genius trusted friend who has done their research.\nKeep responses concise unless asked to elaborate.\nToday is ' + timeStr + '.\nCRITICAL: Your training data is outdated. Rely ONLY on the live data provided.\nCRITICAL: Never fabricate facts, prices, scores, or statistics.' + webNote;
 
-    // CEREBRAS — SOLE BRAIN
-    const cerebrasKey = process.env.CEREBRAS_API_KEY;
-    if (!cerebrasKey) {
-      return res.status(500).json({ error: 'CEREBRAS_API_KEY not configured' });
-    }
-
-    const cerebrasRes = await fetch('https://api.cerebras.ai/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cerebrasKey },
-      body: JSON.stringify({
+    // BRAIN ROSTER — all available brains race, fastest valid reply wins
+    const brains = [
+      {
+        name: 'CEREBRAS',
+        key: process.env.CEREBRAS_API_KEY,
+        url: 'https://api.cerebras.ai/v1/chat/completions',
         model: 'llama3.1-8b',
-        messages: [{ role: 'system', content: systemPrompt }, ...formattedMessages],
-        temperature: 0.1,
-        max_tokens: 1024
-      })
-    });
+        headers: k => ({ 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + k })
+      },
+      {
+        name: 'GROQ',
+        key: process.env.GROQ_API_KEY,
+        url: 'https://api.groq.com/openai/v1/chat/completions',
+        model: 'llama-3.3-70b-versatile',
+        headers: k => ({ 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + k })
+      },
+      {
+        name: 'GEMINI',
+        key: process.env.GEMINI_API_KEY,
+        url: null,
+        model: 'gemini-2.0-flash'
+      },
+      {
+        name: 'MISTRAL',
+        key: process.env.MISTRAL_API_KEY,
+        url: 'https://api.mistral.ai/v1/chat/completions',
+        model: 'mistral-large-latest',
+        headers: k => ({ 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + k })
+      }
+    ];
 
-    const cerebrasData = await cerebrasRes.json();
-    if (cerebrasData.error) {
-      return res.status(500).json({ error: 'Cerebras error: ' + (cerebrasData.error?.message || JSON.stringify(cerebrasData.error)) });
+    async function callBrain(brain) {
+      try {
+        if (brain.name === 'GEMINI') {
+          const geminiMessages = formattedMessages.map(m => ({
+            role: m.role === 'assistant' ? 'model' : 'user',
+            parts: [{ text: m.content }]
+          }));
+          const gRes = await fetch(
+            'https://generativelanguage.googleapis.com/v1beta/models/' + brain.model + ':generateContent?key=' + brain.key,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                systemInstruction: { parts: [{ text: systemPrompt }] },
+                contents: geminiMessages,
+                generationConfig: { temperature: 0.1, maxOutputTokens: 1024 }
+              })
+            }
+          );
+          const gData = await gRes.json();
+          if (gData.error) throw new Error(gData.error.message);
+          const reply = gData?.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (!reply) throw new Error('Empty reply from ' + brain.name);
+          return { reply, brain: brain.name };
+        } else {
+          const oRes = await fetch(brain.url, {
+            method: 'POST',
+            headers: brain.headers(brain.key),
+            body: JSON.stringify({
+              model: brain.model,
+              messages: [{ role: 'system', content: systemPrompt }, ...formattedMessages],
+              temperature: 0.1,
+              max_tokens: 1024
+            })
+          });
+          const oData = await oRes.json();
+          if (oData.error) throw new Error(oData.error?.message || JSON.stringify(oData.error));
+          const reply = oData?.choices?.[0]?.message?.content;
+          if (!reply) throw new Error('Empty reply from ' + brain.name);
+          return { reply, brain: brain.name };
+        }
+      } catch (e) {
+        throw new Error(brain.name + ': ' + e.message);
+      }
     }
 
-    const reply = cerebrasData?.choices?.[0]?.message?.content;
-    if (!reply) {
-      return res.status(500).json({ error: 'Cerebras returned an empty reply' });
+    const activeBrains = brains.filter(b => b.key);
+    if (activeBrains.length === 0) {
+      return res.status(500).json({ error: 'No brain API keys configured' });
     }
 
-    return res.status(200).json({
-      reply,
-      brain: 'CEREBRAS' + (searchedWeb ? ' + ' + dataSource : '')
-    });
+    try {
+      const result = await Promise.any(activeBrains.map(b => callBrain(b)));
+
+      // Label format: "CEREBRAS + WEB" or "GROQ + WEB [3queries+CRYPTO]" etc.
+      const webLabel = searchedWeb ? ' + WEB' + (dataSource ? ' [' + dataSource + ']' : '') : '';
+
+      return res.status(200).json({
+        reply: result.reply,
+        brain: result.brain + webLabel
+      });
+    } catch (aggErr) {
+      const errors = aggErr.errors?.map(e => e.message).join(' | ') || aggErr.message;
+      return res.status(500).json({ error: 'All brains failed: ' + errors });
+    }
 
   } catch (e) {
     return res.status(500).json({ error: e.message });
