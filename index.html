@@ -79,8 +79,6 @@ main{flex:1;overflow:hidden;display:flex;flex-direction:column;gap:6px;padding:6
 .met-val{font-size:13px;color:var(--G);text-shadow:0 0 10px rgba(0,255,102,.4);line-height:1.1;font-family:var(--mono)}
 .met-unit{font-size:7px;color:var(--muted);margin-left:1px}
 .bottom-tri{display:grid;grid-template-columns:290px 1fr 250px;gap:6px;flex:1;min-height:0;overflow:hidden}
-
-/* ── YouTube pane ── */
 .yt-pane{background:var(--panel);border:1px solid var(--border);border-radius:3px;position:relative;overflow:hidden;display:flex;flex-direction:column}
 .yt-pane::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(255,51,85,.25),transparent)}
 .yt-pane-header{display:flex;align-items:center;padding:7px 10px;border-bottom:1px solid var(--border);flex-shrink:0}
@@ -109,8 +107,6 @@ main{flex:1;overflow:hidden;display:flex;flex-direction:column;gap:6px;padding:6
 .yt-vol label{font-family:var(--display);font-size:6px;color:var(--muted)}
 #yt-vol-slider{width:55px;accent-color:var(--G)}
 .yt-track-info{display:flex;justify-content:space-between;font-size:9px;color:var(--muted);flex-shrink:0;font-family:var(--mono)}
-
-/* ── Response panel ── */
 .panel{background:var(--panel);border:1px solid var(--border);border-radius:3px;padding:8px 10px;position:relative;overflow:hidden;display:flex;flex-direction:column}
 .panel::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--G2),transparent)}
 .plabel{font-family:var(--display);font-size:6.5px;font-weight:700;letter-spacing:.3em;color:var(--muted);margin-bottom:6px;display:flex;align-items:center;gap:8px;flex-shrink:0}
@@ -118,10 +114,11 @@ main{flex:1;overflow:hidden;display:flex;flex-direction:column;gap:6px;padding:6
 #output{flex:1;overflow-y:auto;font-size:14px;line-height:1.8;color:var(--text);word-break:break-word;scrollbar-width:thin;scrollbar-color:var(--border) transparent;min-height:0;font-family:var(--body)}
 #output::-webkit-scrollbar{width:3px}
 #output::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+#output img{max-width:100%;border-radius:4px;margin:6px 0;border:1px solid var(--border)}
 .out-think::after{content:' ▋';animation:blink .7s infinite;color:var(--amber)}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
 
-/* ── IN-PLACE WORD HIGHLIGHT ── */
+/* ══ WORD HIGHLIGHT TTS ══ */
 .tts-word{display:inline;transition:background .05s,color .05s}
 .tts-word.tts-active{
   background:rgba(0,255,102,.22);
@@ -138,8 +135,6 @@ main{flex:1;overflow:hidden;display:flex;flex-direction:column;gap:6px;padding:6
 #cmd::placeholder{color:var(--muted)}
 #send-btn{background:transparent;border:1px solid rgba(0,255,102,.3);border-radius:3px;color:var(--G);font-family:var(--display);font-size:6.5px;font-weight:700;letter-spacing:.2em;padding:7px 12px;cursor:pointer;white-space:nowrap}
 #send-btn:hover{background:rgba(0,255,102,.1)}
-
-/* ── History panel ── */
 .history-panel{background:var(--panel);border:1px solid var(--border);border-radius:3px;position:relative;overflow:hidden;display:flex;flex-direction:column}
 .history-panel::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--G2),transparent)}
 .hist-header{display:flex;align-items:center;justify-content:space-between;padding:7px 10px;border-bottom:1px solid var(--border);flex-shrink:0}
@@ -147,24 +142,52 @@ main{flex:1;overflow:hidden;display:flex;flex-direction:column;gap:6px;padding:6
 .hist-count{font-family:var(--display);font-size:6px;font-weight:700;color:var(--G);border:1px solid var(--border);border-radius:2px;padding:2px 6px}
 #history{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:4px;padding:6px 8px;min-height:0;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
 .hitem{display:flex;gap:7px;padding:5px 8px;background:var(--deep);border-left:2px solid;border-radius:0 3px 3px 0;font-size:12px;line-height:1.5;font-family:var(--body)}
-.hitem.u{border-color:var(--muted)}.hitem.a{border-color:var(--G)}.hitem.yt{border-color:var(--red)}
+.hitem.u{border-color:var(--muted)}.hitem.a{border-color:var(--G)}.hitem.yt{border-color:var(--red)}.hitem.study{border-color:var(--cyan)}
 .hrole{font-family:var(--display);font-size:5.5px;font-weight:700;letter-spacing:.18em;min-width:26px;padding-top:2px}
-.hitem.u .hrole{color:var(--muted)}.hitem.a .hrole{color:var(--G)}.hitem.yt .hrole{color:var(--red)}
+.hitem.u .hrole{color:var(--muted)}.hitem.a .hrole{color:var(--G)}.hitem.yt .hrole{color:var(--red)}.hitem.study .hrole{color:var(--cyan)}
 .htext{color:var(--text);flex:1}
 .hist-footer{display:flex;justify-content:flex-end;padding:5px 8px;border-top:1px solid var(--border);flex-shrink:0}
 #clear-btn{background:none;border:none;cursor:pointer;font-family:var(--mono);font-size:8px;color:var(--muted)}
 #clear-btn:hover{color:var(--red)}
-
-/* ── Audio viz ── */
 #viz{display:flex;align-items:flex-end;gap:2px;height:20px}
 .vb{width:3px;min-height:2px;border-radius:1px 1px 0 0;background:linear-gradient(180deg,var(--G),rgba(0,255,102,.25));opacity:.3}
 .vb.on{opacity:1;animation:vbp var(--vd) ease-in-out infinite var(--vdl)}
 @keyframes vbp{0%,100%{transform:scaleY(1)}50%{transform:scaleY(2)}}
 .spark{width:100%;height:20px;margin-top:4px}
 .gauge-arc{width:100%;height:36px}
-
 footer{border-top:1px solid var(--border);padding:5px 0;display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
 .ftxt{font-size:7px;letter-spacing:.18em;color:var(--muted);font-family:var(--mono)}
+
+/* ══ STUDY COMPONENTS ══ */
+.study-sec{margin-bottom:10px}
+.study-sec-title{font-family:var(--display);font-size:7px;font-weight:700;letter-spacing:.3em;display:flex;align-items:center;gap:7px;margin-bottom:6px;padding-bottom:4px;border-bottom:1px solid rgba(255,255,255,.06)}
+.study-sec-title::before{content:'';width:3px;height:12px;border-radius:1px;background:currentColor;flex-shrink:0}
+.fact-row{display:flex;gap:8px;padding:4px 0;border-bottom:1px solid rgba(0,255,102,.06);font-size:14px;line-height:1.6}
+.fact-bullet{color:var(--G);flex-shrink:0;font-family:var(--mono);font-size:13px;padding-top:1px}
+.kv-table{width:100%;border-collapse:collapse;font-size:13px}
+.kv-table td{padding:5px 8px;border-bottom:1px solid rgba(0,255,102,.07);vertical-align:top}
+.kv-table tr:nth-child(even) td{background:rgba(0,255,102,.03)}
+.kv-table td:first-child{color:var(--muted);width:38%;font-family:var(--mono);font-size:12px;padding-right:12px}
+.kv-table td:last-child{color:var(--text)}
+.info-strip{padding:8px 12px;border-left:2px solid;border-radius:0 4px 4px 0;font-size:14px;line-height:1.65;margin-bottom:4px;font-family:var(--body)}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px}
+.tag-list{display:flex;flex-wrap:wrap;gap:5px;margin-top:4px}
+.tag{background:rgba(0,229,255,.07);border:1px solid rgba(0,229,255,.2);border-radius:2px;color:var(--cyan);font-family:var(--display);font-size:6.5px;font-weight:700;letter-spacing:.1em;padding:3px 9px;cursor:pointer;transition:background .2s}
+.tag:hover{background:rgba(0,229,255,.14)}
+.act-row{display:flex;gap:5px;margin-top:10px;flex-wrap:wrap}
+.act-btn{border:1px solid;border-radius:2px;font-family:var(--display);font-size:6.5px;font-weight:700;letter-spacing:.15em;padding:6px 12px;cursor:pointer;white-space:nowrap;transition:opacity .2s}
+.act-btn:hover{opacity:.8}
+.step-item{display:flex;gap:10px;padding:6px 0;border-bottom:1px solid rgba(0,255,102,.06);font-size:14px}
+.step-num{font-family:var(--display);font-size:9px;font-weight:700;color:var(--G);min-width:22px;padding-top:2px}
+.step-body{flex:1}
+.step-title{color:var(--cyan);font-weight:600;margin-bottom:2px;font-size:13px}
+.step-detail{color:var(--text);line-height:1.6}
+.overview-block{font-size:14px;color:var(--text);line-height:1.8;padding:8px 12px;border-left:2px solid rgba(0,255,102,.3);border-radius:0 4px 4px 0;margin-bottom:8px;background:rgba(0,255,102,.03)}
+.mechanism-block{font-size:14px;color:var(--text);line-height:1.8;padding:8px 12px;border-left:2px solid rgba(0,229,255,.3);border-radius:0 4px 4px 0;margin-bottom:6px;background:rgba(0,229,255,.03)}
+
+/* ══ LAZY IMAGE PLACEHOLDER ══ */
+.img-lazy{width:100%;border-radius:4px;border:1px solid var(--border);object-fit:cover;max-height:160px;background:rgba(0,255,102,.04);min-height:80px}
+.img-placeholder{display:flex;align-items:center;justify-content:center;flex:1;min-width:0;border-radius:4px;border:1px solid var(--border);background:rgba(0,255,102,.04);min-height:80px;max-height:160px;font-family:var(--display);font-size:6px;letter-spacing:.15em;color:var(--muted)}
 
 @media(max-width:1100px){.bottom-tri{grid-template-columns:240px 1fr 210px}}
 @media(max-width:900px){
@@ -372,14 +395,14 @@ footer{border-top:1px solid var(--border);padding:5px 0;display:flex;justify-con
     </div>
   </div>
 
-  <!-- CENTER: Response -->
+  <!-- CENTER: Response + Study -->
   <div class="panel">
-    <div class="plabel">SCORPION RESPONSE CORE</div>
+    <div class="plabel" id="panel-label">SCORPION RESPONSE CORE</div>
     <div id="output">
       <span style="color:var(--muted);font-size:13px">Initialising Scorpion AI…</span>
     </div>
     <div class="irow">
-      <input type="text" id="cmd" placeholder="Speak or type — 'play X', 'weather in X', or ask anything…" autocomplete="off" spellcheck="false">
+      <input type="text" id="cmd" placeholder="Speak or type — 'study X', 'play X', 'weather in X'…" autocomplete="off" spellcheck="false">
       <button id="send-btn" onclick="sendCmd()">SEND ▶</button>
     </div>
   </div>
@@ -403,12 +426,9 @@ footer{border-top:1px solid var(--border);padding:5px 0;display:flex;justify-con
 </footer>
 </div>
 
-<!-- YouTube IFrame API -->
 <script src="https://www.youtube.com/iframe_api"></script>
-
-<!-- Matrix BG + decorative JS (stays in HTML) -->
 <script>
-// ── MATRIX BG ──
+// ══ MATRIX BG ══
 (function(){
   const c=document.getElementById('matrix-canvas'),ctx=c.getContext('2d');
   function resize(){c.width=innerWidth;c.height=innerHeight}resize();
@@ -425,7 +445,7 @@ footer{border-top:1px solid var(--border);padding:5px 0;display:flex;justify-con
   },55);
 })();
 
-// ── TICK RING ──
+// ══ TICK RING ══
 (function(){
   const g=document.getElementById('ticks');
   for(let i=0;i<36;i++){
@@ -438,7 +458,6 @@ footer{border-top:1px solid var(--border);padding:5px 0;display:flex;justify-con
   }
 })();
 
-// ── ANIMATED BARS ──
 function makeBars(id,n){
   const el=document.getElementById(id);
   for(let i=0;i<n;i++){
@@ -461,7 +480,6 @@ makeBars('q-bars',10);makeBars('n-bars',10);makeBars('c-bars',10);
   }
 })();
 
-// ── SPARK LINE ──
 (function(){
   const pts=Array(20).fill(0).map(()=>Math.random()*14+4);
   function render(){
@@ -473,7 +491,7 @@ makeBars('q-bars',10);makeBars('n-bars',10);makeBars('c-bars',10);
   render();setInterval(()=>{pts.shift();pts.push(Math.random()*14+4);render();},1100);
 })();
 
-// ── CLOCK + UPTIME ──
+// ══ CLOCK ══
 const t0=Date.now();
 function updateClock(){
   const n=new Date();
@@ -485,7 +503,6 @@ function updateClock(){
 }
 updateClock();setInterval(updateClock,1000);
 
-// ── LIVE METRIC FLICKER ──
 setInterval(()=>{
   document.getElementById('d-cpu').textContent=(87+Math.random()*11).toFixed(1)+'%';
   document.getElementById('d-lat').textContent=Math.floor(Math.random()*6+2)+'ms';
@@ -493,15 +510,886 @@ setInterval(()=>{
   document.getElementById('d-ul').textContent='↑ '+(7+Math.random()*5).toFixed(1)+'TB';
 },2200);
 
-// ── QUERY COUNTER (used by chat.js) ──
-let _qCount=0;
+let qcount=0,dcount=0;
 function bumpQ(){
-  document.getElementById('m-q').textContent=++_qCount;
-  document.getElementById('d-dec').textContent=_qCount;
+  document.getElementById('m-q').textContent=++qcount;
+  document.getElementById('d-dec').textContent=++dcount;
+  document.getElementById('hist-count').textContent=qcount;
 }
-</script>
 
-<!-- Main logic -->
-<script src="chat.js"></script>
+// ══ CORE STATE ══
+let state='idle',alwaysOn=false,recognition=null,audioUnlocked=false,processingCmd=false;
+let conversationHistory=[];
+const MAX_HISTORY=20;
+let lastStudyTopic='';
+
+// ══════════════════════════════════════════════════════════════════
+//  WORD-HIGHLIGHT TTS ENGINE
+//  Strategy:
+//    1) EdgeTTS via /api/speaker → audio plays, we run a timer-based
+//       word ticker that advances word highlights at estimated speaking
+//       rate (~145 wpm = ~415ms/word), synced to audio.currentTime.
+//    2) Browser SpeechSynthesis fallback → uses native `boundary`
+//       events for precise highlight (Chrome only).
+//  Both paths wrap the text into <span class="tts-word"> spans
+//  inside a dedicated #tts-reader overlay that appears while reading.
+// ══════════════════════════════════════════════════════════════════
+
+let _currentAudio = null;
+let _ttsWordSpans = [];
+let _ttsWordTimers = [];
+let _ttsReaderId = 'tts-reader-overlay';
+
+function clearTTSHighlight() {
+  _ttsWordTimers.forEach(clearTimeout);
+  _ttsWordTimers = [];
+  _ttsWordSpans.forEach(s => s.classList.remove('tts-active'));
+  _ttsWordSpans = [];
+  const overlay = document.getElementById(_ttsReaderId);
+  if (overlay) overlay.remove();
+}
+
+// Wraps plain text into word spans and returns the container element.
+// Also builds a flat array of all spans for programmatic highlighting.
+function buildWordSpanContainer(text) {
+  const overlay = document.createElement('div');
+  overlay.id = _ttsReaderId;
+  overlay.style.cssText = `
+    background:rgba(0,13,5,.92);border:1px solid rgba(0,255,102,.25);
+    border-radius:4px;padding:10px 14px;margin-bottom:8px;
+    font-size:15px;line-height:1.9;color:var(--text);
+    font-family:var(--body);position:relative;
+  `;
+
+  // Header
+  const hdr = document.createElement('div');
+  hdr.style.cssText='font-family:var(--display);font-size:6px;letter-spacing:.25em;color:var(--G);margin-bottom:8px;display:flex;align-items:center;gap:6px';
+  hdr.innerHTML='<span style="width:6px;height:6px;background:var(--G);border-radius:50%;box-shadow:0 0 8px var(--G);display:inline-block;animation:sdot 1s infinite"></span> SCORPION READING ALOUD';
+  overlay.appendChild(hdr);
+
+  const textDiv = document.createElement('div');
+  const words = text.split(/(\s+)/);
+  _ttsWordSpans = [];
+
+  words.forEach(token => {
+    if (/^\s+$/.test(token)) {
+      textDiv.appendChild(document.createTextNode(token));
+    } else {
+      const sp = document.createElement('span');
+      sp.className = 'tts-word';
+      sp.textContent = token;
+      _ttsWordSpans.push(sp);
+      textDiv.appendChild(sp);
+    }
+  });
+
+  overlay.appendChild(textDiv);
+  return overlay;
+}
+
+// Inject the reader overlay at the TOP of #output (before other content)
+function injectTTSOverlay(text) {
+  clearTTSHighlight();
+  const out = document.getElementById('output');
+  const overlay = buildWordSpanContainer(text);
+  out.insertBefore(overlay, out.firstChild);
+  out.scrollTop = 0;
+  return overlay;
+}
+
+// Timer-based word advancement for EdgeTTS audio
+// Estimates ~145 wpm base rate; adjusts for short/long words
+function runTimerHighlight(audio, words) {
+  // avg ms per word at 145wpm = 413ms; short words faster, long words slower
+  const msPerChar = 55; // ~55ms per character at normal speaking pace
+  const minMs = 180;
+  let elapsed = 0;
+
+  words.forEach((sp, i) => {
+    const wordLen = sp.textContent.length;
+    const duration = Math.max(minMs, wordLen * msPerChar);
+
+    const t = setTimeout(() => {
+      // sync check — if audio ended early, stop highlighting
+      if (_currentAudio && audio !== _currentAudio) return;
+      _ttsWordSpans.forEach(s => s.classList.remove('tts-active'));
+      sp.classList.add('tts-active');
+      // scroll span into view within output panel
+      sp.scrollIntoView({block:'nearest',behavior:'smooth'});
+    }, elapsed);
+
+    _ttsWordTimers.push(t);
+    elapsed += duration;
+  });
+
+  // clear last highlight after final word
+  const finalT = setTimeout(() => {
+    _ttsWordSpans.forEach(s => s.classList.remove('tts-active'));
+  }, elapsed + 400);
+  _ttsWordTimers.push(finalT);
+}
+
+function stopAllSpeech() {
+  if (_currentAudio) {
+    _currentAudio.pause();
+    _currentAudio.src = '';
+    _currentAudio = null;
+  }
+  if (window.speechSynthesis) window.speechSynthesis.cancel();
+  clearTTSHighlight();
+}
+
+function setOrbState(newState,statusText){
+  state=newState;
+  document.getElementById('orb-stage').className=newState;
+  document.getElementById('orb-status').innerText=statusText;
+  document.getElementById('m-st').textContent=newState.toUpperCase();
+  document.getElementById('d-mic').textContent=newState==='listening'?'ACTIVE':newState==='speaking'?'PLAYBACK':'STANDBY';
+  document.querySelectorAll('.vb').forEach(b=>b.classList.toggle('on',newState==='listening'||newState==='speaking'));
+  const ms=document.getElementById('matrix-status');
+  ms.textContent={
+    idle:'SYSTEM STATUS: OPTIMAL // CONSCIOUSNESS MATRIX STABLE',
+    listening:'NEURAL RECEPTORS ACTIVE // AWAITING VOICE INPUT',
+    thinking:'QUANTUM PROCESSING // CALCULATING OPTIMAL RESPONSE',
+    speaking:'VOCAL SYNTHESIS ACTIVE // NEURAL OUTPUT STREAM',
+  }[newState]||'';
+}
+
+function unlockAudio(){
+  if(audioUnlocked)return;
+  try{new Audio("data:audio/mp3;base64,//uQxAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAACcQCA").play().catch(()=>{});audioUnlocked=true;}catch(e){}
+}
+
+function playTone(f1,f2,dur,vol,delay){
+  setTimeout(()=>{try{
+    const ctx=new(window.AudioContext||window.webkitAudioContext)();
+    const osc=ctx.createOscillator(),gain=ctx.createGain();
+    osc.connect(gain);gain.connect(ctx.destination);
+    osc.frequency.setValueAtTime(f1,ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(f2,ctx.currentTime+dur);
+    gain.gain.setValueAtTime(vol||.25,ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+dur+.05);
+    osc.start(ctx.currentTime);osc.stop(ctx.currentTime+dur+.1);
+  }catch(e){}},delay||0);
+}
+function playActivationSound(){playTone(200,600,.3,.3,0);playTone(880,880,.15,.2,350)}
+function playInterruptSound(){playTone(800,300,.15,.2,0)}
+function playStopSound(){playTone(500,150,.25,.25,0)}
+
+function orbTapped(){
+  unlockAudio();
+  if(!alwaysOn){
+    alwaysOn=true;
+    document.getElementById('m-vc').textContent='ON';
+    playActivationSound();
+    initAndStartListening();
+  } else {
+    alwaysOn=false;
+    document.getElementById('m-vc').textContent='OFF';
+    stopAllSpeech();
+    stopRecognition();
+    processingCmd=false;
+    playStopSound();
+    setOrbState('idle','TAP TO ACTIVATE ALWAYS-ON MODE');
+  }
+}
+
+function initAndStartListening(){
+  if(!('webkitSpeechRecognition' in window)&&!('SpeechRecognition' in window)){
+    setOrbState('idle','VOICE NOT SUPPORTED — USE CHROME');alwaysOn=false;return;
+  }
+  if(recognition){try{recognition.abort()}catch(e){}recognition=null}
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  recognition=new SR();recognition.continuous=true;recognition.interimResults=true;recognition.lang='en-US';
+  recognition.onresult=function(event){
+    let ft='';
+    for(let i=event.resultIndex;i<event.results.length;i++){
+      if(event.results[i].isFinal){ft+=event.results[i][0].transcript;}
+      else{
+        const it=event.results[i][0].transcript;
+        document.getElementById('d-conf').textContent=Math.floor((event.results[i][0].confidence||.85)*100)+'%';
+        if(state==='speaking'&&it.length>2){
+          stopAllSpeech();
+          playInterruptSound();
+          setOrbState('listening','INTERRUPTED — LISTENING...');
+        }
+      }
+    }
+    if(ft.trim()&&!processingCmd){
+      const cmd=ft.trim();
+      if(document.activeElement===document.getElementById('cmd'))return;
+      document.getElementById('cmd').value=cmd;
+      routeCommand(cmd);
+    }
+  };
+  recognition.onerror=function(e){
+    if(e.error==='aborted'||e.error==='no-speech')return;
+    if(e.error==='not-allowed'){alwaysOn=false;setOrbState('idle','MIC BLOCKED — CHECK PERMISSIONS');}
+  };
+  recognition.onend=function(){if(alwaysOn)setTimeout(()=>{if(alwaysOn&&recognition)try{recognition.start()}catch(e){}},150)};
+  setOrbState('listening','ALWAYS ON — SPEAK ANYTIME');
+  try{recognition.start()}catch(e){}
+}
+function stopRecognition(){if(recognition){try{recognition.abort()}catch(e){}recognition=null}}
+
+// ══ COMMAND ROUTER ══
+function routeCommand(cmd){
+  const c=cmd.toLowerCase().trim();
+  if(/^(play|put on|i want to (hear|listen to)|search (youtube )?for|youtube|queue|stream)\s+.+/i.test(c)){
+    const q=cmd.replace(/^(play|put on|i want to (hear|listen to)|search (youtube )?for|youtube|queue|stream)\s*/i,'').replace(/\s*(on youtube|for me|please|now)\s*/ig,'').trim();
+    handleYouTube(q);return;
+  }
+  if(/^(study|explain|teach me about|show me|learn about|learn|quiz me on)\s+.+/i.test(c)){
+    const topic=cmd.replace(/^(study|explain|teach me about|show me|learn about|learn|quiz me on)\s*/i,'').trim();
+    handleStudyMode(topic);return;
+  }
+  if(/\b(weather|temperature|forecast|raining|rain|sunny|humidity|wind speed)\b/i.test(c)){handleWeather(cmd);return;}
+  if(/\b(next|skip|next song|next track|skip this)\b/i.test(c)){ytNext();return;}
+  if(/\b(previous|prev|go back|last song|back)\b/i.test(c)){ytPrev();return;}
+  if(/\b(pause)\b/i.test(c)&&ytResults.length){ytPause();return;}
+  if(/\b(resume|unpause|continue|play again|keep playing)\b/i.test(c)&&ytResults.length){ytResume();return;}
+  if(/\b(mute|silence (the music|it))\b/i.test(c)){ytMute();return;}
+  if(/\b(unmute|restore (sound|audio))\b/i.test(c)){ytUnmute();return;}
+  if(/\b(volume up|louder|increase volume|turn it up)\b/i.test(c)){ytVolumeUp();return;}
+  if(/\b(volume down|quieter|lower volume|turn it down)\b/i.test(c)){ytVolumeDown();return;}
+  if(/\b(close (youtube|player|music)|stop (youtube|video|music|playing))\b/i.test(c)){ytClose();return;}
+  if(/^(stop|quiet|silence|shut up|enough|stop talking|be quiet)$/i.test(c)){
+    stopAllSpeech();
+    setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');
+    return;
+  }
+  if(/\b(sing|hum|rap|compose a song|write a song)\b/i.test(c)){handleSing(cmd);return;}
+  setOrbState('thinking','HEARD: '+cmd.toUpperCase().slice(0,45));
+  sendCmdText(cmd);
+}
+
+// ══ YOUTUBE ENGINE ══
+let ytResults=[],ytIndex=0,ytPaused=false,ytMuted=false,ytPlayer=null,ytPlayerReady=false,ytVolume=80;
+
+function setYtBadge(s){
+  const b=document.getElementById('yt-status-badge'),live=document.getElementById('yt-live-status');
+  b.className=s;
+  b.textContent={idle:'IDLE',playing:'PLAYING',paused:'PAUSED',muted:'MUTED'}[s]||s.toUpperCase();
+  if(live){live.textContent={playing:'▶ PLAYING',paused:'⏸ PAUSED',muted:'🔇 MUTED',idle:'—'}[s]||'';live.style.color=s==='playing'?'var(--G)':s==='paused'?'var(--amber)':s==='muted'?'var(--red)':'var(--muted)';}
+}
+
+window.onYouTubeIframeAPIReady=function(){
+  ytPlayer=new YT.Player('yt-frame',{
+    height:'100%',width:'100%',
+    playerVars:{autoplay:1,rel:0,modestbranding:1,playsinline:1},
+    events:{
+      onReady:(e)=>{ytPlayerReady=true;e.target.setVolume(ytVolume);},
+      onStateChange:(e)=>{
+        if(e.data===YT.PlayerState.PLAYING){ytPaused=false;setYtBadge(ytMuted?'muted':'playing');document.getElementById('yt-pause-btn').textContent='⏸';}
+        else if(e.data===YT.PlayerState.PAUSED){ytPaused=true;setYtBadge('paused');document.getElementById('yt-pause-btn').textContent='▶';}
+        else if(e.data===YT.PlayerState.ENDED){setTimeout(ytNext,1500);}
+      }
+    }
+  });
+};
+
+async function handleYouTube(query){
+  if(!query||!query.trim()){document.getElementById('output').textContent='⚠ What would you like me to play?';return;}
+  processingCmd=true;stopAllSpeech();
+  setOrbState('thinking','SEARCHING YOUTUBE...');
+  document.getElementById('output').textContent='🔍 Searching: '+query;
+  addLog('u','play '+query);
+  try{
+    const r=await fetch('/api/youtube',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query})});
+    const data=await r.json();processingCmd=false;
+    if(data.error||!data.results||data.results.length===0){document.getElementById('output').textContent='⚠ '+(data.error||'No results for: '+query);setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');return;}
+    ytResults=data.results;ytIndex=0;ytPaused=false;ytMuted=false;ytPlayIndex(0);
+  }catch(e){processingCmd=false;document.getElementById('output').textContent='⚠ YouTube error: '+e.message;setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');}
+}
+
+function ytPlayIndex(i){
+  if(!ytResults.length)return;
+  const item=ytResults[i];
+  document.getElementById('yt-idle').style.display='none';
+  document.getElementById('yt-active').classList.add('show');
+  document.getElementById('yt-title').textContent=item.title;
+  document.getElementById('yt-channel').textContent='📺 '+item.channel;
+  document.getElementById('yt-index').textContent='TRACK '+(i+1)+' / '+ytResults.length;
+  document.getElementById('yt-pause-btn').textContent='⏸';
+  document.getElementById('yt-mute-btn').textContent='🔊';
+  document.getElementById('yt-mute-btn').classList.remove('active-mute');
+  ytPaused=false;ytMuted=false;
+  if(ytPlayerReady&&ytPlayer&&ytPlayer.loadVideoById){ytPlayer.unMute();ytPlayer.setVolume(ytVolume);ytPlayer.loadVideoById(item.videoId);}
+  else{document.getElementById('yt-frame').src='https://www.youtube.com/embed/'+item.videoId+'?autoplay=1&rel=0&modestbranding=1&enablejsapi=1';}
+  setYtBadge('playing');
+  document.getElementById('output').textContent='🎵 Now playing: '+item.title+'\n📺 '+item.channel;
+  addLog('a','Now playing: '+item.title,'YOUTUBE');
+  bumpQ();
+  setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');
+  document.getElementById('ft-brain').textContent='BRAIN: YOUTUBE // STREAMING';
+}
+
+function ytNext(){if(!ytResults.length)return;ytIndex=(ytIndex+1)%ytResults.length;ytPlayIndex(ytIndex);}
+function ytPrev(){if(!ytResults.length)return;ytIndex=(ytIndex-1+ytResults.length)%ytResults.length;ytPlayIndex(ytIndex);}
+function ytPause(){if(ytPlayerReady&&ytPlayer&&ytPlayer.pauseVideo)ytPlayer.pauseVideo();}
+function ytResume(){if(ytPlayerReady&&ytPlayer&&ytPlayer.playVideo)ytPlayer.playVideo();}
+function ytTogglePause(){if(ytPaused)ytResume();else ytPause();}
+function ytMute(){if(ytPlayerReady&&ytPlayer){ytPlayer.mute();ytMuted=true;document.getElementById('yt-mute-btn').textContent='🔇';document.getElementById('yt-mute-btn').classList.add('active-mute');setYtBadge('muted');}}
+function ytUnmute(){if(ytPlayerReady&&ytPlayer){ytPlayer.unMute();ytMuted=false;document.getElementById('yt-mute-btn').textContent='🔊';document.getElementById('yt-mute-btn').classList.remove('active-mute');setYtBadge(ytPaused?'paused':'playing');}}
+function ytToggleMute(){if(ytMuted)ytUnmute();else ytMute();}
+function ytSetVolume(v){ytVolume=parseInt(v);document.getElementById('yt-vol-val').textContent=v;if(ytPlayerReady&&ytPlayer&&ytPlayer.setVolume)ytPlayer.setVolume(ytVolume);}
+function ytVolumeUp(){ytVolume=Math.min(100,ytVolume+15);document.getElementById('yt-vol-slider').value=ytVolume;ytSetVolume(ytVolume);}
+function ytVolumeDown(){ytVolume=Math.max(0,ytVolume-15);document.getElementById('yt-vol-slider').value=ytVolume;ytSetVolume(ytVolume);}
+function ytClose(){
+  if(ytPlayerReady&&ytPlayer&&ytPlayer.stopVideo)ytPlayer.stopVideo();
+  document.getElementById('yt-frame').src='';
+  document.getElementById('yt-active').classList.remove('show');
+  document.getElementById('yt-idle').style.display='';
+  ytResults=[];ytIndex=0;ytPaused=false;ytMuted=false;
+  setYtBadge('idle');
+  document.getElementById('output').textContent='YouTube closed.';
+  document.getElementById('ft-brain').textContent='BRAIN: STANDBY';
+}
+
+// ══ WEATHER ══
+async function handleWeather(cmd){
+  processingCmd=true;setOrbState('thinking','CHECKING WEATHER...');addLog('u',cmd);
+  const m=cmd.match(/(?:weather|temperature|forecast|rain|sunny|humidity|wind)\s+(?:in|at|for|of)?\s*([a-zA-Z\s]+)/i);
+  const city=m?m[1].trim():'Nairobi';
+  try{
+    const geoRes=await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1`);
+    const geoData=await geoRes.json();
+    if(!geoData.results||!geoData.results.length){processingCmd=false;document.getElementById('output').textContent='⚠ Location not found: '+city;setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');return;}
+    const loc=geoData.results[0];
+    const wRes=await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${loc.latitude}&longitude=${loc.longitude}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code,apparent_temperature&timezone=auto`);
+    const wData=await wRes.json();const cur=wData.current;
+    const conds={0:'Clear sky',1:'Mainly clear',2:'Partly cloudy',3:'Overcast',45:'Foggy',51:'Light drizzle',61:'Slight rain',63:'Moderate rain',65:'Heavy rain',71:'Slight snow',80:'Rain showers',95:'Thunderstorm'};
+    const cond=conds[cur.weather_code]||'Variable';
+    const em=cur.weather_code===0?'☀️':cur.weather_code<=2?'⛅':cur.weather_code<=3?'☁️':cur.weather_code<=48?'🌫️':cur.weather_code<=67?'🌧️':cur.weather_code<=77?'❄️':'⛈️';
+    const reply=`${em} Weather in ${loc.name}, ${loc.country}\n\n🌡️ ${cur.temperature_2m}°C (feels like ${cur.apparent_temperature}°C)\n💧 Humidity: ${cur.relative_humidity_2m}%\n💨 Wind: ${cur.wind_speed_10m} km/h\n☁️ ${cond}`;
+    processingCmd=false;
+    document.getElementById('output').textContent=reply;
+    addLog('a',reply,'WEATHER');bumpQ();
+    setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');
+    speakReply(`Weather in ${loc.name}: ${cur.temperature_2m} degrees, feels like ${cur.apparent_temperature}. ${cond}. Humidity ${cur.relative_humidity_2m}%, wind ${cur.wind_speed_10m} kilometres per hour.`);
+  }catch(e){processingCmd=false;document.getElementById('output').textContent='⚠ Weather error: '+e.message;setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');}
+}
+
+// ══ LAZY WIKIMEDIA IMAGE FETCHER ══
+// Fetches images in background AFTER study card renders — no blocking
+async function fetchWikiImages(topicTitle, imageContainerId) {
+  try {
+    const url = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(topicTitle)}&prop=pageimages&pithumbsize=800&format=json&origin=*`;
+    const r = await fetch(url);
+    const data = await r.json();
+    const pages = data?.query?.pages || {};
+    const page = Object.values(pages)[0];
+    const thumb = page?.thumbnail?.source;
+
+    const container = document.getElementById(imageContainerId);
+    if (!container) return;
+
+    if (thumb) {
+      container.innerHTML = `<img src="${thumb}" class="img-lazy" alt="${topicTitle}" onerror="this.parentElement.innerHTML='<div class=img-placeholder>NO IMAGE AVAILABLE</div>'">`;
+    } else {
+      // Try a second query to search images
+      const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(topicTitle)}&gsrnamespace=6&prop=imageinfo&iiprop=url&format=json&origin=*&gsrlimit=1`;
+      const sr = await fetch(searchUrl);
+      const sdata = await sr.json();
+      const spages = sdata?.query?.pages || {};
+      const spage = Object.values(spages)[0];
+      const imgUrl = spage?.imageinfo?.[0]?.url;
+      if (imgUrl && container) {
+        container.innerHTML = `<img src="${imgUrl}" class="img-lazy" alt="${topicTitle}" onerror="this.parentElement.innerHTML='<div class=img-placeholder>NO IMAGE AVAILABLE</div>'">`;
+      } else if (container) {
+        container.innerHTML = '<div class="img-placeholder">NO IMAGE AVAILABLE</div>';
+      }
+    }
+  } catch(e) {
+    const container = document.getElementById(imageContainerId);
+    if (container) container.innerHTML = '<div class="img-placeholder">IMAGE LOAD FAILED</div>';
+  }
+}
+
+// ══ STUDY MODE ══
+async function handleStudyMode(topic){
+  processingCmd=true;lastStudyTopic=topic;
+  stopAllSpeech();
+  setOrbState('thinking','LOADING: '+topic.toUpperCase());
+  addLog('u','study: '+topic);
+  document.getElementById('panel-label').textContent='📚 STUDY // '+topic.toUpperCase();
+  const out=document.getElementById('output');
+  out.className='out-think';
+  out.innerHTML='<span style="color:var(--amber);font-size:13px">Compiling study module…</span>';
+
+  try{
+    const r=await fetch('/api/study',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topic})});
+    const d=await r.json();processingCmd=false;
+
+    if(d.error){out.className='';out.textContent='❌ '+d.error;setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');return;}
+
+    renderStudy(d,out);
+    bumpQ();
+    document.getElementById('m-brain').textContent=d.brain||'AI';
+    addLog('a','Study: '+(d.title||topic),'STUDY');
+    document.getElementById('ft-brain').textContent='STUDY // '+(d.title||topic).toUpperCase();
+    setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');
+
+    // Start lazy image fetch AFTER render
+    fetchWikiImages(d.title||topic, 'study-img-container');
+
+    // Build full read-aloud text — everything in the study card
+    const spk = buildFullStudyText(d);
+    speakReply(spk, true); // true = full read
+
+  }catch(e){processingCmd=false;out.className='';out.textContent='❌ Study error: '+e.message;setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');}
+}
+
+// Build comprehensive read-aloud text from all study fields
+function buildFullStudyText(d) {
+  const parts = [];
+  if (d.title) parts.push(d.title + '.');
+  if (d.oneLiner) parts.push(d.oneLiner);
+  if (d.whyShouldYouCare) parts.push('Why this matters. ' + d.whyShouldYouCare);
+  if (d.whatIsIt) parts.push('Overview. ' + d.whatIsIt);
+  if (d.keyFacts?.length) parts.push('Key facts. ' + d.keyFacts.join('. '));
+  if (d.mechanism) parts.push('Mechanism. ' + d.mechanism);
+  if (d.realWorldExample?.story) parts.push('Real world example. ' + d.realWorldExample.title + '. ' + d.realWorldExample.story);
+  if (d.commonProblems?.length) {
+    parts.push('Common problems. ' + d.commonProblems.map(p => p.name + '. ' + p.detail).join('. '));
+  }
+  if (d.keyTakeaways?.length) parts.push('Key takeaways. ' + d.keyTakeaways.join('. '));
+  if (d.mustKnow) parts.push('Must know. ' + d.mustKnow);
+  if (d.mnemonic) parts.push('Mnemonic. ' + d.mnemonic);
+  if (d.examTip) parts.push('Exam tip. ' + d.examTip);
+  if (d.watchOut) parts.push('Watch out. ' + d.watchOut);
+  return parts.join(' ');
+}
+
+// ══ STUDY RENDERER ══
+function renderStudy(d,out){
+  out.className='';
+
+  const sec=(icon,title,color,content)=>
+    content?`<div class="study-sec">
+      <div class="study-sec-title" style="color:${color}">${icon} ${title}</div>
+      ${content}
+    </div>`:'';
+
+  const kvTable=(arr)=>
+    Array.isArray(arr)&&arr.length?
+    `<table class="kv-table">${arr.map(r=>`<tr><td>${r.label||''}</td><td>${r.value||''}</td></tr>`).join('')}</table>`:
+    '';
+
+  const factList=(arr)=>
+    Array.isArray(arr)&&arr.length?
+    arr.map(f=>`<div class="fact-row"><span class="fact-bullet">▸</span><span>${f}</span></div>`).join(''):
+    '';
+
+  // ── TITLE BAR
+  const titleBar=`<div style="display:flex;align-items:baseline;justify-content:space-between;border-bottom:2px solid rgba(0,255,102,.2);padding-bottom:7px;margin-bottom:10px">
+    <div style="font-family:var(--display);font-size:13px;font-weight:900;letter-spacing:.22em;color:var(--G);text-shadow:0 0 14px rgba(0,255,102,.4)">${(d.title||'').toUpperCase()}</div>
+    <div style="display:flex;gap:6px;align-items:center">
+      ${d.domain?`<span style="font-family:var(--display);font-size:6px;letter-spacing:.15em;color:var(--cyan);border:1px solid rgba(0,229,255,.3);padding:2px 7px;border-radius:2px">${d.domain}</span>`:''}
+      <span style="font-family:var(--display);font-size:6px;letter-spacing:.15em;color:var(--muted);border:1px solid var(--border);padding:2px 7px;border-radius:2px">${d.brain||'AI'}</span>
+    </div>
+  </div>`;
+
+  // ── ONE-LINER
+  const oneLiner=d.oneLiner?
+    `<div class="overview-block" style="margin-bottom:10px">${d.oneLiner}</div>`:
+    '';
+
+  // ── LAZY IMAGE SLOT — renders a placeholder, fetchWikiImages fills it
+  const imgSlot = `<div id="study-img-container" style="margin-bottom:10px;min-height:40px">
+    <div class="img-placeholder" style="font-size:7px">LOADING IMAGE…</div>
+  </div>`;
+
+  // ── KEY FACTS
+  const facts=sec('⚡','KEY FACTS','#00ff66', factList(d.keyFacts));
+
+  // ── MECHANISM
+  const mechanism=sec('⚙','MECHANISM','#00e5ff',
+    d.mechanism?`<div class="mechanism-block">${d.mechanism}</div>`:''
+  );
+
+  // ── REAL WORLD EXAMPLE
+  const example = d.realWorldExample?.story ?
+    sec('🌍','REAL WORLD EXAMPLE','#ffaa00',
+      `<div style="margin-bottom:4px;font-family:var(--display);font-size:7px;color:var(--amber)">${d.realWorldExample.title||''}</div>
+       <div class="overview-block" style="border-left-color:rgba(255,170,0,.4);background:rgba(255,170,0,.04)">${d.realWorldExample.story}</div>`
+    ) : '';
+
+  // ── WHY SHOULD YOU CARE
+  const why = d.whyShouldYouCare ?
+    sec('💡','WHY IT MATTERS','#b366ff',
+      `<div class="overview-block" style="border-left-color:rgba(179,102,255,.4);background:rgba(179,102,255,.04)">${d.whyShouldYouCare}</div>`
+    ) : '';
+
+  // ── COMMON PROBLEMS
+  const problems = d.commonProblems?.length ?
+    sec('⚠','COMMON PROBLEMS','#ff3355',
+      d.commonProblems.map(p=>`<div style="padding:6px 0;border-bottom:1px solid rgba(255,51,85,.08)">
+        <div style="font-weight:600;color:var(--red);font-size:13px;margin-bottom:2px">${p.name}</div>
+        <div style="font-size:13px;line-height:1.65;color:var(--text)">${p.detail}</div>
+      </div>`).join('')
+    ) : '';
+
+  // ── KEY TAKEAWAYS
+  const takeaways = d.keyTakeaways?.length ?
+    sec('✅','KEY TAKEAWAYS','#00cc55',
+      d.keyTakeaways.map((t,i)=>`<div class="fact-row"><span class="fact-bullet" style="color:var(--G)">${i+1}.</span><span>${t}</span></div>`).join('')
+    ) : '';
+
+  // ── MUST KNOW + MNEMONIC row
+  const mustRow=(d.mustKnow||d.mnemonic)?
+    `<div class="two-col" style="margin-bottom:6px">
+      ${d.mustKnow?`<div class="info-strip" style="background:rgba(0,229,255,.05);border-color:#00e5ff">
+        <div style="font-family:var(--display);font-size:6px;letter-spacing:.2em;color:var(--cyan);margin-bottom:3px">🎯 MUST KNOW</div>
+        <div style="font-size:14px;line-height:1.65">${d.mustKnow}</div>
+      </div>`:'<div></div>'}
+      ${d.mnemonic?`<div class="info-strip" style="background:rgba(179,102,255,.06);border-color:#b366ff">
+        <div style="font-family:var(--display);font-size:6px;letter-spacing:.2em;color:var(--purple);margin-bottom:3px">🧠 MNEMONIC</div>
+        <div style="font-size:14px;line-height:1.65">${d.mnemonic}</div>
+      </div>`:'<div></div>'}
+    </div>`:
+    '';
+
+  // ── WATCH OUT + EXAM TIP row
+  const alertRow=(d.watchOut||d.examTip)?
+    `<div class="two-col" style="margin-bottom:6px">
+      ${d.watchOut?`<div class="info-strip" style="background:rgba(255,51,85,.06);border-color:#ff3355">
+        <div style="font-family:var(--display);font-size:6px;letter-spacing:.2em;color:var(--red);margin-bottom:3px">⚠ WATCH OUT</div>
+        <div style="font-size:14px;line-height:1.65">${d.watchOut}</div>
+      </div>`:'<div></div>'}
+      ${d.examTip?`<div class="info-strip" style="background:rgba(255,170,0,.06);border-color:#ffaa00">
+        <div style="font-family:var(--display);font-size:6px;letter-spacing:.2em;color:var(--amber);margin-bottom:3px">📝 EXAM TIP</div>
+        <div style="font-size:14px;line-height:1.65">${d.examTip}</div>
+      </div>`:'<div></div>'}
+    </div>`:
+    '';
+
+  // ── DIG DEEPER chips
+  const chips=d.clarifyTopics&&d.clarifyTopics.length?
+    `<div style="margin-top:8px">
+      <div style="font-family:var(--display);font-size:6px;letter-spacing:.18em;color:var(--muted);margin-bottom:5px">DIG DEEPER →</div>
+      <div class="tag-list">${d.clarifyTopics.map(ct=>`<span class="tag" onclick="handleClarify('${ct.replace(/'/g,"\\'")}')">${ct}</span>`).join('')}</div>
+    </div>`:
+    '';
+
+  // ── ACTION BUTTONS
+  const actions=`<div class="act-row">
+    <button class="act-btn" onclick="handleYouTube('${(d.youtubeSearch||d.title||'').replace(/'/g,"\\'")}');return false" style="color:var(--red);background:rgba(255,51,85,.08);border-color:var(--red)">▶ YOUTUBE</button>
+    <button class="act-btn" onclick="speakStudySummary();return false" style="color:var(--G);background:rgba(0,255,102,.07);border-color:var(--G)">🔊 READ ALL</button>
+    <button class="act-btn" onclick="exitStudy();return false" style="color:var(--muted);background:transparent;border-color:var(--muted)">✕ EXIT</button>
+  </div>`;
+
+  // Store full text for read-all button
+  const fullText = buildFullStudyText(d);
+  const speechText=`<div id="study-speech" style="display:none">${fullText}</div>`;
+
+  out.innerHTML=
+    titleBar +
+    oneLiner +
+    imgSlot +
+    why +
+    facts +
+    mechanism +
+    example +
+    problems +
+    takeaways +
+    mustRow +
+    alertRow +
+    chips +
+    actions +
+    speechText;
+}
+
+// ══ CLARIFY ══
+async function handleClarify(subtopic){
+  processingCmd=true;stopAllSpeech();
+  const topic=lastStudyTopic||'general';
+  setOrbState('thinking','CLARIFYING: '+subtopic.toUpperCase());
+  addLog('u','clarify: '+subtopic);
+  const out=document.getElementById('output');
+  out.className='out-think';
+  out.innerHTML='<span style="color:var(--amber);font-size:13px">Deep dive: '+subtopic+'…</span>';
+  document.getElementById('panel-label').textContent='🔍 '+subtopic.toUpperCase();
+
+  try{
+    const r=await fetch('/api/study',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topic,clarify:subtopic})});
+    const d=await r.json();processingCmd=false;
+
+    if(d.error){out.className='';out.textContent='❌ '+d.error;setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');return;}
+
+    out.className='';
+
+    const stepHtml=Array.isArray(d.stepByStep)&&d.stepByStep.length?
+      `<div class="study-sec">
+        <div class="study-sec-title" style="color:#00e5ff">📐 STEP BY STEP</div>
+        ${d.stepByStep.map(s=>`<div class="step-item">
+          <div class="step-num">${String(s.step).padStart(2,'0')}</div>
+          <div class="step-body">
+            <div class="step-title">${s.title||''}</div>
+            <div class="step-detail">${s.detail||''}</div>
+          </div>
+        </div>`).join('')}
+      </div>`:
+      '';
+
+    const pts=Array.isArray(d.keyPoints)&&d.keyPoints.length?
+      `<div class="study-sec">
+        <div class="study-sec-title" style="color:#00ff66">▸ KEY POINTS</div>
+        ${d.keyPoints.map((p,i)=>`<div class="fact-row"><span class="fact-bullet" style="font-family:var(--mono);font-size:12px">${i+1}.</span><span>${p}</span></div>`).join('')}
+      </div>`:
+      '';
+
+    const related=Array.isArray(d.relatedConcepts)&&d.relatedConcepts.length?
+      `<div style="margin-top:8px">
+        <div style="font-family:var(--display);font-size:6px;letter-spacing:.18em;color:var(--muted);margin-bottom:5px">RELATED →</div>
+        <div class="tag-list">${d.relatedConcepts.map(r=>`<span class="tag">${r}</span>`).join('')}</div>
+      </div>`:
+      '';
+
+    out.innerHTML=
+      `<div style="font-family:var(--display);font-size:12px;font-weight:900;letter-spacing:.22em;color:var(--cyan);border-bottom:2px solid rgba(0,229,255,.2);padding-bottom:6px;margin-bottom:8px">${(d.title||subtopic).toUpperCase()}</div>`+
+      (d.overview?`<div class="overview-block" style="border-left-color:rgba(0,229,255,.3);background:rgba(0,229,255,.03);margin-bottom:8px">${d.overview}</div>`:'')+
+      (d.deepExplanation?`<div class="mechanism-block" style="margin-bottom:8px">${d.deepExplanation}</div>`:'')+
+      pts+
+      stepHtml+
+      `<div class="two-col" style="margin-top:6px">
+        ${d.example?`<div class="info-strip" style="background:rgba(0,229,255,.05);border-color:#00e5ff">
+          <div style="font-family:var(--display);font-size:6px;letter-spacing:.2em;color:var(--cyan);margin-bottom:3px">📋 EXAMPLE</div>
+          <div style="font-size:14px;line-height:1.65">${d.example}</div>
+        </div>`:'<div></div>'}
+        ${d.mnemonic?`<div class="info-strip" style="background:rgba(179,102,255,.06);border-color:#b366ff">
+          <div style="font-family:var(--display);font-size:6px;letter-spacing:.2em;color:var(--purple);margin-bottom:3px">🧠 MNEMONIC</div>
+          <div style="font-size:14px;line-height:1.65">${d.mnemonic}</div>
+        </div>`:'<div></div>'}
+      </div>`+
+      (d.watchOut?`<div class="info-strip" style="background:rgba(255,51,85,.06);border-color:#ff3355;margin-top:6px">
+        <div style="font-family:var(--display);font-size:6px;letter-spacing:.2em;color:var(--red);margin-bottom:3px">⚠ WATCH OUT</div>
+        <div style="font-size:14px;line-height:1.65">${d.watchOut}</div>
+      </div>`:'')+
+      related+
+      `<div class="act-row">
+        <button class="act-btn" onclick="handleYouTube('${((d.youtubeSearch||subtopic)).replace(/'/g,"\\'")}');return false" style="color:var(--red);background:rgba(255,51,85,.08);border-color:var(--red)">▶ YOUTUBE</button>
+        <button class="act-btn" onclick="handleStudyMode('${lastStudyTopic.replace(/'/g,"\\'")}');return false" style="color:var(--G);background:rgba(0,255,102,.07);border-color:var(--G)">← BACK</button>
+        <button class="act-btn" onclick="exitStudy();return false" style="color:var(--muted);background:transparent;border-color:var(--muted)">✕ EXIT</button>
+      </div>`;
+
+    // Lazy image for clarify too
+    fetchWikiImages(subtopic, null);
+
+    bumpQ();addLog('a','Clarified: '+subtopic,'STUDY');
+    setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');
+    const clarifyText = [d.deepExplanation||'', d.overview||''].filter(Boolean).join('. ');
+    speakReply(clarifyText, false);
+
+  }catch(e){processingCmd=false;out.className='';out.textContent='❌ Clarify error: '+e.message;setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');}
+}
+
+function speakStudySummary(){
+  const el=document.getElementById('study-speech');
+  if(el) speakReply(el.textContent, true);
+}
+
+function exitStudy(){
+  stopAllSpeech();
+  document.getElementById('panel-label').textContent='SCORPION RESPONSE CORE';
+  document.getElementById('output').className='';
+  document.getElementById('output').textContent='SCORPION AI READY.';
+  document.getElementById('ft-brain').textContent='BRAIN: STANDBY';
+  lastStudyTopic='';
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  SPEAK REPLY — with word highlighting
+//  fullRead=true  → shows full word-by-word overlay for entire text
+//  fullRead=false → brief orb-status style, still shows overlay
+// ══════════════════════════════════════════════════════════════════
+async function speakReply(text, fullRead) {
+  stopAllSpeech();
+  if (!text || !text.trim()) return;
+
+  const clean = text
+    .replace(/\*\*/g,'').replace(/\*/g,'').replace(/#{1,6}\s/g,'')
+    .replace(/`/g,'').replace(/\[([^\]]+)\]\([^)]+\)/g,'$1')
+    .replace(/\n+/g,' ').trim();
+
+  setOrbState('speaking', 'READING ALOUD… TALK TO INTERRUPT');
+
+  // Inject word-span overlay
+  injectTTSOverlay(clean);
+
+  const afterSpeech = () => {
+    clearTTSHighlight();
+    if (state === 'speaking')
+      setOrbState(alwaysOn?'listening':'idle', alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE ALWAYS-ON MODE');
+  };
+
+  // Try EdgeTTS first
+  try {
+    const response = await fetch('/api/speaker', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: clean.slice(0, 4000) }) // increased limit for full study
+    });
+    if (!response.ok) throw new Error('Speaker API ' + response.status);
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    _currentAudio = audio;
+
+    // Start timer-based word highlighting once audio plays
+    audio.onplay = () => {
+      runTimerHighlight(audio, _ttsWordSpans);
+    };
+    audio.onended = () => {
+      URL.revokeObjectURL(url);
+      _currentAudio = null;
+      afterSpeech();
+    };
+    audio.onerror = () => {
+      URL.revokeObjectURL(url);
+      _currentAudio = null;
+      fallbackSpeak(clean, afterSpeech);
+    };
+    await audio.play();
+
+  } catch(e) {
+    _currentAudio = null;
+    fallbackSpeak(clean, afterSpeech);
+  }
+}
+
+// Browser SpeechSynthesis fallback — uses boundary events for precise highlighting
+function fallbackSpeak(text, onDone) {
+  if (!window.speechSynthesis) { if(onDone)onDone(); return; }
+  window.speechSynthesis.cancel();
+  const utt = new SpeechSynthesisUtterance(text.slice(0, 4000));
+  utt.lang = 'en-US'; utt.pitch = .85; utt.rate = 1.1; utt.volume = 1;
+  const voices = window.speechSynthesis.getVoices();
+  const v = voices.find(v=>v.name.includes('Google US English')) ||
+            voices.find(v=>v.name.includes('Daniel')) ||
+            voices.find(v=>v.lang==='en-US') || voices[0] || null;
+  if (v) utt.voice = v;
+
+  // Use boundary events for precise word highlighting (Chrome)
+  utt.onboundary = (evt) => {
+    if (evt.name !== 'word') return;
+    const charIdx = evt.charIndex;
+    // Find which tts-word span contains this character index
+    let pos = 0;
+    const fullText = text;
+    for (let i = 0; i < _ttsWordSpans.length; i++) {
+      const wordLen = _ttsWordSpans[i].textContent.length;
+      // find char offset of this word in original text
+      const wordStart = fullText.indexOf(_ttsWordSpans[i].textContent, pos);
+      if (wordStart !== -1 && charIdx >= wordStart && charIdx < wordStart + wordLen) {
+        _ttsWordSpans.forEach(s => s.classList.remove('tts-active'));
+        _ttsWordSpans[i].classList.add('tts-active');
+        _ttsWordSpans[i].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        pos = wordStart;
+        break;
+      }
+      pos = Math.max(pos, wordStart + wordLen);
+    }
+  };
+
+  const after = () => { clearTTSHighlight(); if(onDone)onDone(); };
+  utt.onend = after;
+  utt.onerror = after;
+  setTimeout(() => window.speechSynthesis.speak(utt), 80);
+}
+
+// ══ SING ══
+function handleSing(cmd){
+  processingCmd=true;setOrbState('thinking','COMPOSING…');addLog('u',cmd);
+  conversationHistory.push({role:'user',text:cmd});
+  fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:conversationHistory})})
+    .then(r=>r.json()).then(data=>{
+      processingCmd=false;
+      if(data.error){document.getElementById('output').textContent='Error: '+data.error;setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');return;}
+      document.getElementById('output').textContent='🎵 '+data.reply;
+      conversationHistory.push({role:'assistant',text:data.reply});
+      addLog('a',data.reply,'SONG');bumpQ();
+      speakReply(data.reply, false);
+    }).catch(e=>{processingCmd=false;document.getElementById('output').textContent='Error: '+e.message;setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');});
+}
+
+// ══ AI CHAT ══
+async function sendCmdText(val){
+  processingCmd=true;
+  document.getElementById('panel-label').textContent='SCORPION RESPONSE CORE';
+  const out=document.getElementById('output');out.className='out-think';out.innerHTML='<span style="color:var(--amber)">Processing…</span>';
+  addLog('u',val);
+  conversationHistory.push({role:'user',text:val});
+  if(conversationHistory.length>MAX_HISTORY)conversationHistory=conversationHistory.slice(-MAX_HISTORY);
+  try{
+    const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const response=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:conversationHistory,timezone:tz})});
+    const data=await response.json();processingCmd=false;
+    if(data.error){out.className='';out.innerHTML=`<span style="color:var(--red)">⚠ ${data.error}</span>`;setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'ERROR — TAP ORB TO RETRY');return;}
+    const brain=data.brain||'AI';
+    out.className='';out.textContent='🦂 '+data.reply;
+    document.getElementById('ft-brain').textContent='BRAIN: '+brain+' // ONLINE';
+    document.getElementById('m-brain').textContent=brain;
+    conversationHistory.push({role:'assistant',text:data.reply});
+    if(conversationHistory.length>MAX_HISTORY)conversationHistory=conversationHistory.slice(-MAX_HISTORY);
+    bumpQ();addLog('a',data.reply,brain);
+    speakReply(data.reply, false);
+  }catch(e){
+    processingCmd=false;out.className='';out.innerHTML=`<span style="color:var(--red)">⚠ ERROR: ${e.message}</span>`;
+    setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'ERROR — TAP ORB TO RETRY');
+  }
+}
+
+async function sendCmd(){
+  unlockAudio();
+  const val=document.getElementById('cmd').value.trim();
+  if(!val)return;
+  document.getElementById('cmd').value='';
+  routeCommand(val);
+}
+document.getElementById('cmd').addEventListener('keydown',e=>{if(e.key==='Enter')sendCmd()});
+
+// ══ LOG ══
+let historyCount=0;
+function addLog(role,text,brain){
+  const h=document.getElementById('history');
+  const d=document.createElement('div');
+  const isYt=brain==='YOUTUBE',isStudy=brain==='STUDY';
+  d.className='hitem '+(role==='u'?'u':isYt?'yt':isStudy?'study':'a');
+  const roleLabel=role==='u'?'YOU':isYt?'YT':isStudy?'📚':'SCORP';
+  const brainTag=brain&&role==='a'?`<span style="font-size:5.5px;color:var(--muted);margin-left:4px">[${brain}]</span>`:'';
+  d.innerHTML=`<div class="hrole">${roleLabel}${brainTag}</div><div class="htext">${text.slice(0,200)}${text.length>200?'…':''}</div>`;
+  h.appendChild(d);historyCount++;
+  document.getElementById('hist-count').textContent=historyCount;
+  while(h.children.length>30)h.removeChild(h.firstChild);
+  h.scrollTop=h.scrollHeight;
+}
+function clearLog(){
+  document.getElementById('history').innerHTML='';historyCount=0;
+  document.getElementById('hist-count').textContent='0';
+  document.getElementById('output').className='';
+  document.getElementById('output').textContent='SCORPION AI READY.';
+  document.getElementById('panel-label').textContent='SCORPION RESPONSE CORE';
+  conversationHistory=[];lastStudyTopic='';
+}
+
+// ══ BOOT GREETING ══
+async function bootGreeting(){
+  try{
+    const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'greeting',timezone:tz,messages:[{role:'user',text:'greet me'}]})});
+    const data=await r.json();
+    if(data.reply){
+      document.getElementById('output').textContent='🦂 '+data.reply;
+      document.getElementById('m-brain').textContent=data.brain||'AI';
+      speakReply(data.reply, false);
+    }
+  }catch(e){
+    document.getElementById('output').textContent='🦂 Scorpion AI ready, Sir. All systems online.';
+  }
+}
+
+setTimeout(bootGreeting,1500);
+</script>
 </body>
 </html>
