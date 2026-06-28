@@ -1,16 +1,13 @@
 export default async function handler(req, res) {
-
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
     const { messages, prompt } = req.body;
 
-    // accept either {messages:[{role,text}]} (new, with memory) or {prompt:"..."} (old, single-shot)
     let history;
     if (messages && Array.isArray(messages) && messages.length > 0) {
       history = messages;
@@ -22,13 +19,11 @@ export default async function handler(req, res) {
 
     const SYSTEM = 'You are Scorpion, a powerful personal AI assistant for Johnson. Sharp, direct, intelligent. Keep responses concise — max 2 sentences unless asked for more. Never use bullet points or markdown.';
 
-    // OpenAI-style messages array (Cerebras, Groq, Mistral all use this format)
     const openaiMessages = [
       { role: 'system', content: SYSTEM },
       ...history.map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.text }))
     ];
 
-    // Gemini uses its own contents format with role: 'model' instead of 'assistant'
     const geminiContents = history.map(m => ({
       role: m.role === 'assistant' ? 'model' : 'user',
       parts: [{ text: m.text }]
@@ -41,23 +36,20 @@ export default async function handler(req, res) {
         const result = await fetchFn(controller.signal);
         clearTimeout(timer);
         return result;
-      } catch(e) {
+      } catch (e) {
         clearTimeout(timer);
         return null;
       }
     }
 
+    // ── CEREBRAS (fastest)
     const cerebrasKey = process.env.CEREBRAS_API_KEY;
     if (cerebrasKey) {
       const reply = await tryBrain(async (signal) => {
         const r = await fetch('https://api.cerebras.ai/v1/chat/completions', {
           method: 'POST', signal,
           headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cerebrasKey },
-          body: JSON.stringify({
-            model: 'llama-4-scout-17b-16e-instruct',
-            messages: openaiMessages,
-            max_tokens: 300
-          })
+          body: JSON.stringify({ model: 'llama-4-scout-17b-16e-instruct', messages: openaiMessages, max_tokens: 300 })
         });
         const d = await r.json();
         return d.choices?.[0]?.message?.content || null;
@@ -65,17 +57,14 @@ export default async function handler(req, res) {
       if (reply) return res.status(200).json({ reply, brain: 'CEREBRAS' });
     }
 
+    // ── GROQ
     const groqKey = process.env.GROQ_API_KEY;
     if (groqKey) {
       const reply = await tryBrain(async (signal) => {
         const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
           method: 'POST', signal,
           headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + groqKey },
-          body: JSON.stringify({
-            model: 'llama-3.3-70b-versatile',
-            messages: openaiMessages,
-            max_tokens: 300
-          })
+          body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: openaiMessages, max_tokens: 300 })
         });
         const d = await r.json();
         return d.choices?.[0]?.message?.content || null;
@@ -83,6 +72,7 @@ export default async function handler(req, res) {
       if (reply) return res.status(200).json({ reply, brain: 'GROQ' });
     }
 
+    // ── GEMINI
     const geminiKey = process.env.GEMINI_API_KEY;
     if (geminiKey) {
       const reply = await tryBrain(async (signal) => {
@@ -104,17 +94,14 @@ export default async function handler(req, res) {
       if (reply) return res.status(200).json({ reply, brain: 'GEMINI' });
     }
 
+    // ── MISTRAL
     const mistralKey = process.env.MISTRAL_API_KEY;
     if (mistralKey) {
       const reply = await tryBrain(async (signal) => {
         const r = await fetch('https://api.mistral.ai/v1/chat/completions', {
           method: 'POST', signal,
           headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + mistralKey },
-          body: JSON.stringify({
-            model: 'mistral-small-latest',
-            messages: openaiMessages,
-            max_tokens: 300
-          })
+          body: JSON.stringify({ model: 'mistral-small-latest', messages: openaiMessages, max_tokens: 300 })
         });
         const d = await r.json();
         return d.choices?.[0]?.message?.content || null;
@@ -124,7 +111,7 @@ export default async function handler(req, res) {
 
     return res.status(500).json({ error: 'All brains timed out or failed. Check API keys in Vercel.' });
 
-  } catch(e) {
+  } catch (e) {
     return res.status(500).json({ error: e.message });
   }
 }
