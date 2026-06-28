@@ -137,8 +137,10 @@ QUALITY RULES:
         name: 'CEREBRAS',
         key: process.env.CEREBRAS_API_KEY,
         url: 'https://api.cerebras.ai/v1/chat/completions',
-        model: 'llama-4-scout-17b-16e-instruct',
-        type: 'openai'
+        model: 'llama-3.3-70b',
+        type: 'openai',
+        jsonMode: false,
+        maxTokens: 4000
       },
       {
         name: 'GROQ',
@@ -146,13 +148,15 @@ QUALITY RULES:
         url: 'https://api.groq.com/openai/v1/chat/completions',
         model: 'llama-3.3-70b-versatile',
         type: 'openai',
-        jsonMode: true
+        jsonMode: true,
+        maxTokens: 4000
       },
       {
         name: 'GEMINI',
         key: process.env.GEMINI_API_KEY,
         model: 'gemini-2.0-flash',
-        type: 'gemini'
+        type: 'gemini',
+        maxTokens: 4000
       },
       {
         name: 'MISTRAL',
@@ -160,7 +164,8 @@ QUALITY RULES:
         url: 'https://api.mistral.ai/v1/chat/completions',
         model: 'mistral-large-latest',
         type: 'openai',
-        jsonMode: true
+        jsonMode: true,
+        maxTokens: 3000
       }
     ];
 
@@ -188,15 +193,18 @@ QUALITY RULES:
                 contents: [{ role: 'user', parts: [{ text: userMessage }] }],
                 generationConfig: {
                   temperature: 0.7,
-                  maxOutputTokens: 4000,
+                  maxOutputTokens: brain.maxTokens || 4000,
                   responseMimeType: 'application/json'   // Gemini native JSON mode
                 }
               })
             }
           );
           const gData = await gRes.json();
-          if (gData.error) { lastError = 'GEMINI: ' + gData.error.message; continue; }
+          if (gData.error) { lastError = 'GEMINI: ' + (gData.error.message || JSON.stringify(gData.error)); continue; }
+          if (!gRes.ok) { lastError = 'GEMINI: HTTP ' + gRes.status; continue; }
           rawContent = gData?.candidates?.[0]?.content?.parts?.[0]?.text;
+          const blockReason = gData?.promptFeedback?.blockReason || gData?.candidates?.[0]?.finishReason;
+          if (!rawContent && blockReason) { lastError = 'GEMINI: blocked/stopped — ' + blockReason; continue; }
 
         // ── OPENAI-compatible (Cerebras, Groq, Mistral)
         } else {
@@ -207,7 +215,7 @@ QUALITY RULES:
               { role: 'user', content: userMessage }
             ],
             temperature: 0.7,
-            max_tokens: 4000
+            max_tokens: brain.maxTokens || 3000
           };
           if (brain.jsonMode) body.response_format = { type: 'json_object' };
 
@@ -220,9 +228,22 @@ QUALITY RULES:
             body: JSON.stringify(body)
           });
 
+          if (!response.ok) {
+            const errText = await response.text();
+            lastError = brain.name + ': HTTP ' + response.status + ' — ' + errText.slice(0, 200);
+            continue;
+          }
+
           const data = await response.json();
-          if (data.error) { lastError = brain.name + ': ' + (data.error.message || JSON.stringify(data.error)); continue; }
+          if (data.error) {
+            lastError = brain.name + ': ' + (data.error.message || JSON.stringify(data.error));
+            continue;
+          }
           rawContent = data?.choices?.[0]?.message?.content;
+          if (!rawContent && data?.choices?.[0]?.finish_reason) {
+            lastError = brain.name + ': finish_reason=' + data.choices[0].finish_reason + ' content=null';
+            continue;
+          }
         }
 
         if (!rawContent) {
