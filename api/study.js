@@ -1,8 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════
 //  SCORPION AI — STUDY.JS  //  Master Tutor Engine
 //  Vercel Serverless Function  →  /api/study
-//  FIX: Removed blocking fetchImages — was causing 2-5s delay
-//  Images are now handled lazily on the frontend via Wikimedia
+//  Brain cascade mirrors chat.js exactly for consistent quality
 // ═══════════════════════════════════════════════════════════════════
 
 export default async function handler(req, res) {
@@ -109,39 +108,47 @@ CRITICAL RULES:
 - realWorldExample.story must be vivid and narrative, not a bullet list.
 - commonProblems should cover the most clinically/practically important issues.`;
 
-    // ── BRAIN FALLBACK CHAIN ─────────────────────────────────────────
+    // ── BRAIN CASCADE — mirrors chat.js exactly ──────────────────────
     const brains = [
-      {
-        name: 'GROQ',
-        key: process.env.GROQ_API_KEY,
-        url: 'https://api.groq.com/openai/v1/chat/completions',
-        model: 'llama-3.3-70b-versatile',
-        max_tokens: 4000,
-        type: 'openai'
-      },
       {
         name: 'CEREBRAS',
         key: process.env.CEREBRAS_API_KEY,
         url: 'https://api.cerebras.ai/v1/chat/completions',
         model: 'llama-4-scout-17b-16e-instruct',
-        max_tokens: 4000,
-        type: 'openai'
+        headers: k => ({ 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + k })
+      },
+      {
+        name: 'GROQ',
+        key: process.env.GROQ_API_KEY,
+        url: 'https://api.groq.com/openai/v1/chat/completions',
+        model: 'llama-3.3-70b-versatile',
+        headers: k => ({ 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + k })
       },
       {
         name: 'GEMINI',
         key: process.env.GEMINI_API_KEY,
         url: null,
         model: 'gemini-2.0-flash',
-        max_tokens: 4000,
-        type: 'gemini'
+        headers: null
       },
       {
         name: 'MISTRAL',
         key: process.env.MISTRAL_API_KEY,
         url: 'https://api.mistral.ai/v1/chat/completions',
         model: 'mistral-large-latest',
-        max_tokens: 4000,
-        type: 'openai'
+        headers: k => ({ 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + k })
+      },
+      {
+        name: 'OPENROUTER',
+        key: process.env.OPENROUTER_API_KEY,
+        url: 'https://openrouter.ai/api/v1/chat/completions',
+        model: 'google/gemma-4-31b-it:free',
+        headers: k => ({
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + k,
+          'HTTP-Referer': 'https://the-mighty-scorpion.vercel.app',
+          'X-Title': 'Scorpion AI'
+        })
       }
     ];
 
@@ -153,7 +160,8 @@ CRITICAL RULES:
       try {
         let rawText = '';
 
-        if (brain.type === 'gemini') {
+        if (brain.name === 'GEMINI') {
+          // ── Gemini path (mirrors chat.js gemini block) ──
           const r = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/${brain.model}:generateContent?key=${brain.key}`,
             {
@@ -162,7 +170,7 @@ CRITICAL RULES:
               body: JSON.stringify({
                 systemInstruction: { parts: [{ text: SYSTEM }] },
                 contents: [{ role: 'user', parts: [{ text: `Teach me about: ${studyTopic}` }] }],
-                generationConfig: { temperature: 0.7, maxOutputTokens: brain.max_tokens }
+                generationConfig: { temperature: 0.7, maxOutputTokens: 4000 }
               })
             }
           );
@@ -171,12 +179,10 @@ CRITICAL RULES:
           rawText = d?.candidates?.[0]?.content?.parts?.[0]?.text || '';
 
         } else {
+          // ── OpenAI-compatible path (CEREBRAS, GROQ, MISTRAL, OPENROUTER) ──
           const r = await fetch(brain.url, {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': 'Bearer ' + brain.key
-            },
+            headers: brain.headers(brain.key),
             body: JSON.stringify({
               model: brain.model,
               messages: [
@@ -184,8 +190,7 @@ CRITICAL RULES:
                 { role: 'user', content: `Teach me about: ${studyTopic}` }
               ],
               temperature: 0.7,
-              max_tokens: brain.max_tokens,
-              response_format: brain.name !== 'CEREBRAS' ? { type: 'json_object' } : undefined
+              max_tokens: 4000
             })
           });
           const d = await r.json();
@@ -215,14 +220,11 @@ CRITICAL RULES:
           }
         }
 
-        // ── NO IMAGE FETCHING — was the main source of slow loads ──
-        // imageUrls are now fetched lazily on the frontend via Wikimedia
-        // to avoid blocking the JSON response by 2-5 seconds.
-
+        // Images fetched lazily on the frontend via Wikimedia — no blocking here
         return res.status(200).json({
           ...parsed,
           brain: brain.name,
-          imageUrls: [],   // frontend will fetch these asynchronously
+          imageUrls: [],
           topic: studyTopic
         });
 
