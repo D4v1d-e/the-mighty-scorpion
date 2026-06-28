@@ -32,10 +32,7 @@ export default async function handler(req, res) {
       try {
         const r = await fetch('https://google.serper.dev/search', {
           method: 'POST',
-          headers: {
-            'X-API-KEY': key,
-            'Content-Type': 'application/json'
-          },
+          headers: { 'X-API-KEY': key, 'Content-Type': 'application/json' },
           body: JSON.stringify({ q: query, num: 5, gl: 'us', hl: 'en' })
         });
         const data = await r.json();
@@ -58,7 +55,7 @@ export default async function handler(req, res) {
       } catch (e) { return null; }
     }
 
-    // ── NEWSAPI — LIVE NEWS (PRIMARY FOR NEWS) ──
+    // ── NEWSAPI — LIVE NEWS ──
     async function newsSearch(query) {
       const key = process.env.NEWS_API_KEY;
       if (!key) return null;
@@ -84,11 +81,8 @@ export default async function handler(req, res) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            api_key: key,
-            query,
-            search_depth: 'advanced',
-            max_results: 4,
-            include_answer: true
+            api_key: key, query,
+            search_depth: 'advanced', max_results: 4, include_answer: true
           })
         });
         const data = await r.json();
@@ -96,13 +90,11 @@ export default async function handler(req, res) {
         const snippets = data.results
           .map((r, i) => `[${i + 1}] ${r.title}\n${r.content?.slice(0, 350)}`)
           .join('\n\n');
-        return data.answer
-          ? `DIRECT ANSWER: ${data.answer}\n\nSOURCES:\n${snippets}`
-          : snippets;
+        return data.answer ? `DIRECT ANSWER: ${data.answer}\n\nSOURCES:\n${snippets}` : snippets;
       } catch (e) { return null; }
     }
 
-    // ── DUCKDUCKGO — UNLIMITED FREE BACKUP ──
+    // ── DUCKDUCKGO — FREE BACKUP ──
     async function duckSearch(query) {
       try {
         const r = await fetch(
@@ -140,8 +132,7 @@ export default async function handler(req, res) {
         const data = await r.json();
         const c = data[coinMap[coin]];
         if (!c) return null;
-        // FIX: Only return exactly what the API gives — no extra fields
-        return `LIVE CRYPTO PRICE:\n${coin.toUpperCase()} = $${c.usd.toLocaleString()} USD\n24h Change: ${c.usd_24h_change?.toFixed(2)}%\nDATA SOURCE: CoinGecko live feed. Do NOT add any other statistics not listed here.`;
+        return `LIVE CRYPTO PRICE:\n${coin.toUpperCase()} = $${c.usd.toLocaleString()} USD\n24h Change: ${c.usd_24h_change?.toFixed(2)}%\nINSTRUCTION: Report only these two values. Do NOT add circulating supply, market cap, volume, or any other statistics.`;
       } catch (e) { return null; }
     }
 
@@ -159,8 +150,7 @@ export default async function handler(req, res) {
         if (gold) result += `Gold (XAU/USD): $${gold.price.toFixed(2)}\n`;
         if (silver) result += `Silver (XAG/USD): $${silver.price.toFixed(2)}\n`;
         if (platinum) result += `Platinum: $${platinum.price.toFixed(2)}\n`;
-        // FIX: Explicitly block AI from adding change/delta figures not in data
-        result += `DATA SOURCE: metals.live live feed. Do NOT calculate or invent price changes, deltas, or percentage moves not listed here.`;
+        result += `INSTRUCTION: Report only the prices listed. Do NOT calculate or mention price changes, deltas, yesterday's price, or percentage moves.`;
         return result.trim();
       } catch (e) { return null; }
     }
@@ -178,29 +168,32 @@ export default async function handler(req, res) {
         pairs.forEach(p => {
           if (data.rates[p]) result += `USD/${p}: ${data.rates[p].toFixed(4)}\n`;
         });
-        // FIX: Block AI from adding "mid-market", "transfer", or other commentary
-        result += `DATA SOURCE: open.er-api live feed. Report only the rates listed above. Do NOT add commentary about mid-market rates, transfer fees, or provider differences.`;
+        result += `INSTRUCTION: Report only the rates listed. Do NOT add commentary about mid-market rates, transfer fees, or provider differences.`;
         return result.trim();
       } catch (e) { return null; }
     }
 
-    // ── WEATHER — FREE UNLIMITED ──
+    // ── WEATHER — FREE UNLIMITED (FIXED REGEX) ──
     async function getWeather(query) {
       const q = query.toLowerCase();
       if (!q.match(/weather|temperature|forecast|rain|humid|wind|sunny|cold|hot/)) return null;
 
-      // FIX: Improved regex — stops capturing at trailing time/filler words
-      const cityMatch = query.match(
-        /(?:weather|temperature|forecast|rain|sunny|cold|hot)(?:\s+in|\s+at|\s+for)?\s+([a-zA-Z\s]+?)(?:\s+right\s+now|\s+today|\s+currently|\s+now|\s+please|\s+forecast|$)/i
-      );
-      // FIX: Clean up any trailing whitespace or stray words from city name
-      const rawCity = cityMatch ? cityMatch[1].trim() : 'Nairobi';
-      const city = rawCity.replace(/\s+(right|now|today|current|please|forecast)$/i, '').trim() || 'Nairobi';
+      // Robust city extraction — handles "in Kisumu right now", "in London?", "weather Kisumu"
+      let city = 'Nairobi';
+      const preposMatch = query.match(/\b(?:in|at|for)\s+([a-zA-Z\s]+?)(?:\s+right\s+now|\s+today|\s+currently|\s+now|\s+please|\?|$)/i);
+      if (preposMatch) {
+        city = preposMatch[1].trim();
+      } else {
+        const fallback = query.match(/(?:weather|temperature|forecast|rain|sunny|cold|hot)\s+([a-zA-Z\s]+?)(?:\s+right\s+now|\s+today|\?|$)/i);
+        if (fallback) city = fallback[1].trim();
+      }
+      // Final cleanup pass — strip any stray trailing words
+      city = city.replace(/\s+(right|now|today|currently|please)$/gi, '').replace(/\?/g, '').trim() || 'Nairobi';
 
       try {
         const geoR = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1`);
         const geoData = await geoR.json();
-        if (!geoData.results?.length) return `WEATHER ERROR: Location "${city}" not found. Only report this error, do not guess weather.`;
+        if (!geoData.results?.length) return `WEATHER ERROR: Location "${city}" not found. Tell the user the city was not found. Do not guess or invent weather data.`;
         const loc = geoData.results[0];
         const wR = await fetch(
           `https://api.open-meteo.com/v1/forecast?latitude=${loc.latitude}&longitude=${loc.longitude}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code,apparent_temperature&timezone=auto`
@@ -212,7 +205,7 @@ export default async function handler(req, res) {
           45: 'Foggy', 51: 'Light drizzle', 61: 'Slight rain', 63: 'Moderate rain',
           65: 'Heavy rain', 71: 'Slight snow', 80: 'Rain showers', 95: 'Thunderstorm'
         };
-        return `LIVE WEATHER — ${loc.name}, ${loc.country}:\nTemperature: ${cur.temperature_2m}°C (feels like ${cur.apparent_temperature}°C)\nCondition: ${conds[cur.weather_code] || 'Variable'}\nHumidity: ${cur.relative_humidity_2m}%\nWind: ${cur.wind_speed_10m} km/h\nDATA SOURCE: Open-Meteo live feed. Report only these exact figures.`;
+        return `LIVE WEATHER — ${loc.name}, ${loc.country}:\nTemperature: ${cur.temperature_2m}°C (feels like ${cur.apparent_temperature}°C)\nCondition: ${conds[cur.weather_code] || 'Variable'}\nHumidity: ${cur.relative_humidity_2m}%\nWind: ${cur.wind_speed_10m} km/h\nINSTRUCTION: Report only these exact values. Do NOT add forecasts, UV index, or any data not listed here.`;
       } catch (e) { return null; }
     }
 
@@ -223,15 +216,15 @@ export default async function handler(req, res) {
       try {
         const r = await fetch('https://www.thesportsdb.com/api/v1/json/3/eventsday.php?d=' + now.toISOString().slice(0, 10) + '&s=Soccer');
         const data = await r.json();
-        if (!data.events?.length) return 'SPORTS: No soccer events found for today. Do not invent scores or match results.';
+        if (!data.events?.length) return 'SPORTS: No soccer events found for today. Tell the user there are no matches today. Do NOT invent scores or results.';
         const events = data.events.slice(0, 5);
         return 'LIVE SPORTS RESULTS:\n' + events
           .map(e => `${e.strHomeTeam} ${e.intHomeScore ?? '-'} vs ${e.intAwayScore ?? '-'} ${e.strAwayTeam} (${e.strLeague})`)
-          .join('\n') + '\nDATA SOURCE: TheSportsDB. Report only these matches. Do NOT add scorers, stats, or commentary not listed here.';
+          .join('\n') + '\nINSTRUCTION: Report only these matches and scores. Do NOT add scorers, stats, or commentary not listed here.';
       } catch (e) { return null; }
     }
 
-    // ── DETECT IF QUESTION IS A GREETING/COMMAND ──
+    // ── DETECT SIMPLE GREETING/COMMAND ──
     function isSimpleCommand(messages) {
       if (!messages?.length) return true;
       const last = messages[messages.length - 1];
@@ -257,7 +250,7 @@ export default async function handler(req, res) {
       const lastMsg = userMessages[userMessages.length - 1];
       const query = lastMsg?.text || lastMsg?.content || '';
 
-      // Run specialist APIs first (free unlimited)
+      // Run all specialist APIs in parallel (free & unlimited)
       const [cryptoData, metalData, forexData, weatherData, sportsData] = await Promise.all([
         getCrypto(query),
         getMetals(query),
@@ -275,7 +268,7 @@ export default async function handler(req, res) {
         dataSource = 'LIVE DATA';
       }
 
-      // Always also run Serper for Google results
+      // Always run Serper (Google Search)
       const serperData = await serperSearch(query);
       if (serperData) {
         webContext += (webContext ? '\n\nGOOGLE SEARCH:\n' : '') + serperData;
@@ -283,7 +276,7 @@ export default async function handler(req, res) {
         dataSource = webContext.includes('LIVE') ? 'SERPER+LIVE' : 'SERPER';
       }
 
-      // If Serper failed try NewsAPI for news questions
+      // Fallback: NewsAPI
       if (!serperData) {
         const newsData = await newsSearch(query);
         if (newsData) {
@@ -293,7 +286,7 @@ export default async function handler(req, res) {
         }
       }
 
-      // If still nothing try Tavily
+      // Fallback: Tavily
       if (!webContext) {
         const tavilyData = await tavilySearch(query);
         if (tavilyData) {
@@ -303,7 +296,7 @@ export default async function handler(req, res) {
         }
       }
 
-      // Last resort DuckDuckGo
+      // Last resort: DuckDuckGo
       if (!webContext) {
         const duckData = await duckSearch(query);
         if (duckData) {
@@ -316,18 +309,17 @@ export default async function handler(req, res) {
 
     // ── SYSTEM PROMPT ──
     const webNote = searchedWeb
-      ? `\n\nCRITICAL DATA INSTRUCTIONS:
+      ? `\n\nCRITICAL DATA INSTRUCTIONS — OBEY WITHOUT EXCEPTION:
 You have been given LIVE REAL-TIME DATA fetched right now from verified APIs.
-Rules you MUST follow WITHOUT EXCEPTION:
-1. Report ONLY the exact figures, values, and facts present in the LIVE DATA below
-2. NEVER add statistics, prices, scores, change percentages, supply figures, or any numbers not explicitly listed in the data
-3. NEVER calculate, estimate, or infer values not in the data (e.g. do not compute price deltas from memory)
-4. NEVER add commentary like "mid-market rate", "transfer fees", "circulating supply", or any facts from your training knowledge
-5. If data says "DATA SOURCE: X — Do NOT add Y" — obey that instruction absolutely
-6. If data is incomplete say exactly: "I only have partial data on that, Sir"
-7. If no data was found say exactly: "I could not find reliable data on that, Sir"
-8. Be conversational and Jarvis-like but strictly factual — no bullet points, no markdown
-9. Speak in plain flowing sentences using only what the data gives you
+1. Report ONLY the exact figures and facts present in the LIVE DATA below
+2. NEVER add statistics, prices, scores, percentages, or numbers not explicitly listed
+3. NEVER calculate, estimate, or infer values not in the data
+4. NEVER blend your training knowledge with live data — live data overrides everything
+5. Every data block ends with an INSTRUCTION line — follow it absolutely
+6. If data says a location was not found — tell the user exactly that
+7. If data is incomplete say: "I only have partial data on that, Sir"
+8. If no data found say: "I could not find reliable data on that, Sir"
+9. No bullet points, no markdown, no asterisks — plain conversational sentences only
 
 LIVE DATA:
 ${webContext}`
@@ -347,8 +339,8 @@ You have emotional intelligence and a subtle sense of humor.
 You give direct, conversational answers — never use markdown, bullet points, or asterisks in responses.
 Speak naturally as if talking to a trusted friend who happens to be a genius.
 Keep responses concise unless asked to elaborate.
-CRITICAL: Never fabricate facts, prices, scores, statistics, or figures. If unsure, say so clearly.
-CRITICAL: Never add information from your training knowledge when live data has been provided — use ONLY the live data.
+CRITICAL: Never fabricate facts, prices, scores, statistics, or figures from your own knowledge.
+CRITICAL: When live data is provided, use ONLY that data — never supplement it with training knowledge.
 If asked for the time or date, the current value is: ${timeStr}.${webNote}`;
 
     // ── BRAIN ROSTER ──
