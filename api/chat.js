@@ -56,7 +56,7 @@ If asked for the time or date, the current value is: ${timeStr}.`;
         name: 'CEREBRAS',
         key: process.env.CEREBRAS_API_KEY,
         url: 'https://api.cerebras.ai/v1/chat/completions',
-        model: 'llama-4-scout-17b-16e-instruct',
+        model: 'llama3.1-8b',
         headers: k => ({ 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + k })
       },
       {
@@ -83,7 +83,7 @@ If asked for the time or date, the current value is: ${timeStr}.`;
         name: 'OPENROUTER',
         key: process.env.OPENROUTER_API_KEY,
         url: 'https://openrouter.ai/api/v1/chat/completions',
-        model: 'google/gemma-4-31b-it:free',
+        model: 'google/gemma-3-27b-it:free',
         headers: k => ({
           'Content-Type': 'application/json',
           'Authorization': 'Bearer ' + k,
@@ -102,7 +102,6 @@ If asked for the time or date, the current value is: ${timeStr}.`;
         let reply = null;
 
         if (brain.name === 'GEMINI') {
-          // Gemini uses a different message format
           const geminiMessages = formattedMessages.map(m => ({
             role: m.role === 'assistant' ? 'model' : 'user',
             parts: [{ text: m.content }]
@@ -124,7 +123,6 @@ If asked for the time or date, the current value is: ${timeStr}.`;
           reply = gData?.candidates?.[0]?.content?.parts?.[0]?.text;
 
         } else {
-          // OpenAI-compatible endpoint
           const oRes = await fetch(brain.url, {
             method: 'POST',
             headers: brain.headers(brain.key),
