@@ -72,26 +72,29 @@ Respond ONLY with valid JSON — no markdown, no extra text:
 }`;
 
     // ══════════════════════════════════════════════
-    // BUILD MESSAGES
+    // BUILD MESSAGES — same pattern as chat.js
     // ══════════════════════════════════════════════
 
-    const userMessage = isClarify
+    const userText = isClarify
       ? `Topic: ${topic}\nClarify this subtopic in depth: ${clarify}`
       : `Study topic: ${topic}`;
 
     const SYSTEM = isClarify ? CLARIFY_SYSTEM : SUMMARY_SYSTEM;
 
-    const makeOpenAI = (system) => [
-      { role: 'system', content: system },
-      { role: 'user', content: userMessage }
+    const openaiMessages = [
+      { role: 'system', content: SYSTEM },
+      { role: 'user', content: userText }
     ];
 
     const geminiContents = [
-      { role: 'user', parts: [{ text: userMessage }] }
+      {
+        role: 'user',
+        parts: [{ text: userText }]
+      }
     ];
 
     // ══════════════════════════════════════════════
-    // BRAIN CASCADE — Cerebras → Groq → Gemini → Mistral
+    // BRAIN RUNNER — identical to chat.js
     // ══════════════════════════════════════════════
 
     async function tryBrain(fetchFn, timeoutMs) {
@@ -110,13 +113,14 @@ Respond ONLY with valid JSON — no markdown, no extra text:
     let rawReply = null;
     let brainUsed = null;
 
+    // ── CEREBRAS (fastest)
     const cerebrasKey = process.env.CEREBRAS_API_KEY;
     if (!rawReply && cerebrasKey) {
       rawReply = await tryBrain(async (signal) => {
         const r = await fetch('https://api.cerebras.ai/v1/chat/completions', {
           method: 'POST', signal,
           headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cerebrasKey },
-          body: JSON.stringify({ model: 'llama-4-scout-17b-16e-instruct', messages: makeOpenAI(SYSTEM), max_tokens: 1000 })
+          body: JSON.stringify({ model: 'llama-4-scout-17b-16e-instruct', messages: openaiMessages, max_tokens: 1000 })
         });
         const d = await r.json();
         return d.choices?.[0]?.message?.content || null;
@@ -124,13 +128,14 @@ Respond ONLY with valid JSON — no markdown, no extra text:
       if (rawReply) brainUsed = 'CEREBRAS';
     }
 
+    // ── GROQ
     const groqKey = process.env.GROQ_API_KEY;
     if (!rawReply && groqKey) {
       rawReply = await tryBrain(async (signal) => {
         const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
           method: 'POST', signal,
           headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + groqKey },
-          body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: makeOpenAI(SYSTEM), max_tokens: 1000 })
+          body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: openaiMessages, max_tokens: 1000 })
         });
         const d = await r.json();
         return d.choices?.[0]?.message?.content || null;
@@ -138,6 +143,7 @@ Respond ONLY with valid JSON — no markdown, no extra text:
       if (rawReply) brainUsed = 'GROQ';
     }
 
+    // ── GEMINI
     const geminiKey = process.env.GEMINI_API_KEY;
     if (!rawReply && geminiKey) {
       rawReply = await tryBrain(async (signal) => {
@@ -159,13 +165,14 @@ Respond ONLY with valid JSON — no markdown, no extra text:
       if (rawReply) brainUsed = 'GEMINI';
     }
 
+    // ── MISTRAL
     const mistralKey = process.env.MISTRAL_API_KEY;
     if (!rawReply && mistralKey) {
       rawReply = await tryBrain(async (signal) => {
         const r = await fetch('https://api.mistral.ai/v1/chat/completions', {
           method: 'POST', signal,
           headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + mistralKey },
-          body: JSON.stringify({ model: 'mistral-small-latest', messages: makeOpenAI(SYSTEM), max_tokens: 1000 })
+          body: JSON.stringify({ model: 'mistral-small-latest', messages: openaiMessages, max_tokens: 1000 })
         });
         const d = await r.json();
         return d.choices?.[0]?.message?.content || null;
@@ -178,7 +185,7 @@ Respond ONLY with valid JSON — no markdown, no extra text:
     }
 
     // ══════════════════════════════════════════════
-    // PARSE AI RESPONSE
+    // PARSE JSON RESPONSE
     // ══════════════════════════════════════════════
 
     function parseJSON(raw) {
@@ -200,14 +207,11 @@ Respond ONLY with valid JSON — no markdown, no extra text:
     }
 
     // ══════════════════════════════════════════════
-    // BUILD YOUTUBE LINKS (context-matched)
+    // BUILD YOUTUBE LINKS
     // ══════════════════════════════════════════════
 
     const youtubeQueries = content.youtubeQueries || [topic + ' explained medical'];
-    const youtubeLinks = youtubeQueries.map(q => ({
-      label: q,
-      embedSearch: q
-    }));
+    const youtubeLinks = youtubeQueries.map(q => ({ label: q, embedSearch: q }));
 
     // ══════════════════════════════════════════════
     // CLARIFY MODE — return early
@@ -228,21 +232,14 @@ Respond ONLY with valid JSON — no markdown, no extra text:
     }
 
     // ══════════════════════════════════════════════
-    // SUMMARY MODE — build images + wiki + return
+    // SUMMARY MODE — build images + return
     // ══════════════════════════════════════════════
 
     const imageUrls = (content.imagePrompts || []).map(prompt =>
-      `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt + ', educational diagram, clean, medical illustration, detailed')}?width=400&height=280&nologo=true`
+      `https://image.pollinations.ai/prompt/${encodeURIComponent(
+        prompt + ', educational diagram, clean, medical illustration, detailed'
+      )}?width=400&height=280&nologo=true`
     );
-
-    let wikiSummary = null;
-    try {
-      const wikiRes = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(topic)}`);
-      if (wikiRes.ok) {
-        const wikiData = await wikiRes.json();
-        wikiSummary = wikiData.extract ? wikiData.extract.slice(0, 250) : null;
-      }
-    } catch (e) {}
 
     return res.status(200).json({
       mode: 'summary',
@@ -259,7 +256,6 @@ Respond ONLY with valid JSON — no markdown, no extra text:
       youtubeLinks,
       youtubeSearch: youtubeQueries[0],
       clarifyTopics: content.clarifyTopics || [],
-      wikiSummary,
       brain: brainUsed
     });
 
