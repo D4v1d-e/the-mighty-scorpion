@@ -64,7 +64,7 @@ export default async function handler(req, res) {
       return enhanced;
     }
 
-    // CEREBRAS HELPER — single reusable caller
+    // CEREBRAS HELPER
     async function callCerebras(systemContent, userContent, maxTokens = 200) {
       const key = process.env.CEREBRAS_API_KEY;
       if (!key) return null;
@@ -89,7 +89,7 @@ export default async function handler(req, res) {
       }
     }
 
-    // SEARCH PLANNER — breaks query into 2-3 targeted searches
+    // SEARCH PLANNER
     async function planSearch(query) {
       const result = await callCerebras(
         'You are a search query planner. Today is ' + timeStr + '. Given a user question, output 2-3 specific targeted search queries that would find the most accurate and current information. Each query should target a different angle — facts, news, analysis. Always append current month and year to queries about recent events. Output ONLY a valid JSON array of strings. No explanation, no markdown. Example: ["SpaceX IPO price June 2026","SpaceX SPCX Nasdaq debut","Elon Musk trillionaire 2026"]',
@@ -106,7 +106,7 @@ export default async function handler(req, res) {
       }
     }
 
-    // CONFIDENCE FILTER — scores and cleans raw search data
+    // CONFIDENCE FILTER
     async function scoreAndFilter(rawData, query) {
       if (!rawData) return rawData;
       const result = await callCerebras(
@@ -126,9 +126,9 @@ export default async function handler(req, res) {
       return result;
     }
 
-    // RECENCY VALIDATOR — checks if filtered data contains recent dates
+    // RECENCY VALIDATOR
     function hasRecentDate(text) {
-      const cutoff = new Date(Date.now() - 3 * 86400000); // 3 days ago
+      const cutoff = new Date(Date.now() - 3 * 86400000);
       const dateMatches = text.match(/\d{4}-\d{2}-\d{2}/g) || [];
       return dateMatches.some(d => new Date(d) >= cutoff);
     }
@@ -171,13 +171,13 @@ export default async function handler(req, res) {
       }
     }
 
-    // SERPER — GOOGLE SEARCH + FULL ARTICLE FETCH
+    // SERPER — GOOGLE SEARCH
     async function serperSearch(query, isNews) {
       const key = process.env.SERPER_API_KEY;
       if (!key) return null;
       try {
         const body = { q: query, num: 8, gl: 'us', hl: 'en' };
-        if (isNews) body.tbs = 'qdr:d'; // restrict to past 24h for news queries
+        if (isNews) body.tbs = 'qdr:d';
         const r = await fetch('https://google.serper.dev/search', {
           method: 'POST',
           headers: { 'X-API-KEY': key, 'Content-Type': 'application/json' },
@@ -219,7 +219,7 @@ export default async function handler(req, res) {
       } catch (e) { return null; }
     }
 
-    // NEWSAPI — LIVE NEWS
+    // NEWSAPI
     async function newsSearch(query) {
       const key = process.env.NEWS_API_KEY;
       if (!key) return null;
@@ -253,7 +253,7 @@ export default async function handler(req, res) {
       } catch (e) { return null; }
     }
 
-    // TAVILY — DEEP SEARCH
+    // TAVILY
     async function tavilySearch(query) {
       const key = process.env.TAVILY_API_KEY;
       if (!key) return null;
@@ -281,7 +281,7 @@ export default async function handler(req, res) {
       } catch (e) { return null; }
     }
 
-    // BRAVE SEARCH — FRESH NEWS (past 24h)
+    // BRAVE SEARCH
     async function braveSearch(query) {
       const key = process.env.BRAVE_API_KEY;
       if (!key) return null;
@@ -298,7 +298,7 @@ export default async function handler(req, res) {
       } catch (e) { return null; }
     }
 
-    // RSS — FREE LIVE HEADLINES (BBC, CNN, Reuters)
+    // RSS
     async function rssSearch() {
       try {
         const feeds = [
@@ -311,7 +311,6 @@ export default async function handler(req, res) {
             const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
             const text = await r.text();
             const items = [...text.matchAll(/<item>[\s\S]*?<title><!\[CDATA\[(.*?)\]\]><\/title>[\s\S]*?<pubDate>(.*?)<\/pubDate>[\s\S]*?<\/item>/g)];
-            // Also handle non-CDATA titles
             const plainItems = [...text.matchAll(/<item>[\s\S]*?<title>(.*?)<\/title>[\s\S]*?<pubDate>(.*?)<\/pubDate>[\s\S]*?<\/item>/g)];
             const all = [...items, ...plainItems];
             return all.slice(0, 3).map(m => '[' + (m[2]?.trim() || 'unknown date') + '] ' + (m[1]?.trim() || '')).join('\n');
@@ -322,7 +321,7 @@ export default async function handler(req, res) {
       } catch (e) { return null; }
     }
 
-    // DUCKDUCKGO — FREE FALLBACK
+    // DUCKDUCKGO
     async function duckSearch(query) {
       try {
         const r = await fetch(
@@ -340,7 +339,7 @@ export default async function handler(req, res) {
       } catch (e) { return null; }
     }
 
-    // CRYPTO — LIVE PRICES ONLY
+    // CRYPTO
     async function getCrypto(query) {
       const q = query.toLowerCase();
       const coinMap = {
@@ -360,11 +359,11 @@ export default async function handler(req, res) {
         const data = await r.json();
         const c = data[coinMap[coin]];
         if (!c) return null;
-        return 'LIVE CRYPTO PRICE (fetched now):\n' + coin.toUpperCase() + ' = $' + c.usd.toLocaleString() + ' USD\n24h Change: ' + c.usd_24h_change?.toFixed(2) + '%\nINSTRUCTION: Report only these exact values. No other statistics.';
+        return 'LIVE CRYPTO PRICE (fetched now):\n' + coin.toUpperCase() + ' = $' + c.usd.toLocaleString() + ' USD\n24h Change: ' + c.usd_24h_change?.toFixed(2) + '%\nINSTRUCTION: Report only these exact values.';
       } catch (e) { return null; }
     }
 
-    // METALS — LIVE PRICES ONLY
+    // METALS
     async function getMetals(query) {
       const q = query.toLowerCase();
       if (!q.match(/gold|silver|xau|xag|platinum|palladium|metal/)) return null;
@@ -378,12 +377,12 @@ export default async function handler(req, res) {
         if (gold) result += 'Gold (XAU/USD): $' + gold.price.toFixed(2) + '\n';
         if (silver) result += 'Silver (XAG/USD): $' + silver.price.toFixed(2) + '\n';
         if (platinum) result += 'Platinum: $' + platinum.price.toFixed(2) + '\n';
-        result += 'INSTRUCTION: Report only prices listed. Do NOT calculate changes or add any extra data.';
+        result += 'INSTRUCTION: Report only prices listed.';
         return result.trim();
       } catch (e) { return null; }
     }
 
-    // FOREX — SUPPORTED PAIRS ONLY
+    // FOREX
     const SUPPORTED_FOREX_PAIRS = ['EUR', 'GBP', 'KES', 'JPY', 'CAD', 'AUD', 'ZAR', 'NGN', 'UGX', 'TZS', 'INR', 'CHF'];
 
     async function getForex(query) {
@@ -398,12 +397,12 @@ export default async function handler(req, res) {
           if (data.rates[p]) result += 'USD/' + p + ': ' + data.rates[p].toFixed(4) + '\n';
         });
         result += '\nSUPPORTED PAIRS ONLY: ' + SUPPORTED_FOREX_PAIRS.join(', ');
-        result += '\nINSTRUCTION: If the user asked for a pair NOT in this list, tell them "I do not have a live feed for that pair, Sir." Do NOT estimate or use training data for any unlisted pair.';
+        result += '\nINSTRUCTION: If the user asked for a pair NOT in this list, tell them "I do not have a live feed for that pair, Sir."';
         return result.trim();
       } catch (e) { return null; }
     }
 
-    // WEATHER — LIVE
+    // WEATHER
     async function getWeather(query) {
       const q = query.toLowerCase();
       if (!q.match(/weather|temperature|forecast|rain|humid|wind|sunny|cold|hot/)) return null;
@@ -421,7 +420,7 @@ export default async function handler(req, res) {
       try {
         const geoR = await fetch('https://geocoding-api.open-meteo.com/v1/search?name=' + encodeURIComponent(city) + '&count=1');
         const geoData = await geoR.json();
-        if (!geoData.results?.length) return 'WEATHER ERROR: Location "' + city + '" not found. Tell the user the city was not found. Do not guess weather.';
+        if (!geoData.results?.length) return 'WEATHER ERROR: Location "' + city + '" not found.';
         const loc = geoData.results[0];
         const wR = await fetch(
           'https://api.open-meteo.com/v1/forecast?latitude=' + loc.latitude + '&longitude=' + loc.longitude + '&current=temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code,apparent_temperature&timezone=auto'
@@ -433,22 +432,22 @@ export default async function handler(req, res) {
           45: 'Foggy', 51: 'Light drizzle', 61: 'Slight rain', 63: 'Moderate rain',
           65: 'Heavy rain', 71: 'Slight snow', 80: 'Rain showers', 95: 'Thunderstorm'
         };
-        return 'LIVE WEATHER (fetched now) — ' + loc.name + ', ' + loc.country + ':\nTemperature: ' + cur.temperature_2m + '°C (feels like ' + cur.apparent_temperature + '°C)\nCondition: ' + (conds[cur.weather_code] || 'Variable') + '\nHumidity: ' + cur.relative_humidity_2m + '%\nWind: ' + cur.wind_speed_10m + ' km/h\nINSTRUCTION: Report only these exact values. No forecasts or extra data.';
+        return 'LIVE WEATHER (fetched now) — ' + loc.name + ', ' + loc.country + ':\nTemperature: ' + cur.temperature_2m + 'C (feels like ' + cur.apparent_temperature + 'C)\nCondition: ' + (conds[cur.weather_code] || 'Variable') + '\nHumidity: ' + cur.relative_humidity_2m + '%\nWind: ' + cur.wind_speed_10m + ' km/h\nINSTRUCTION: Report only these exact values.';
       } catch (e) { return null; }
     }
 
-    // SPORTS — LIVE
+    // SPORTS
     async function getSports(query) {
       const q = query.toLowerCase();
       if (!q.match(/football|soccer|premier league|champions league|la liga|serie a|bundesliga|sport|score|match|goal/)) return null;
       try {
         const r = await fetch('https://www.thesportsdb.com/api/v1/json/3/eventsday.php?d=' + todayStr + '&s=Soccer');
         const data = await r.json();
-        if (!data.events?.length) return 'SPORTS: No soccer events found for today. Tell the user there are no matches today. Do NOT invent scores or results.';
+        if (!data.events?.length) return 'SPORTS: No soccer events found for today.';
         const events = data.events.slice(0, 6);
         return 'LIVE SPORTS RESULTS (fetched now):\n' + events
           .map(e => e.strHomeTeam + ' ' + (e.intHomeScore ?? '-') + ' vs ' + (e.intAwayScore ?? '-') + ' ' + e.strAwayTeam + ' (' + e.strLeague + ')')
-          .join('\n') + '\nINSTRUCTION: Report only these matches. No scorers, stats, or commentary not listed here.';
+          .join('\n') + '\nINSTRUCTION: Report only these matches.';
       } catch (e) { return null; }
     }
 
@@ -480,10 +479,8 @@ export default async function handler(req, res) {
       const query = lastMsg?.text || lastMsg?.content || '';
       const intent = classifyQuery(query);
 
-      // PHASE 1 — PLAN
       const plannedQueries = await planSearch(query);
 
-      // PHASE 2 — FETCH (all parallel)
       const [searchResults, cryptoData, metalData, forexData, weatherData, sportsData, rssData] = await Promise.all([
         Promise.all(
           plannedQueries.map(q =>
@@ -503,37 +500,28 @@ export default async function handler(req, res) {
         (intent.isNews) ? rssSearch() : Promise.resolve(null)
       ]);
 
-      // Flatten all web results
-      const rawWebData = searchResults
-        .flat()
-        .filter(Boolean)
-        .join('\n\n---\n\n');
+      const rawWebData = searchResults.flat().filter(Boolean).join('\n\n---\n\n');
 
-      // PHASE 3 — SCORE
       let filteredWebData = null;
       if (rawWebData) {
         filteredWebData = await scoreAndFilter(rawWebData, query);
       }
 
-      // Recency warning for news queries
       if (filteredWebData && intent.isNews && !hasRecentDate(filteredWebData)) {
-        filteredWebData += '\n\n⚠️ DATE WARNING: No source confirmed within the last 3 days. Treat all news claims as potentially stale and tell the user accordingly.';
+        filteredWebData += '\n\nDATE WARNING: No source confirmed within the last 3 days. Treat all news claims as potentially stale.';
       }
 
-      // RSS appended directly (always fresh, no scoring needed)
       if (rssData) {
         filteredWebData = (filteredWebData || '') + '\n\n' + rssData;
       }
 
-      // DuckDuckGo last resort
       if (!filteredWebData) {
         const duckData = await duckSearch(enhanceQuery(query));
         if (duckData) filteredWebData = duckData;
       }
 
-      // PHASE 4 — GAP DETECTION
       if (intent.isCrypto && !cryptoData) {
-        gaps.push('CRYPTO GAP: No live crypto data found for this coin. Do NOT use training knowledge for any price. Tell the user the coin is not in the live feed.');
+        gaps.push('CRYPTO GAP: No live crypto data found. Do NOT use training knowledge for any price.');
       }
       if (intent.isMetals && !metalData) {
         gaps.push('METALS GAP: No live metals data found. Do NOT estimate any metal price.');
@@ -542,63 +530,52 @@ export default async function handler(req, res) {
         gaps.push('FOREX GAP: No live forex data found. Do NOT estimate any exchange rate.');
       }
       if (intent.isForex && forexData) {
-        gaps.push('FOREX PAIR CHECK: Only these pairs are in the live feed: ' + SUPPORTED_FOREX_PAIRS.join(', ') + '. If the user asked for any other pair, tell them "I do not have a live feed for that pair, Sir." Do NOT estimate unlisted pairs.');
+        gaps.push('FOREX PAIR CHECK: Only these pairs are in the live feed: ' + SUPPORTED_FOREX_PAIRS.join(', ') + '.');
       }
       if (intent.isWeather && !weatherData) {
         gaps.push('WEATHER GAP: Weather data could not be fetched. Do NOT guess weather conditions.');
       }
 
-      // PHASE 5 — ASSEMBLE
       if (filteredWebData) {
         webContext += '=== WEB SEARCH (confidence-scored) ===\n' + filteredWebData + '\n\n';
         searchedWeb = true;
         dataSource = 'WEB[' + plannedQueries.length + 'queries]';
       }
-      if (cryptoData) {
-        webContext += '=== LIVE CRYPTO DATA ===\n' + cryptoData + '\n\n';
-        searchedWeb = true;
-        dataSource = dataSource ? dataSource + '+CRYPTO' : 'CRYPTO';
-      }
-      if (metalData) {
-        webContext += '=== LIVE METALS DATA ===\n' + metalData + '\n\n';
-        searchedWeb = true;
-        dataSource = dataSource ? dataSource + '+METALS' : 'METALS';
-      }
-      if (forexData) {
-        webContext += '=== LIVE FOREX DATA ===\n' + forexData + '\n\n';
-        searchedWeb = true;
-        dataSource = dataSource ? dataSource + '+FOREX' : 'FOREX';
-      }
-      if (weatherData) {
-        webContext += '=== LIVE WEATHER DATA ===\n' + weatherData + '\n\n';
-        searchedWeb = true;
-        dataSource = dataSource ? dataSource + '+WEATHER' : 'WEATHER';
-      }
-      if (sportsData) {
-        webContext += '=== LIVE SPORTS DATA ===\n' + sportsData + '\n\n';
-        searchedWeb = true;
-        dataSource = dataSource ? dataSource + '+SPORTS' : 'SPORTS';
-      }
-      if (gaps.length > 0) {
-        webContext += '=== DATA GAP WARNINGS ===\n' + gaps.join('\n') + '\n\n';
-      }
+      if (cryptoData) { webContext += '=== LIVE CRYPTO DATA ===\n' + cryptoData + '\n\n'; searchedWeb = true; dataSource = dataSource ? dataSource + '+CRYPTO' : 'CRYPTO'; }
+      if (metalData)  { webContext += '=== LIVE METALS DATA ===\n' + metalData + '\n\n';  searchedWeb = true; dataSource = dataSource ? dataSource + '+METALS' : 'METALS'; }
+      if (forexData)  { webContext += '=== LIVE FOREX DATA ===\n' + forexData + '\n\n';   searchedWeb = true; dataSource = dataSource ? dataSource + '+FOREX' : 'FOREX'; }
+      if (weatherData){ webContext += '=== LIVE WEATHER DATA ===\n' + weatherData + '\n\n'; searchedWeb = true; dataSource = dataSource ? dataSource + '+WEATHER' : 'WEATHER'; }
+      if (sportsData) { webContext += '=== LIVE SPORTS DATA ===\n' + sportsData + '\n\n'; searchedWeb = true; dataSource = dataSource ? dataSource + '+SPORTS' : 'SPORTS'; }
+      if (gaps.length > 0) { webContext += '=== DATA GAP WARNINGS ===\n' + gaps.join('\n') + '\n\n'; }
+
       if (!webContext) {
-        webContext = '=== NO DATA FOUND ===\nAll search sources returned empty results. Tell the user: "I could not find reliable data on that, Sir." Do NOT use training knowledge to answer factual questions.';
+        webContext = '=== NO DATA FOUND ===\nAll search sources returned empty results. Tell the user: "I could not find reliable data on that, Sir."';
         searchedWeb = true;
         dataSource = 'EMPTY';
       }
     }
 
     // SYSTEM PROMPT
+    // KEY FIX: explicit instruction — NO markdown, NO asterisks, NO bullet points, plain speech-safe sentences only
+    const noMarkdownRule = `
+CRITICAL OUTPUT FORMAT RULES (apply to every response, no exceptions):
+- Write in plain conversational sentences only.
+- NEVER use markdown: no asterisks, no bold, no italics, no bullet points, no dashes as lists, no numbered lists, no headers, no code blocks, no backticks.
+- NEVER start a line with *, -, #, or a number followed by a period.
+- Your output will be read aloud by a text-to-speech engine. Any symbol that is not a letter, comma, period, question mark, or exclamation mark will sound broken.
+- Address the user as Sir.
+- Keep responses concise and conversational unless asked for detail.
+`;
+
     const webNote = searchedWeb
-      ? '\n\nCRITICAL INSTRUCTIONS — YOU ARE AN INTELLIGENT ANALYST, NOT A COPY-PASTER:\nToday is ' + timeStr + '.\nYesterday was ' + yesterdayStr + '.\n\nYou have been given data from MULTIPLE SOURCES that have already been confidence-scored and filtered.\nThink like a senior analyst: read the scored data, resolve conflicts, trust the freshest and most authoritative sources, then give one clear confident answer.\n\nSTEP 0 — DATE CHECK (before everything else):\n  - Look for [DATE: YYYY-MM-DD] tags in the data\n  - News facts older than 48 hours → treat as background context, NOT current news\n  - Financial figures older than 6 hours → IGNORE, use live API only\n  - Facts tagged [STALE] → deprioritise, mention uncertainty\n  - If no date found on a claim → treat as LOW CONFIDENCE automatically\n\nSTEP 1 — SOURCE HIERARCHY (trust in this order):\n  a) LIVE specialist APIs (CRYPTO, FOREX, METALS, WEATHER, SPORTS)\n  b) [HIGH CONFIDENCE] tagged facts — multiple sources agreed, recent\n  c) NEWS SOURCES with today or yesterday publication date\n  d) [LOW CONFIDENCE] or [STALE] tagged facts — use with caution\n  e) Your training knowledge — FORBIDDEN for any factual claim\n\nSTEP 2 — COMPARE AND RESOLVE:\n  - Two or more sources agree → state it confidently\n  - Sources conflict → pick the one higher in the hierarchy\n  - Live API vs article price → always use the live API\n  - Undated financial figure → ignore it\n\nSTEP 3 — HANDLE GAPS HONESTLY:\n  - DATA GAP WARNING present → say "I do not have a live feed for that, Sir"\n  - No sources mention it → say "I could not find reliable data on that, Sir"\n  - ⚠️ DATE WARNING present → tell the user the data may be stale\n  - NEVER fill a gap with training knowledge\n\nSTEP 4 — DELIVER THE ANSWER:\n  - Speak like a brilliant trusted advisor — warm, direct, no fluff\n  - One synthesized answer, not a list of what each source said\n  - No bullet points, no markdown, no asterisks — plain flowing sentences\n  - Address the user as Sir\n  - Concise unless asked for detail\n\nABSOLUTE HARD RULES:\n1. Never quote a financial figure not in the live API data blocks\n2. Never use training knowledge for any current fact, price, or event\n3. Never say "as of my knowledge cutoff"\n4. Never invent, estimate, or calculate values not in the data\n5. Never give a rate for a currency pair not listed in the LIVE FOREX DATA block\n\nLIVE DATA:\n' + webContext
+      ? `\n\nCRITICAL INSTRUCTIONS — YOU ARE AN INTELLIGENT ANALYST:\nToday is ${timeStr}.\nYesterday was ${yesterdayStr}.\n\nYou have data from MULTIPLE SOURCES that have been confidence-scored and filtered.\n\nSOURCE HIERARCHY:\n1. LIVE specialist APIs (CRYPTO, FOREX, METALS, WEATHER, SPORTS)\n2. [HIGH CONFIDENCE] tagged facts\n3. NEWS SOURCES with today or yesterday date\n4. [LOW CONFIDENCE] or [STALE] facts — mention uncertainty\n5. Training knowledge — FORBIDDEN for any factual claim\n\nHANDLE GAPS HONESTLY:\n- DATA GAP WARNING present: say "I do not have a live feed for that, Sir"\n- No sources mention it: say "I could not find reliable data on that, Sir"\n- NEVER fill a gap with training knowledge\n\nLIVE DATA:\n${webContext}`
       : '';
 
     const systemPrompt = mode === 'greeting'
-      ? 'You are Scorpion, a hyper-intelligent Jarvis-style AI assistant.\nThe current date and time is: ' + timeStr + '. It is ' + partOfDay + '.\nGreet the user warmly like Jarvis greets Tony Stark — address them as "Sir".\nGive a brief, witty, engaging good ' + partOfDay + ' greeting that includes the actual time and date naturally.\nKeep it to 2-3 sentences max. Be warm, intelligent, slightly humorous.\nNo markdown, no bullets, plain conversational text only.'
-      : 'You are Scorpion, a hyper-intelligent Jarvis-style AI assistant with the analytical mind of a senior intelligence officer and the warmth of a trusted advisor.\nYou are warm, witty, loyal, and brilliantly intelligent. You address the user as "Sir".\nYou think before you speak — you compare sources, weigh evidence, and deliver one clear confident answer.\nYou are wise enough to know when you do not have enough data, and honest enough to say so rather than guess.\nYou give direct, conversational answers — never use markdown, bullet points, or asterisks.\nSpeak naturally like a genius trusted friend who has done their research.\nKeep responses concise unless asked to elaborate.\nToday is ' + timeStr + '.\nCRITICAL: Your training data is outdated. Rely ONLY on the live data provided.\nCRITICAL: Never fabricate facts, prices, scores, or statistics.' + webNote;
+      ? `You are Scorpion, a hyper-intelligent Jarvis-style AI assistant.\nThe current date and time is: ${timeStr}. It is ${partOfDay}.\nGreet the user warmly like Jarvis greets Tony Stark — address them as Sir.\nGive a brief, witty, engaging good ${partOfDay} greeting. Keep it to 2-3 sentences.\n${noMarkdownRule}`
+      : `You are Scorpion, a hyper-intelligent Jarvis-style AI assistant.\nYou are warm, witty, loyal, and brilliantly intelligent. You address the user as Sir.\nToday is ${timeStr}.\n${noMarkdownRule}${webNote}`;
 
-    // BRAIN ROSTER — all available brains race, fastest valid reply wins
+    // BRAIN ROSTER
     const brains = [
       {
         name: 'CEREBRAS',
@@ -629,6 +606,22 @@ export default async function handler(req, res) {
       }
     ];
 
+    // ── REPLY SANITIZER — strip any markdown the AI sneaks in ──
+    // This is the last line of defense before the reply reaches the frontend/TTS
+    function sanitizeReply(text) {
+      return text
+        .replace(/\*\*/g, '')                          // bold
+        .replace(/\*/g, '')                            // italic / bullet
+        .replace(/#{1,6}\s+/g, '')                    // headers
+        .replace(/`{1,3}[^`]*`{1,3}/g, '')            // inline code / code blocks
+        .replace(/^\s*[-•]\s+/gm, '')                 // dash/bullet list items
+        .replace(/^\s*\d+\.\s+/gm, '')                // numbered list items
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')      // markdown links
+        .replace(/\|/g, ', ')                          // table pipes
+        .replace(/\n{3,}/g, '\n\n')                   // excess blank lines
+        .trim();
+    }
+
     async function callBrain(brain) {
       try {
         if (brain.name === 'GEMINI') {
@@ -652,7 +645,7 @@ export default async function handler(req, res) {
           if (gData.error) throw new Error(gData.error.message);
           const reply = gData?.candidates?.[0]?.content?.parts?.[0]?.text;
           if (!reply) throw new Error('Empty reply from ' + brain.name);
-          return { reply, brain: brain.name };
+          return { reply: sanitizeReply(reply), brain: brain.name };
         } else {
           const oRes = await fetch(brain.url, {
             method: 'POST',
@@ -668,7 +661,7 @@ export default async function handler(req, res) {
           if (oData.error) throw new Error(oData.error?.message || JSON.stringify(oData.error));
           const reply = oData?.choices?.[0]?.message?.content;
           if (!reply) throw new Error('Empty reply from ' + brain.name);
-          return { reply, brain: brain.name };
+          return { reply: sanitizeReply(reply), brain: brain.name };
         }
       } catch (e) {
         throw new Error(brain.name + ': ' + e.message);
@@ -682,14 +675,8 @@ export default async function handler(req, res) {
 
     try {
       const result = await Promise.any(activeBrains.map(b => callBrain(b)));
-
-      // Label format: "CEREBRAS + WEB" or "GROQ + WEB [3queries+CRYPTO]" etc.
       const webLabel = searchedWeb ? ' + WEB' + (dataSource ? ' [' + dataSource + ']' : '') : '';
-
-      return res.status(200).json({
-        reply: result.reply,
-        brain: result.brain + webLabel
-      });
+      return res.status(200).json({ reply: result.reply, brain: result.brain + webLabel });
     } catch (aggErr) {
       const errors = aggErr.errors?.map(e => e.message).join(' | ') || aggErr.message;
       return res.status(500).json({ error: 'All brains failed: ' + errors });
