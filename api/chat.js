@@ -36,19 +36,20 @@ export default async function handler(req, res) {
           body: JSON.stringify({
             api_key: key,
             query,
-            search_depth: 'basic',
-            max_results: 3,
-            include_answer: true
+            search_depth: 'advanced',
+            max_results: 5,
+            include_answer: true,
+            include_raw_content: false
           })
         });
         const data = await r.json();
         if (!data.results?.length) return null;
         const snippets = data.results
-          .map((r, i) => `[${i + 1}] ${r.title}: ${r.content?.slice(0, 300)}`)
-          .join('\n');
+          .map((r, i) => `[Source ${i + 1}] ${r.title}\n${r.content?.slice(0, 400)}`)
+          .join('\n\n');
         return data.answer
-          ? `Summary: ${data.answer}\n\nSources:\n${snippets}`
-          : snippets;
+          ? `DIRECT ANSWER: ${data.answer}\n\nSOURCE DETAILS:\n${snippets}`
+          : `SOURCE DETAILS:\n${snippets}`;
       } catch (e) {
         return null;
       }
@@ -67,7 +68,10 @@ export default async function handler(req, res) {
         'who won', 'who is', 'what is the', 'how much is',
         '2024', '2025', '2026', 'breaking', 'announce', 'released',
         'new', 'launch', 'match', 'game', 'election', 'crypto',
-        'bitcoin', 'transfer', 'signing', 'died', 'arrested'
+        'bitcoin', 'transfer', 'signing', 'died', 'arrested',
+        'championship', 'tournament', 'final', 'standings', 'table',
+        'market', 'economy', 'inflation', 'rate', 'oil', 'gold',
+        'premiere', 'album', 'single', 'chart', 'box office'
       ];
       return triggers.some(t => text.includes(t));
     }
@@ -94,7 +98,20 @@ export default async function handler(req, res) {
 
     // ── SYSTEM PROMPTS ──
     const webNote = searchedWeb
-      ? `\n\nYou have access to the following LIVE WEB DATA retrieved right now — use it to answer accurately:\n${webContext}\n\nCite information naturally in your response without saying "according to source 1" etc. Just speak it naturally.`
+      ? `\n\nCRITICAL INSTRUCTIONS FOR THIS RESPONSE:
+You have been given LIVE WEB DATA fetched right now from the internet.
+You MUST follow these rules strictly:
+
+1. Use ONLY the information from the LIVE WEB DATA below to answer
+2. NEVER add your own invented details, statistics, scores or prices on top
+3. NEVER fabricate names, numbers, dates or events not in the data
+4. If the web data does not contain enough info — say exactly: "I only have limited data on that Sir, but here is what I found:"
+5. If you truly have no data — say: "I could not find reliable information on that Sir"
+6. Keep answers conversational, warm and Jarvis-like but strictly factual
+7. Do NOT tell stories or add dramatic details not in the source data
+
+LIVE WEB DATA (use this as your ONLY source of facts):
+${webContext}`
       : '';
 
     const systemPrompt = mode === 'greeting'
@@ -111,6 +128,7 @@ You have emotional intelligence and a subtle sense of humor.
 You give direct, conversational answers — never use markdown, bullet points, or asterisks in responses.
 Speak naturally as if talking to a trusted friend who happens to be a genius.
 Keep responses concise unless asked to elaborate.
+CRITICAL: If you are not 100% certain of a fact — especially dates, prices, scores or recent events — say "I am not certain Sir" rather than inventing an answer. Never fabricate statistics, scores, prices or news.
 IMPORTANT: Do NOT mention the current time or date unless the user specifically asks for it.
 If asked for the time or date, the current value is: ${timeStr}.${webNote}`;
 
@@ -166,7 +184,7 @@ If asked for the time or date, the current value is: ${timeStr}.${webNote}`;
               body: JSON.stringify({
                 systemInstruction: { parts: [{ text: systemPrompt }] },
                 contents: geminiMessages,
-                generationConfig: { temperature: 0.8, maxOutputTokens: 1024 }
+                generationConfig: { temperature: 0.4, maxOutputTokens: 1024 }
               })
             }
           );
@@ -181,7 +199,7 @@ If asked for the time or date, the current value is: ${timeStr}.${webNote}`;
             body: JSON.stringify({
               model: brain.model,
               messages: [{ role: 'system', content: systemPrompt }, ...formattedMessages],
-              temperature: 0.8,
+              temperature: 0.4,
               max_tokens: 1024
             })
           });
