@@ -2,21 +2,18 @@ import { EdgeTTS } from 'edge-tts-universal';
 
 // Best human-sounding voices ranked by naturalness
 const VOICE_PROFILES = {
-  // Primary: Brian (UK) — deepest, most natural, Jarvis-like
   jarvis: {
     voice: 'en-GB-RyanNeural',
     rate: '-5%',
     pitch: '-8Hz',
     volume: '+10%'
   },
-  // Backup 1: Christopher — warm US male, very natural
   christopher: {
     voice: 'en-US-ChristopherNeural',
     rate: '-3%',
     pitch: '-4Hz',
     volume: '+8%'
   },
-  // Backup 2: Steffan (UK) — smooth, professional
   steffan: {
     voice: 'en-GB-ThomasNeural',
     rate: '-4%',
@@ -25,23 +22,39 @@ const VOICE_PROFILES = {
   }
 };
 
+// Clean all markdown, symbols, and non-speech characters FIRST
+function cleanText(text) {
+  return text
+    .replace(/\*\*/g, '')
+    .replace(/\*/g, '')
+    .replace(/#{1,6}\s/g, '')
+    .replace(/`{1,3}/g, '')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')   // strip markdown links, keep label
+    .replace(/\|/g, ', ')                        // table pipes to pauses
+    .replace(/<[^>]+>/g, '')                     // strip any stray HTML tags
+    .replace(/&amp;/g, 'and')
+    .replace(/&lt;/g, '')
+    .replace(/&gt;/g, '')
+    .replace(/\n+/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+// Build SIMPLE, safe SSML — no emphasis tags on numbers (they break flow)
 function buildSSML(text, profile) {
   const { voice, rate, pitch, volume } = profile;
 
-  // Smart sentence splitting — adds micro-pauses at punctuation
+  // Only safe SSML — pauses at punctuation only
   const ssmlText = text
-    // Commas → brief pause
-    .replace(/,\s+/g, ', <break time="120ms"/> ')
-    // Periods / exclamation → medium pause
-    .replace(/\.\s+/g, '. <break time="200ms"/> ')
-    // Colons / semicolons → slight pause
-    .replace(/[:;]\s+/g, ': <break time="150ms"/> ')
-    // Dashes (em dash) → conversational pause
-    .replace(/\s*—\s*/g, ' <break time="180ms"/> ')
-    // Numbers: add slight emphasis for clarity
-    .replace(/\b(\d+(?:\.\d+)?)\b/g, '<emphasis level="moderate">$1</emphasis>')
-    // "Sir" → slight emphasis, very natural
-    .replace(/\bSir\b/g, '<emphasis level="moderate">Sir</emphasis>');
+    .replace(/&/g, '&amp;')                      // escape XML entities FIRST
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/,\s+/g, ', <break time="100ms"/> ')
+    .replace(/\.\s+/g, '. <break time="180ms"/> ')
+    .replace(/[:;]\s+/g, ': <break time="130ms"/> ')
+    .replace(/\s*—\s*/g, ' <break time="160ms"/> ')
+    .replace(/\?\s+/g, '? <break time="200ms"/> ')
+    .replace(/!\s+/g, '! <break time="180ms"/> ');
 
   return `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis"
     xmlns:mstts="https://www.w3.org/2001/mstts"
@@ -56,17 +69,6 @@ function buildSSML(text, profile) {
   </speak>`;
 }
 
-function cleanText(text) {
-  return text
-    .replace(/\*\*/g, '').replace(/\*/g, '')
-    .replace(/#{1,6}\s/g, '').replace(/`/g, '')
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-    .replace(/\n+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 900);
-}
-
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -79,48 +81,63 @@ export default async function handler(req, res) {
     const { text, voiceProfile } = req.body;
     if (!text || !text.trim()) return res.status(400).json({ error: 'No text provided' });
 
-    const clean = cleanText(text);
+    // Clean FIRST, then slice — never slice mid-word or mid-tag
+    const clean = cleanText(text).slice(0, 900);
     const profile = VOICE_PROFILES[voiceProfile] || VOICE_PROFILES.jarvis;
-    const ssml = buildSSML(clean, profile);
 
     res.setHeader('Content-Type', 'audio/mpeg');
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('Transfer-Encoding', 'chunked');
 
-    // Try SSML synthesis first (most human-sounding)
-    let tts;
+    // Try SSML first
     try {
-      tts = new EdgeTTS(ssml, profile.voice, { ssml: true });
-    } catch {
-      // edge-tts-universal older versions: pass plain text
-      tts = new EdgeTTS(clean, profile.voice);
-    }
+      const ssml = buildSSML(clean, profile);
+      let tts;
+      try {
+        tts = new EdgeTTS(ssml, profile.voice, { ssml: true });
+      } catch {
+        tts = new EdgeTTS(clean, profile.voice);
+      }
 
-    const result = await tts.synthesize();
+      const result = await tts.synthesize();
 
-    // Stream path 1: .stream() method (v2+)
-    if (result.audio && typeof result.audio.stream === 'function') {
-      const stream = result.audio.stream();
-      for await (const chunk of stream) res.write(chunk);
+      if (result.audio && typeof result.audio.stream === 'function') {
+        const stream = result.audio.stream();
+        for await (const chunk of stream) res.write(chunk);
+        return res.end();
+      }
+      if (result.audioStream) {
+        for await (const chunk of result.audioStream) res.write(chunk);
+        return res.end();
+      }
+      const buf = Buffer.from(await result.audio.arrayBuffer());
+      res.write(buf);
+      return res.end();
+
+    } catch (ssmlErr) {
+      // SSML failed — fall back to plain text, no SSML at all
+      const tts = new EdgeTTS(clean, profile.voice);
+      const result = await tts.synthesize();
+
+      if (result.audio && typeof result.audio.stream === 'function') {
+        const stream = result.audio.stream();
+        for await (const chunk of stream) res.write(chunk);
+        return res.end();
+      }
+      if (result.audioStream) {
+        for await (const chunk of result.audioStream) res.write(chunk);
+        return res.end();
+      }
+      const buf = Buffer.from(await result.audio.arrayBuffer());
+      res.write(buf);
       return res.end();
     }
-
-    // Stream path 2: .audioStream property
-    if (result.audioStream) {
-      for await (const chunk of result.audioStream) res.write(chunk);
-      return res.end();
-    }
-
-    // Fallback: buffer
-    const buf = Buffer.from(await result.audio.arrayBuffer());
-    res.write(buf);
-    return res.end();
 
   } catch (e) {
-    // If SSML failed, retry with plain text + best voice
     if (!res.headersSent) {
+      // Last resort — plain text, default voice
       try {
-        const clean = cleanText(req.body.text || '');
+        const clean = cleanText(req.body?.text || '').slice(0, 900);
         const tts = new EdgeTTS(clean, 'en-GB-RyanNeural');
         const result = await tts.synthesize();
         res.setHeader('Content-Type', 'audio/mpeg');
