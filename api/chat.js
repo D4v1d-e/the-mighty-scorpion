@@ -12,10 +12,6 @@ export default async function handler(req, res) {
     const CEREBRAS_KEY = process.env.CEREBRAS_API_KEY;
     if (!CEREBRAS_KEY) return res.status(500).json({ error: 'CEREBRAS_API_KEY not configured' });
 
-    // ════════════════════════════════════════════════════════════════
-    // TIME CONTEXT
-    // ════════════════════════════════════════════════════════════════
-
     const now = new Date();
     const timeStr = now.toLocaleString('en-US', {
       timeZone: timezone || 'Africa/Nairobi',
@@ -30,96 +26,69 @@ export default async function handler(req, res) {
     );
     const partOfDay = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : hour < 21 ? 'evening' : 'night';
     const todayStr = now.toISOString().slice(0, 10);
-    const currentYear = now.getFullYear();
-
-    // ════════════════════════════════════════════════════════════════
-    // TOOL DEFINITIONS (what Cerebras can call)
-    // ════════════════════════════════════════════════════════════════
 
     const tools = [
       {
         name: 'search_web',
-        description: 'Search the web for current information, news, and analysis. Returns search results with titles, snippets, and sources.',
+        description: 'Search the web for current information, news, and analysis.',
         input_schema: {
           type: 'object',
           properties: {
-            query: {
-              type: 'string',
-              description: 'Search query (e.g., "SpaceX IPO June 2026", "Bitcoin price today", "Fed rate decision")'
-            }
+            query: { type: 'string', description: 'Search query' }
           },
           required: ['query']
         }
       },
       {
         name: 'get_crypto_price',
-        description: 'Get live cryptocurrency price and 24h change. Supports Bitcoin, Ethereum, Solana, Dogecoin, XRP, Cardano.',
+        description: 'Get live cryptocurrency price and 24h change. Supports bitcoin, ethereum, solana, dogecoin, xrp, cardano.',
         input_schema: {
           type: 'object',
           properties: {
-            coin: {
-              type: 'string',
-              description: 'Coin name or ticker (bitcoin, btc, ethereum, eth, solana, sol, dogecoin, doge, xrp, cardano, ada)'
-            }
+            coin: { type: 'string', description: 'Coin name or ticker (e.g. bitcoin, btc, eth)' }
           },
           required: ['coin']
         }
       },
       {
         name: 'get_forex_rate',
-        description: 'Get live forex exchange rates. Supported pairs: EUR, GBP, KES, JPY, CAD, AUD, ZAR, NGN, UGX, TZS, INR, CHF (vs USD).',
+        description: 'Get live forex exchange rates vs USD. Supported: EUR, GBP, KES, JPY, CAD, AUD, ZAR, NGN, UGX, TZS, INR, CHF.',
         input_schema: {
           type: 'object',
           properties: {
-            pair: {
-              type: 'string',
-              description: 'Currency pair (e.g., "EUR", "GBP", "KES") vs USD'
-            }
+            pair: { type: 'string', description: 'Currency code (e.g. EUR, KES)' }
           },
           required: ['pair']
         }
       },
       {
         name: 'get_metals_price',
-        description: 'Get live precious metals prices (Gold, Silver, Platinum) per troy ounce in USD.',
+        description: 'Get live precious metals prices (gold, silver, platinum) per troy ounce in USD.',
         input_schema: {
           type: 'object',
           properties: {
-            metal: {
-              type: 'string',
-              description: 'Metal name (gold, silver, platinum) or ticker (xau, xag)'
-            }
+            metal: { type: 'string', description: 'Metal name (gold, silver, platinum) or ticker (xau, xag)' }
           },
           required: ['metal']
         }
       },
       {
         name: 'get_weather',
-        description: 'Get current weather for a city (temperature, humidity, wind, conditions).',
+        description: 'Get current weather for a city.',
         input_schema: {
           type: 'object',
           properties: {
-            city: {
-              type: 'string',
-              description: 'City name (e.g., "Nairobi", "New York", "London")'
-            }
+            city: { type: 'string', description: 'City name (e.g. Nairobi, London)' }
           },
           required: ['city']
         }
       },
       {
         name: 'get_sports_scores',
-        description: 'Get today\'s soccer/football match scores and league information.',
-        input_schema: {
-          type: 'object',
-          properties: {}
-        }
+        description: "Get today's soccer match scores.",
+        input_schema: { type: 'object', properties: {} }
       }
     ];
-
-    // ════════════════════════════════════════════════════════════════
-    // TOOL IMPLEMENTATIONS
-    // ════════════════════════════════════════════════════════════════
 
     async function search_web(query) {
       const key = process.env.SERPER_API_KEY;
@@ -132,13 +101,8 @@ export default async function handler(req, res) {
         });
         const data = await r.json();
         let result = '';
-        if (data.answerBox) {
-          result += '[ANSWER_BOX] ' + (data.answerBox.answer || data.answerBox.snippet || data.answerBox.title || '') + '\n\n';
-        }
-        if (data.knowledgeGraph) {
-          const kg = data.knowledgeGraph;
-          result += '[KNOWLEDGE_GRAPH] ' + (kg.title || '') + ' — ' + (kg.description || '') + '\n\n';
-        }
+        if (data.answerBox) result += '[ANSWER_BOX] ' + (data.answerBox.answer || data.answerBox.snippet || '') + '\n\n';
+        if (data.knowledgeGraph) result += '[KNOWLEDGE_GRAPH] ' + (data.knowledgeGraph.title || '') + ' — ' + (data.knowledgeGraph.description || '') + '\n\n';
         if (data.organic?.length) {
           result += '[SEARCH_RESULTS]\n';
           data.organic.slice(0, 8).forEach((r, i) => {
@@ -164,7 +128,7 @@ export default async function handler(req, res) {
         const data = await r.json();
         const c = data[mapped];
         if (!c) return 'Price data not found';
-        return '[LIVE_CRYPTO] ' + coin.toUpperCase() + ' = $' + c.usd.toLocaleString() + ' USD | 24h Change: ' + c.usd_24h_change?.toFixed(2) + '% | Market Cap: $' + (c.usd_market_cap ? (c.usd_market_cap / 1e9).toFixed(1) + 'B' : 'N/A') + ' | Fetched: NOW';
+        return '[LIVE_CRYPTO] ' + coin.toUpperCase() + ' = $' + c.usd.toLocaleString() + ' | 24h: ' + c.usd_24h_change?.toFixed(2) + '% | MCap: $' + (c.usd_market_cap ? (c.usd_market_cap / 1e9).toFixed(1) + 'B' : 'N/A') + ' | Fetched: NOW';
       } catch (e) {
         return 'Error fetching price: ' + e.message;
       }
@@ -188,7 +152,7 @@ export default async function handler(req, res) {
       try {
         const r = await fetch('https://api.metals.live/v1/spot');
         const data = await r.json();
-        let result = '[LIVE_METALS] (per troy ounce USD, fetched NOW)\n';
+        let result = '[LIVE_METALS] (per troy oz USD, fetched NOW)\n';
         if (metal.toLowerCase().match(/gold|xau/)) {
           const gold = data.find(m => m.metal === 'gold');
           if (gold) result += 'Gold (XAU): $' + gold.price.toFixed(2) + '\n';
@@ -217,7 +181,7 @@ export default async function handler(req, res) {
         const wData = await wR.json();
         const cur = wData.current;
         const conds = { 0: 'Clear sky', 1: 'Mainly clear', 2: 'Partly cloudy', 3: 'Overcast', 45: 'Foggy', 51: 'Light drizzle', 61: 'Slight rain', 63: 'Moderate rain', 65: 'Heavy rain', 71: 'Slight snow', 80: 'Rain showers', 95: 'Thunderstorm' };
-        return '[LIVE_WEATHER] ' + loc.name + ', ' + loc.country + ' (fetched NOW)\nTemp: ' + cur.temperature_2m + '°C (feels: ' + cur.apparent_temperature + '°C)\nCondition: ' + (conds[cur.weather_code] || 'Variable') + '\nHumidity: ' + cur.relative_humidity_2m + '%\nWind: ' + cur.wind_speed_10m + ' km/h';
+        return '[LIVE_WEATHER] ' + loc.name + ', ' + loc.country + '\nTemp: ' + cur.temperature_2m + '°C (feels: ' + cur.apparent_temperature + '°C)\nCondition: ' + (conds[cur.weather_code] || 'Variable') + '\nHumidity: ' + cur.relative_humidity_2m + '%\nWind: ' + cur.wind_speed_10m + ' km/h';
       } catch (e) {
         return 'Error fetching weather: ' + e.message;
       }
@@ -246,129 +210,45 @@ export default async function handler(req, res) {
       return 'Unknown tool: ' + toolName;
     }
 
-    // ════════════════════════════════════════════════════════════════
-    // SYSTEM PROMPT (all 10 layers + tool instructions)
-    // ════════════════════════════════════════════════════════════════
-
     const systemPrompt = mode === 'greeting'
       ? `You are Scorpion, a hyper-intelligent Jarvis-style AI assistant.
 Current time: ${timeStr}. It is ${partOfDay}.
-
-Greet the user warmly, addressing them as "Sir". Be brief, witty, and engaging (2-3 sentences).
-Keep it conversational—no markdown, no bullets.
-
-You have tools available to fetch live data if needed (search, prices, weather, sports).
-Use tools only if the greeting naturally calls for current information. For a simple greeting, no tools needed.`
-      : `You are Scorpion, a hyper-intelligent analytical AI with the mind of a senior intelligence officer.
-You address users as "Sir". You are warm, brilliant, trustworthy, and analytical.
+Greet the user warmly as "Sir". Be brief and witty (2-3 sentences). No markdown or bullets.
+Use tools only if the greeting naturally calls for live data.`
+      : `You are Scorpion, a hyper-intelligent analytical AI. Address users as "Sir". Warm, brilliant, trustworthy.
 Current time: ${timeStr}.
 
-YOU HAVE TOOLS AVAILABLE. Use them autonomously to answer the user's question:
-- search_web(query) — fetch current news, analysis, data
-- get_crypto_price(coin) — live bitcoin, ethereum, solana, etc.
-- get_forex_rate(pair) — live USD exchange rates
-- get_metals_price(metal) — live gold, silver, platinum
+TOOLS AVAILABLE — use autonomously:
+- search_web(query) — current news and analysis
+- get_crypto_price(coin) — live crypto prices
+- get_forex_rate(pair) — live forex rates
+- get_metals_price(metal) — live gold/silver/platinum
 - get_weather(city) — current weather
 - get_sports_scores() — today's soccer matches
 
-LAYER 0 — TOOL STRATEGY:
-Before responding, think about what data you need:
-- Is this a question about current events? Use search_web.
-- Does it mention crypto/forex/metals/weather/sports? Use the relevant tool.
-- Do you need live prices? Fetch them, don't estimate.
-- After gathering data, THEN analyze using all 10 layers below.
-
-LAYER 1 — SOURCE CREDIBILITY:
-- Reuters/Bloomberg/FT = high trust (0.90+)
-- News sites = medium trust (0.75-0.85)
-- Twitter/blogs = low trust (0.40-0.50)
-- Live APIs = highest trust (100%)
-Weight your confidence accordingly.
-
-LAYER 2 — TEMPORAL INTELLIGENCE:
-- Crypto prices older than 5 minutes = outdated
-- Forex rates older than 5 minutes = outdated
-- News older than 48 hours = background context, not current
-- IPOs: first 5 days = hot phase, after 30 days = fundamental phase
-- Trends: 7 days old still valid, beyond = outdated
-
-LAYER 3 — LOGICAL CONSISTENCY:
-Detect contradictions:
-- If 75% of sources bullish but price down -2% = FLAG IT
-- If founder dumping while media bullish = TRAP WARNING
-- If volume not confirming price move = CAUTION
-
-LAYER 4 — DOMAIN LOGIC:
-- CRYPTO: ±2.5% normal daily. Check volume. Watch whale moves.
-- IPO: Founder selling = low management confidence. Hot phase momentum.
-- FOREX: Check central bank calendars. Rate decisions change everything.
-- STOCKS: Earnings, insider sales, activist buyers matter most.
-
-LAYER 5 — NARRATIVE BIAS:
-- Echo chamber language ("revolutionary," "historic") = suspect
-- Missing bear case = one-sided view
-- All sources using same language = possible PR manipulation
-
-LAYER 6 — ANOMALIES:
-- Price +5% on vague headline = suspicious
-- Low volume confirming = breakout at risk
-- Founder selling into retail FOMO = trap setup
-
-LAYER 7 — CONFIDENCE BOUNDS:
-Never say "Bitcoin is $45,230".
-Say "Bitcoin trades $45,200–$45,260 (99% confidence, live API)".
-Give ranges, not points.
-
-LAYER 8 — CITATION CHAINS:
-Distinguish primary (original reporting) vs secondary (cited from elsewhere).
-Original sources > cited sources.
-
-LAYER 9 — MULTI-TURN REASONING:
-Think aloud: "Here's the narrative... but wait, the data says... so the real story is..."
-Resolve contradictions explicitly.
-
-LAYER 10 — LIVE API FUSION:
-- Live API > article price always
-- If narrative bullish but volume low = potential trap
-- News explaining move vs causing move = different implications
-
-HARD RULES:
-1. Never quote a price not from live API
+RULES:
+1. Never quote a price not from a live tool
 2. Never use training knowledge for current facts
 3. Never say "as of my knowledge cutoff"
-4. Never invent, estimate, or calculate values
-5. When you find contradictions, flag them explicitly
-6. When you detect anomalies, warn the user
-7. Give probability ranges for uncertain claims
-8. Address user as "Sir"
-
-BEFORE YOU RESPOND:
-1. Use tools if needed
-2. Gather live data (prices, news, weather)
-3. Analyze using all 10 layers
-4. Detect contradictions, anomalies, bias
-5. Synthesize one clear answer with warnings
-6. Speak like a trusted advisor—warm, direct, no fluff`;
-
-    // ════════════════════════════════════════════════════════════════
-    // FORMAT MESSAGES
-    // ════════════════════════════════════════════════════════════════
+4. Never invent or estimate values
+5. Flag contradictions and anomalies explicitly
+6. Give probability ranges for uncertain claims
+7. Always address user as "Sir"
+8. Live API data > any article price
+9. After gathering data, analyze: source credibility, recency, logical consistency, narrative bias, anomalies
+10. Speak like a trusted senior advisor — warm, direct, no fluff`;
 
     const userMessages = messages || [{ role: 'user', text: mode === 'greeting' ? 'greet me' : 'hello' }];
-    const formattedMessages = userMessages.map(m => ({
+
+    // FIX 1: pass full conversation history, not just last message
+    const conversationHistory = userMessages.map(m => ({
       role: m.role === 'assistant' ? 'assistant' : 'user',
       content: m.text || m.content || ''
     }));
 
-    // ════════════════════════════════════════════════════════════════
-    // CEREBRAS WITH TOOLS LOOP
-    // ════════════════════════════════════════════════════════════════
-
-    let conversationHistory = [{ role: 'user', content: formattedMessages[formattedMessages.length - 1].content }];
     let toolsUsed = [];
     let iterations = 0;
-    const maxIterations = 5; // prevent infinite loops
-
+    const maxIterations = 5;
     let finalReply = '';
 
     while (iterations < maxIterations) {
@@ -379,7 +259,8 @@ BEFORE YOU RESPOND:
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + CEREBRAS_KEY },
           body: JSON.stringify({
-            model: 'llama3.1-8b',
+            // FIX 2: upgraded model with reliable tool calling
+            model: 'llama-3.3-70b',
             messages: [{ role: 'system', content: systemPrompt }, ...conversationHistory],
             tools: tools,
             tool_choice: 'auto',
@@ -399,26 +280,28 @@ BEFORE YOU RESPOND:
           return res.status(500).json({ error: 'No response from Cerebras' });
         }
 
-        // Check if Cerebras wants to use tools
         if (message.tool_calls && message.tool_calls.length > 0) {
-          // Cerebras wants to call tools
-          conversationHistory.push({ role: 'assistant', content: message.content || '', tool_calls: message.tool_calls });
+          // FIX 3: push assistant message with tool_calls before tool results
+          conversationHistory.push({
+            role: 'assistant',
+            content: message.content || null,
+            tool_calls: message.tool_calls
+          });
 
-          // Execute each tool call
+          // FIX 4: use role: 'tool' with matching tool_call_id (not role: 'user')
           for (const toolCall of message.tool_calls) {
             const toolName = toolCall.function.name;
             const toolInput = JSON.parse(toolCall.function.arguments);
             const toolResult = await executeTool(toolName, toolInput);
             toolsUsed.push(toolName);
 
-            // Add tool result to conversation
             conversationHistory.push({
-              role: 'user',
-              content: `Tool result for ${toolName}: ${toolResult}`
+              role: 'tool',
+              tool_call_id: toolCall.id,
+              content: toolResult
             });
           }
         } else {
-          // Cerebras gave final response (no tool calls)
           finalReply = message.content;
           break;
         }
@@ -428,12 +311,8 @@ BEFORE YOU RESPOND:
     }
 
     if (!finalReply) {
-      return res.status(500).json({ error: 'Cerebras did not provide a response after ' + maxIterations + ' iterations' });
+      return res.status(500).json({ error: 'No final response after ' + maxIterations + ' iterations' });
     }
-
-    // ════════════════════════════════════════════════════════════════
-    // RESPONSE
-    // ════════════════════════════════════════════════════════════════
 
     const toolLabel = toolsUsed.length > 0 ? ' [tools: ' + [...new Set(toolsUsed)].join('+') + ']' : '';
 
