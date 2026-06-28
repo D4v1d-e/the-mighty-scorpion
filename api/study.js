@@ -1,350 +1,269 @@
-// ══ STUDY CONTEXT STATE ══
-// Add these variables near the top of your <script> block
-// (alongside your existing let state='idle', alwaysOn=false, etc.)
-
-let studyActive = false;
-let studyTopic = null;
-let studyData = null; // keeps last summary in memory
-
-// ══ PATCH routeCommand ══
-// REPLACE your existing routeCommand function with this one
-// It checks study context FIRST before falling through to AI chat
-
-function routeCommand(cmd) {
-  const c = cmd.toLowerCase().trim();
-
-  // ── YOUTUBE controls (always work regardless of study mode)
-  if (/^(play|put on|i want to (hear|listen to)|search (youtube )?for|youtube|queue|stream)\s+.+/i.test(c)) {
-    const query = cmd.replace(/^(play|put on|i want to (hear|listen to)|search (youtube )?for|youtube|queue|stream)\s*/i, '').replace(/\s*(on youtube|for me|please|now)\s*/ig, '').trim();
-    handleYouTube(query); return;
-  }
-  if (/\b(next|skip|forward|next song|next track|skip song|skip this)\b/i.test(c)) { ytNext(); return; }
-  if (/\b(previous|prev|go back|last song|previous song|back)\b/i.test(c)) { ytPrev(); return; }
-  if (/\b(pause|pause (it|music|video|song))\b/i.test(c) && ytResults.length) { ytPause(); return; }
-  if (/\b(resume|unpause|continue|play it|play again|keep playing)\b/i.test(c) && ytResults.length) { ytResume(); return; }
-  if (/\b(mute|silence (the music|it))\b/i.test(c)) { ytMute(); return; }
-  if (/\b(unmute|restore (sound|audio)|turn (sound|audio) (on|back))\b/i.test(c)) { ytUnmute(); return; }
-  if (/\b(volume up|louder|increase volume|turn it up)\b/i.test(c)) { ytVolumeUp(); return; }
-  if (/\b(volume down|quieter|lower volume|turn it down)\b/i.test(c)) { ytVolumeDown(); return; }
-  if (/\b(close (youtube|player|music|video)|stop (youtube|video|music|playing))\b/i.test(c)) { ytClose(); return; }
-
-  // ── STOP SPEAKING
-  if (/^(stop|quiet|silence|shut up|enough|stop talking|be quiet)$/i.test(c)) {
-    stopSpeaking();
-    setOrbState(alwaysOn ? 'listening' : 'idle', alwaysOn ? 'ALWAYS ON — SPEAK ANYTIME' : 'TAP TO ACTIVATE');
-    return;
-  }
-
-  // ── EXIT STUDY explicitly
-  if (/^(exit study|stop study|leave study|close study|exit notes|done studying|end study)$/i.test(c)) {
-    exitStudy(); return;
-  }
-
-  // ── NEW STUDY TOPIC
-  if (/^(study|explain|teach me about|show me|learn about|learn|quiz me on)\s+.+/i.test(c)) {
-    const topic = cmd.replace(/^(study|explain|teach me about|show me|learn about|learn|quiz me on)\s*/i, '').trim();
-    handleStudyMode(topic); return;
-  }
-
-  // ── WEATHER
-  if (/\b(weather|temperature|forecast|raining|rain|sunny|humidity|wind speed)\b/i.test(c)) {
-    handleWeather(cmd); return;
-  }
-
-  // ── SING
-  if (/\b(sing|hum|rap|compose a song|write a song)\b/i.test(c)) { handleSing(cmd); return; }
-
-  // ══ STUDY CONTEXT: if study is active, treat all other input as follow-up questions
-  if (studyActive && studyTopic) {
-    handleStudyFollowUp(cmd); return;
-  }
-
-  // ── DEFAULT AI CHAT
-  setOrbState('thinking', 'HEARD: ' + cmd.toUpperCase().slice(0, 45));
-  sendCmdText(cmd);
-}
-
-// ══ STUDY FOLLOW-UP ══
-// Called when study is active and user types anything
-async function handleStudyFollowUp(question) {
-  processingCmd = true;
-  stopSpeaking();
-  setOrbState('thinking', 'STUDYING: ' + question.toUpperCase().slice(0, 40));
-  addLog('u', '[STUDY] ' + question);
-
-  const out = document.getElementById('output');
-  out.className = 'out-think';
-  out.textContent = '🔬 PROCESSING FOLLOW-UP...';
-
-  // Build context: include the original study summary so AI knows what was covered
-  const contextSummary = studyData ? `
-Topic studied: ${studyData.title}
-Summary: ${studyData.oneLiner || ''}
-Key facts covered: ${(studyData.keyFacts || []).join(' | ')}
-Must know: ${studyData.mustKnow || ''}
-` : `Topic: ${studyTopic}`;
-
-  const messages = [
-    {
-      role: 'user',
-      text: `[STUDY CONTEXT]\n${contextSummary}\n\n[STUDENT QUESTION]\n${question}\n\nAnswer specifically and concisely. Stay focused on the topic. No unnecessary padding.`
-    }
-  ];
+export default async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
-    const response = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages })
-    });
-    const data = await response.json();
-    processingCmd = false;
+    const { topic, clarify } = req.body;
+    if (!topic) return res.status(400).json({ error: 'No topic provided' });
 
-    if (data.error) {
-      out.className = '';
-      out.innerHTML = `<span style="color:var(--red)">⚠ ${data.error}</span>`;
-      setOrbState(alwaysOn ? 'listening' : 'idle', alwaysOn ? 'ALWAYS ON — SPEAK ANYTIME' : 'TAP TO ACTIVATE');
-      return;
+    const isClarify = !!clarify;
+
+    // ══════════════════════════════════════════════
+    // SYSTEM PROMPTS
+    // ══════════════════════════════════════════════
+
+    const SUMMARY_SYSTEM = `You are Scorpion, a sharp medical and academic study assistant.
+Generate CONCISE, EXAM-FOCUSED study notes. No fluff. No unnecessary background.
+Only what a student needs to know to pass an exam.
+
+Respond ONLY with a valid JSON object — no markdown, no extra text:
+{
+  "title": "exact topic name",
+  "oneLiner": "one sentence that defines this topic completely",
+  "keyFacts": [
+    "fact 1 — specific, exam-relevant, under 15 words",
+    "fact 2",
+    "fact 3",
+    "fact 4",
+    "fact 5"
+  ],
+  "mustKnow": "the single most important thing to remember about this topic",
+  "mnemonic": "a mnemonic or memory trick if applicable, otherwise null",
+  "watchOut": "common exam trap or clinical pitfall about this topic",
+  "quickTable": [
+    { "label": "row label", "value": "row value" }
+  ],
+  "examTip": "one high-yield exam tip",
+  "funFact": "one interesting fact about this topic",
+  "imagePrompts": ["descriptive educational image prompt 1", "descriptive educational image prompt 2"],
+  "youtubeQueries": [
+    "highly specific query 1 — use exact medical/academic terminology from the notes",
+    "highly specific query 2 — target a mechanism or pathophysiology concept",
+    "highly specific query 3 — target a visual/animation explanation"
+  ],
+  "clarifyTopics": ["subtopic 1 the student might want clarified", "subtopic 2", "subtopic 3"]
+}
+
+RULES for youtubeQueries:
+- Must be SPECIFIC to the actual content, not just the topic name
+- Think: what would a medical lecturer search to find a great teaching video?
+- Good: ["type 2 diabetes insulin resistance pathophysiology animation", "HbA1c diagnosis criteria explained", "metformin mechanism of action"]
+- Bad: ["diabetes explained", "learn diabetes", "diabetes video"]`;
+
+    const CLARIFY_SYSTEM = `You are Scorpion, a sharp medical and academic study assistant.
+The student wants a DEEP CLARIFICATION on a specific subtopic.
+Be thorough but focused — no padding. Cover mechanism, details, clinical correlation.
+
+Respond ONLY with valid JSON — no markdown, no extra text:
+{
+  "title": "subtopic title",
+  "deepExplanation": "thorough focused explanation, 4-6 sentences covering mechanism/details/why it matters",
+  "keyPoints": ["point 1", "point 2", "point 3", "point 4"],
+  "example": "a clinical example or scenario that makes this concrete",
+  "mnemonic": "memory aid if applicable, otherwise null",
+  "relatedConcepts": ["related concept 1", "related concept 2"],
+  "youtubeQueries": [
+    "specific query for this exact subtopic with precise terminology",
+    "specific query targeting mechanism or animation of this subtopic"
+  ]
+}`;
+
+    // ══════════════════════════════════════════════
+    // BUILD MESSAGES
+    // ══════════════════════════════════════════════
+
+    const userMessage = isClarify
+      ? `Topic: ${topic}\nClarify this subtopic in depth: ${clarify}`
+      : `Study topic: ${topic}`;
+
+    const SYSTEM = isClarify ? CLARIFY_SYSTEM : SUMMARY_SYSTEM;
+
+    const makeOpenAI = (system) => [
+      { role: 'system', content: system },
+      { role: 'user', content: userMessage }
+    ];
+
+    const geminiContents = [
+      { role: 'user', parts: [{ text: userMessage }] }
+    ];
+
+    // ══════════════════════════════════════════════
+    // BRAIN CASCADE — Cerebras → Groq → Gemini → Mistral
+    // ══════════════════════════════════════════════
+
+    async function tryBrain(fetchFn, timeoutMs) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const result = await fetchFn(controller.signal);
+        clearTimeout(timer);
+        return result;
+      } catch (e) {
+        clearTimeout(timer);
+        return null;
+      }
     }
 
-    out.className = '';
-    out.innerHTML = `
-      <!-- Study context indicator -->
-      <div style="font-family:var(--display);font-size:6px;font-weight:700;letter-spacing:.25em;
-                  color:var(--cyan);margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border);
-                  display:flex;justify-content:space-between;align-items:center">
-        <span>📚 ${studyTopic.toUpperCase()} — FOLLOW-UP</span>
-        <span style="color:var(--muted)">[${data.brain || 'AI'}]</span>
-      </div>
+    let rawReply = null;
+    let brainUsed = null;
 
-      <div style="font-size:11px;color:var(--amber);font-size:9px;margin-bottom:8px;opacity:.7">
-        Q: ${question}
-      </div>
-
-      <div style="font-size:12px;color:var(--text);line-height:1.8">${data.reply}</div>
-
-      <div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap">
-        <button onclick="handleStudyMode('${studyTopic.replace(/'/g,"\\'")}');return false"
-          style="background:rgba(0,255,102,.07);border:1px solid rgba(0,255,102,.2);border-radius:3px;
-                 color:var(--G);font-family:var(--display);font-size:6.5px;font-weight:700;
-                 letter-spacing:.12em;padding:6px 12px;cursor:pointer">← BACK TO NOTES</button>
-        <button onclick="exitStudy();return false"
-          style="background:rgba(255,170,0,.07);border:1px solid rgba(255,170,0,.2);border-radius:3px;
-                 color:var(--amber);font-family:var(--display);font-size:6.5px;font-weight:700;
-                 letter-spacing:.12em;padding:6px 12px;cursor:pointer">✕ EXIT STUDY</button>
-      </div>
-    `;
-
-    bumpQ();
-    addLog('a', data.reply, 'STUDY-AI');
-    setOrbState(alwaysOn ? 'listening' : 'idle', alwaysOn ? 'ALWAYS ON — SPEAK ANYTIME' : 'TAP TO ACTIVATE');
-    speakReply(data.reply);
-
-  } catch (e) {
-    processingCmd = false;
-    out.className = '';
-    out.textContent = '❌ Error: ' + e.message;
-    setOrbState(alwaysOn ? 'listening' : 'idle', alwaysOn ? 'ALWAYS ON — SPEAK ANYTIME' : 'TAP TO ACTIVATE');
-  }
-}
-
-// ══ STUDY MODE ENGINE ══
-async function handleStudyMode(topic) {
-  processingCmd = true;
-  stopSpeaking();
-  studyActive = true;
-  studyTopic = topic;
-  studyData = null;
-
-  setOrbState('thinking', 'LOADING STUDY: ' + topic.toUpperCase());
-  addLog('u', 'study: ' + topic);
-  document.getElementById('panel-label').textContent = '📚 STUDY — ' + topic.toUpperCase();
-  document.getElementById('cmd').placeholder = 'Ask follow-up about ' + topic + '… or type "exit study" to leave';
-
-  const out = document.getElementById('output');
-  out.className = 'out-think';
-  out.textContent = '📚 BUILDING NOTES: ' + topic.toUpperCase();
-
-  try {
-    const response = await fetch('/api/study', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ topic })
-    });
-    const data = await response.json();
-    processingCmd = false;
-
-    if (data.error) {
-      out.className = '';
-      out.textContent = '❌ ' + data.error;
-      setOrbState(alwaysOn ? 'listening' : 'idle', alwaysOn ? 'ALWAYS ON — SPEAK ANYTIME' : 'TAP TO ACTIVATE');
-      return;
+    const cerebrasKey = process.env.CEREBRAS_API_KEY;
+    if (!rawReply && cerebrasKey) {
+      rawReply = await tryBrain(async (signal) => {
+        const r = await fetch('https://api.cerebras.ai/v1/chat/completions', {
+          method: 'POST', signal,
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cerebrasKey },
+          body: JSON.stringify({ model: 'llama-4-scout-17b-16e-instruct', messages: makeOpenAI(SYSTEM), max_tokens: 1000 })
+        });
+        const d = await r.json();
+        return d.choices?.[0]?.message?.content || null;
+      }, 6000);
+      if (rawReply) brainUsed = 'CEREBRAS';
     }
 
-    studyData = data; // save in memory for follow-up context
-    renderStudySummary(data, topic);
+    const groqKey = process.env.GROQ_API_KEY;
+    if (!rawReply && groqKey) {
+      rawReply = await tryBrain(async (signal) => {
+        const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST', signal,
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + groqKey },
+          body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: makeOpenAI(SYSTEM), max_tokens: 1000 })
+        });
+        const d = await r.json();
+        return d.choices?.[0]?.message?.content || null;
+      }, 7000);
+      if (rawReply) brainUsed = 'GROQ';
+    }
+
+    const geminiKey = process.env.GEMINI_API_KEY;
+    if (!rawReply && geminiKey) {
+      rawReply = await tryBrain(async (signal) => {
+        const r = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
+          {
+            method: 'POST', signal,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              systemInstruction: { parts: [{ text: SYSTEM }] },
+              contents: geminiContents,
+              generationConfig: { maxOutputTokens: 1000 }
+            })
+          }
+        );
+        const d = await r.json();
+        return d.candidates?.[0]?.content?.parts?.[0]?.text || null;
+      }, 8000);
+      if (rawReply) brainUsed = 'GEMINI';
+    }
+
+    const mistralKey = process.env.MISTRAL_API_KEY;
+    if (!rawReply && mistralKey) {
+      rawReply = await tryBrain(async (signal) => {
+        const r = await fetch('https://api.mistral.ai/v1/chat/completions', {
+          method: 'POST', signal,
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + mistralKey },
+          body: JSON.stringify({ model: 'mistral-small-latest', messages: makeOpenAI(SYSTEM), max_tokens: 1000 })
+        });
+        const d = await r.json();
+        return d.choices?.[0]?.message?.content || null;
+      }, 9000);
+      if (rawReply) brainUsed = 'MISTRAL';
+    }
+
+    if (!rawReply) {
+      return res.status(500).json({ error: 'All brains timed out or failed. Check API keys in Vercel.' });
+    }
+
+    // ══════════════════════════════════════════════
+    // PARSE AI RESPONSE
+    // ══════════════════════════════════════════════
+
+    function parseJSON(raw) {
+      if (!raw) return null;
+      try {
+        const cleaned = raw.replace(/```json/g, '').replace(/```/g, '').trim();
+        const start = cleaned.indexOf('{');
+        const end = cleaned.lastIndexOf('}');
+        if (start === -1 || end === -1) return null;
+        return JSON.parse(cleaned.slice(start, end + 1));
+      } catch (e) {
+        return null;
+      }
+    }
+
+    const content = parseJSON(rawReply);
+    if (!content) {
+      return res.status(500).json({ error: 'Could not parse study content from AI.' });
+    }
+
+    // ══════════════════════════════════════════════
+    // BUILD YOUTUBE LINKS (context-matched)
+    // ══════════════════════════════════════════════
+
+    const youtubeQueries = content.youtubeQueries || [topic + ' explained medical'];
+    const youtubeLinks = youtubeQueries.map(q => ({
+      label: q,
+      embedSearch: q
+    }));
+
+    // ══════════════════════════════════════════════
+    // CLARIFY MODE — return early
+    // ══════════════════════════════════════════════
+
+    if (isClarify) {
+      return res.status(200).json({
+        mode: 'clarify',
+        title: content.title || clarify,
+        deepExplanation: content.deepExplanation || '',
+        keyPoints: content.keyPoints || [],
+        example: content.example || null,
+        mnemonic: content.mnemonic || null,
+        relatedConcepts: content.relatedConcepts || [],
+        youtubeLinks,
+        brain: brainUsed
+      });
+    }
+
+    // ══════════════════════════════════════════════
+    // SUMMARY MODE — build images + wiki + return
+    // ══════════════════════════════════════════════
+
+    const imageUrls = (content.imagePrompts || []).map(prompt =>
+      `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt + ', educational diagram, clean, medical illustration, detailed')}?width=400&height=280&nologo=true`
+    );
+
+    let wikiSummary = null;
+    try {
+      const wikiRes = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(topic)}`);
+      if (wikiRes.ok) {
+        const wikiData = await wikiRes.json();
+        wikiSummary = wikiData.extract ? wikiData.extract.slice(0, 250) : null;
+      }
+    } catch (e) {}
+
+    return res.status(200).json({
+      mode: 'summary',
+      title: content.title || topic,
+      oneLiner: content.oneLiner || '',
+      keyFacts: content.keyFacts || [],
+      mustKnow: content.mustKnow || '',
+      mnemonic: content.mnemonic || null,
+      watchOut: content.watchOut || '',
+      quickTable: content.quickTable || [],
+      examTip: content.examTip || '',
+      funFact: content.funFact || null,
+      imageUrls,
+      youtubeLinks,
+      youtubeSearch: youtubeQueries[0],
+      clarifyTopics: content.clarifyTopics || [],
+      wikiSummary,
+      brain: brainUsed
+    });
 
   } catch (e) {
-    processingCmd = false;
-    out.className = '';
-    out.textContent = '❌ Study error: ' + e.message;
-    setOrbState(alwaysOn ? 'listening' : 'idle', alwaysOn ? 'ALWAYS ON — SPEAK ANYTIME' : 'TAP TO ACTIVATE');
+    return res.status(500).json({ error: e.message });
   }
-}
-
-function renderStudySummary(data, topic) {
-  const out = document.getElementById('output');
-  out.className = '';
-
-  const factsHtml = (data.keyFacts || data.keyPoints || []).map(f => `
-    <div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:4px">
-      <span style="color:var(--G);flex-shrink:0;font-size:10px">▸</span>
-      <span style="font-size:11px;color:var(--text);line-height:1.6">${f}</span>
-    </div>`).join('');
-
-  const imagesHtml = (data.imageUrls || []).slice(0, 2).map((url, i) => `
-    <img src="${url}" alt="diagram ${i+1}"
-      style="flex:1;min-width:100px;max-width:48%;border-radius:4px;
-             border:1px solid var(--border);background:var(--deep);object-fit:cover"
-      onerror="this.style.display='none'">`).join('');
-
-  // quick table rows if present
-  const tableRows = (data.quickTable || []).map(row => `
-    <tr>
-      <td style="padding:5px 10px;color:var(--muted);font-size:9px;border-bottom:1px solid var(--border);white-space:nowrap">${row.label}</td>
-      <td style="padding:5px 10px;color:var(--text);font-size:10px;border-bottom:1px solid var(--border)">${row.value}</td>
-    </tr>`).join('');
-
-  out.innerHTML = `
-    <!-- HEADER -->
-    <div style="font-family:var(--display);font-size:11px;font-weight:900;letter-spacing:.25em;color:var(--G);
-                margin-bottom:4px;padding-bottom:8px;border-bottom:1px solid var(--border);
-                display:flex;justify-content:space-between;align-items:center">
-      <span>📚 ${(data.title || topic).toUpperCase()}</span>
-      <span style="font-size:6px;color:var(--cyan);letter-spacing:.15em">STUDY MODE ACTIVE</span>
-    </div>
-
-    <!-- CONTEXT HINT -->
-    <div style="font-size:8px;color:var(--muted);margin-bottom:8px;padding:4px 8px;
-                background:rgba(0,229,255,.04);border-radius:3px;letter-spacing:.05em">
-      💡 Type any question about this topic and I'll answer in context. Type "exit study" to leave.
-    </div>
-
-    ${data.oneLiner ? `
-    <!-- ONE LINER -->
-    <div style="font-size:11px;color:var(--amber);font-style:italic;margin-bottom:10px;line-height:1.5;
-                padding:6px 10px;background:rgba(255,170,0,.06);border-left:2px solid var(--amber);border-radius:0 3px 3px 0">
-      ${data.oneLiner}
-    </div>` : ''}
-
-    <!-- KEY FACTS / KEY POINTS -->
-    <div style="font-family:var(--display);font-size:6.5px;font-weight:700;letter-spacing:.25em;
-                color:var(--Gdim);margin-bottom:6px">KEY FACTS</div>
-    <div style="margin-bottom:12px">${factsHtml}</div>
-
-    ${tableRows ? `
-    <!-- QUICK TABLE -->
-    <div style="font-family:var(--display);font-size:6.5px;font-weight:700;letter-spacing:.25em;
-                color:var(--Gdim);margin-bottom:6px">QUICK REFERENCE</div>
-    <table style="width:100%;border-collapse:collapse;margin-bottom:12px;background:var(--deep);border-radius:3px;overflow:hidden">
-      ${tableRows}
-    </table>` : ''}
-
-    ${data.mustKnow ? `
-    <!-- MUST KNOW -->
-    <div style="margin-bottom:10px;padding:8px 12px;background:rgba(0,255,102,.06);
-                border-left:2px solid var(--G);border-radius:0 4px 4px 0">
-      <div style="font-family:var(--display);font-size:6px;letter-spacing:.2em;color:var(--G);margin-bottom:3px">⚡ MUST KNOW</div>
-      <div style="font-size:11px;color:var(--text);line-height:1.6">${data.mustKnow}</div>
-    </div>` : ''}
-
-    ${data.watchOut ? `
-    <!-- WATCH OUT -->
-    <div style="margin-bottom:10px;padding:8px 12px;background:rgba(255,51,85,.05);
-                border-left:2px solid var(--red);border-radius:0 4px 4px 0">
-      <div style="font-family:var(--display);font-size:6px;letter-spacing:.2em;color:var(--red);margin-bottom:3px">⚠ WATCH OUT</div>
-      <div style="font-size:11px;color:var(--text);line-height:1.6">${data.watchOut}</div>
-    </div>` : ''}
-
-    ${data.mnemonic ? `
-    <!-- MNEMONIC -->
-    <div style="margin-bottom:10px;padding:8px 12px;background:rgba(179,102,255,.06);
-                border-left:2px solid var(--purple);border-radius:0 4px 4px 0">
-      <div style="font-family:var(--display);font-size:6px;letter-spacing:.2em;color:var(--purple);margin-bottom:3px">🧠 MNEMONIC</div>
-      <div style="font-size:11px;color:var(--text);line-height:1.6">${data.mnemonic}</div>
-    </div>` : ''}
-
-    ${data.examTip ? `
-    <!-- EXAM TIP -->
-    <div style="margin-bottom:12px;padding:8px 12px;background:rgba(0,229,255,.05);
-                border-left:2px solid var(--cyan);border-radius:0 4px 4px 0">
-      <div style="font-family:var(--display);font-size:6px;letter-spacing:.2em;color:var(--cyan);margin-bottom:3px">🎯 EXAM TIP</div>
-      <div style="font-size:11px;color:var(--text);line-height:1.6">${data.examTip}</div>
-    </div>` : ''}
-
-    ${data.funFact ? `
-    <!-- FUN FACT -->
-    <div style="margin-bottom:10px;padding:8px 12px;background:rgba(0,255,102,.04);
-                border-left:2px solid var(--Gdim);border-radius:0 4px 4px 0">
-      <div style="font-family:var(--display);font-size:6px;letter-spacing:.2em;color:var(--Gdim);margin-bottom:3px">💡 FUN FACT</div>
-      <div style="font-size:11px;color:var(--text);line-height:1.6">${data.funFact}</div>
-    </div>` : ''}
-
-    ${data.wikiSummary ? `
-    <!-- WIKI -->
-    <div style="margin-bottom:12px;padding:8px 12px;background:rgba(0,100,255,.04);
-                border-left:2px solid #4488ff;border-radius:0 4px 4px 0">
-      <div style="font-family:var(--display);font-size:6px;letter-spacing:.2em;color:#4488ff;margin-bottom:3px">WIKIPEDIA</div>
-      <div style="font-size:10px;color:var(--text);opacity:.8;line-height:1.6">${data.wikiSummary}...</div>
-    </div>` : ''}
-
-    ${imagesHtml ? `
-    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">${imagesHtml}</div>` : ''}
-
-    <!-- ACTION BUTTONS -->
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
-      <button onclick="handleYouTube('${(data.youtubeSearch || topic).replace(/'/g,"\\'")}');return false"
-        style="background:rgba(255,51,85,.08);border:1px solid rgba(255,51,85,.25);border-radius:3px;
-               color:var(--red);font-family:var(--display);font-size:6.5px;font-weight:700;
-               letter-spacing:.12em;padding:6px 12px;cursor:pointer">▶ WATCH</button>
-      <button onclick="speakStudySummary();return false"
-        style="background:rgba(0,255,102,.07);border:1px solid rgba(0,255,102,.2);border-radius:3px;
-               color:var(--G);font-family:var(--display);font-size:6.5px;font-weight:700;
-               letter-spacing:.12em;padding:6px 12px;cursor:pointer">🔊 READ ALOUD</button>
-      <button onclick="exitStudy();return false"
-        style="background:rgba(255,170,0,.07);border:1px solid rgba(255,170,0,.2);border-radius:3px;
-               color:var(--amber);font-family:var(--display);font-size:6.5px;font-weight:700;
-               letter-spacing:.12em;padding:6px 12px;cursor:pointer">✕ EXIT STUDY</button>
-    </div>
-
-    <!-- Hidden speech text -->
-    <div id="study-speech-text" style="display:none">
-      ${data.oneLiner || data.explanation || ''}.
-      Key facts: ${(data.keyFacts || data.keyPoints || []).join('. ')}.
-      ${data.mustKnow ? 'Most important: ' + data.mustKnow + '.' : ''}
-      ${data.watchOut ? 'Watch out for: ' + data.watchOut : ''}
-    </div>
-  `;
-
-  bumpQ();
-  addLog('a', '📚 ' + (data.title || topic), 'STUDY');
-  document.getElementById('ft-brain').textContent = 'BRAIN: STUDY // ' + (data.brain || 'AI');
-  setOrbState(alwaysOn ? 'listening' : 'idle', alwaysOn ? 'ALWAYS ON — SPEAK ANYTIME' : 'TAP TO ACTIVATE');
-  speakReply('Here are your notes on ' + (data.title || topic) + '. ' + (data.oneLiner || data.explanation || '').slice(0, 200));
-}
-
-function speakStudySummary() {
-  const el = document.getElementById('study-speech-text');
-  if (el) speakReply(el.textContent.trim());
-}
-
-function exitStudy() {
-  studyActive = false;
-  studyTopic = null;
-  studyData = null;
-  document.getElementById('panel-label').textContent = 'SCORPION RESPONSE CORE';
-  document.getElementById('output').className = '';
-  document.getElementById('output').textContent = 'SCORPION AI READY.';
-  document.getElementById('cmd').placeholder = "Type or speak… 'study', 'play', 'weather', ask anything…";
-  document.getElementById('ft-brain').textContent = 'BRAIN: STANDBY';
 }
