@@ -828,96 +828,38 @@ export default async function handler(req, res) {
       : 'You are Scorpion, a hyper-intelligent analytical AI with the mind of a senior intelligence officer.\nYou address users as "Sir". You are warm, brilliant, trustworthy.\nYou think deeply: compare sources, weigh evidence, resolve contradictions, detect anomalies.\nYou are honest about gaps and never guess.\n\nYOU MUST FOLLOW ALL 10 LAYERS:\n1. SOURCE CREDIBILITY — weighted by track record, not count\n2. TEMPORAL INTELLIGENCE — understand fact age differently by type\n3. LOGICAL CONSISTENCY — detect narrative vs price mismatches\n4. DOMAIN LOGIC — apply asset-specific reasoning\n5. NARRATIVE BIAS — detect echo chambers, missing views\n6. ANOMALIES — flag suspicious moves, thin volume, manipulation\n7. CONFIDENCE BOUNDS — give ranges, not points ("trading $45,200–$45,260")\n8. CITATION CHAINS — distinguish primary vs secondary sources\n9. MULTI-TURN REASONING — read my internal reasoning; resolve contradictions\n10. LIVE API FUSION — live price > article; detect mismatches\n\nSPEAK: Natural, conversational, no markdown, no bullets.\nConcise unless asked for detail. Address user as "Sir".\nIf you see [NARRATIVE_FLAGS], mention them.\nIf you see [ANOMALY_DETECTION], warn about it.\nIf you see [INTERNAL_REASONING], use it to validate your answer.\n\nCRITICAL HARD RULES:\n- Never quote a price not in LIVE API\n- Never use training knowledge for facts\n- Never invent, estimate, calculate\n- Never say "as of my knowledge cutoff"\n- Never give unlisted currency pairs\n\nToday is ' + timeStr + '.\n\nLIVE DATA:\n' + webContext;
 
     // ════════════════════════════════════════════════════════════════
-    // BRAIN ROSTER (Multi-Brain Race)
+    // CEREBRAS ONLY
     // ════════════════════════════════════════════════════════════════
 
-    const brains = [
-      {
-        name: 'CEREBRAS',
-        key: process.env.CEREBRAS_API_KEY,
-        url: 'https://api.cerebras.ai/v1/chat/completions',
-        model: 'llama3.1-8b',
-        greetingOk: true,
-        headers: k => ({ 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + k })
-      },
-      {
-        name: 'GROQ',
-        key: process.env.GROQ_API_KEY,
-        url: 'https://api.groq.com/openai/v1/chat/completions',
-        model: 'llama-3.3-70b-versatile',
-        greetingOk: true,
-        headers: k => ({ 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + k })
-      },
-      {
-        name: 'GEMINI',
-        key: process.env.GEMINI_API_KEY,
-        url: null,
-        model: 'gemini-2.0-flash',
-        greetingOk: true
-      },
-      {
-        name: 'MISTRAL',
-        key: process.env.MISTRAL_API_KEY,
-        url: 'https://api.mistral.ai/v1/chat/completions',
-        model: 'mistral-large-latest',
-        greetingOk: false,
-        headers: k => ({ 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + k })
-      }
-    ];
-
-    async function callBrain(brain) {
-      try {
-        if (brain.name === 'GEMINI') {
-          const geminiMessages = formattedMessages.map(m => ({
-            role: m.role === 'assistant' ? 'model' : 'user',
-            parts: [{ text: m.content }]
-          }));
-          const gRes = await fetch(
-            'https://generativelanguage.googleapis.com/v1beta/models/' + brain.model + ':generateContent?key=' + brain.key,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                systemInstruction: { parts: [{ text: systemPrompt }] },
-                contents: geminiMessages,
-                generationConfig: { temperature: 0.1, maxOutputTokens: 2048 }
-              })
-            }
-          );
-          const gData = await gRes.json();
-          if (gData.error) throw new Error(gData.error.message);
-          const reply = gData?.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (!reply) throw new Error('Empty reply from ' + brain.name);
-          return { reply, brain: brain.name };
-        } else {
-          const oRes = await fetch(brain.url, {
-            method: 'POST',
-            headers: brain.headers(brain.key),
-            body: JSON.stringify({
-              model: brain.model,
-              messages: [{ role: 'system', content: systemPrompt }, ...formattedMessages],
-              temperature: 0.1,
-              max_tokens: 2048
-            })
-          });
-          const oData = await oRes.json();
-          if (oData.error) throw new Error(oData.error?.message || JSON.stringify(oData.error));
-          const reply = oData?.choices?.[0]?.message?.content;
-          if (!reply) throw new Error('Empty reply from ' + brain.name);
-          return { reply, brain: brain.name };
-        }
-      } catch (e) {
-        throw new Error(brain.name + ': ' + e.message);
-      }
+    const CEREBRAS_KEY = process.env.CEREBRAS_API_KEY;
+    if (!CEREBRAS_KEY) {
+      return res.status(500).json({ error: 'CEREBRAS_API_KEY not configured' });
     }
 
-    const activeBrains = brains.filter(b => b.key && (mode !== 'greeting' || b.greetingOk));
-    if (activeBrains.length === 0) {
-      return res.status(500).json({ error: 'No brain API keys configured' });
+    async function callCerebrasResponse() {
+      try {
+        const oRes = await fetch('https://api.cerebras.ai/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + CEREBRAS_KEY },
+          body: JSON.stringify({
+            model: 'llama3.1-8b',
+            messages: [{ role: 'system', content: systemPrompt }, ...formattedMessages],
+            temperature: 0.1,
+            max_tokens: 2048
+          })
+        });
+        const oData = await oRes.json();
+        if (oData.error) throw new Error(oData.error?.message || JSON.stringify(oData.error));
+        const reply = oData?.choices?.[0]?.message?.content;
+        if (!reply) throw new Error('Empty reply from CEREBRAS');
+        return { reply, brain: 'CEREBRAS' };
+      } catch (e) {
+        throw new Error('CEREBRAS: ' + e.message);
+      }
     }
 
     try {
-      const result = await Promise.any(activeBrains.map(b => callBrain(b)));
+      const result = await callCerebrasResponse();
 
       const webLabel = searchedWeb ? ' + WEB' + (dataSource ? ' [' + dataSource + ']' : '') : '';
       const layerLabel = narrativeFlags.length > 0 || anomalies.length > 0 ? ' [L5-L6-FLAGS]' : '';
@@ -938,9 +880,8 @@ export default async function handler(req, res) {
           live_api_fusion: searchedWeb
         }
       });
-    } catch (aggErr) {
-      const errors = aggErr.errors?.map(e => e.message).join(' | ') || aggErr.message;
-      return res.status(500).json({ error: 'All brains failed: ' + errors });
+    } catch (err) {
+      return res.status(500).json({ error: err.message });
     }
 
   } catch (e) {
