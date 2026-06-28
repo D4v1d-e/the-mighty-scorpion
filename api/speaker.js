@@ -1,5 +1,27 @@
+// ============================================================
+// SPEAKER API — EDGE TTS VOICE ENGINE
+// ============================================================
+// Description : Converts text to speech using Microsoft Edge TTS.
+//               Returns raw MP3 audio stream to the client.
+//
+// Voice       : en-GB-RyanNeural (JARVIS profile, default)
+//               en-US-ChristopherNeural
+//               en-GB-SteffanNeural
+//
+// Method      : POST
+// Body        : { text: string, voiceProfile?: string }
+// Response    : audio/mpeg stream
+//
+// Status phrases are exported so index.html can import them
+// for pre-fetch spoken feedback.
+//
+// Author      : Dr. Davie Mwangi
+// Version     : 2.0.0
+// ============================================================
+
 import { EdgeTTS } from 'edge-tts-universal';
 
+// ── VOICE PROFILES ──────────────────────────────────────────
 const VOICE_PROFILES = {
   jarvis: {
     voice: 'en-GB-RyanNeural',
@@ -21,18 +43,51 @@ const VOICE_PROFILES = {
   }
 };
 
+// ── STATUS PHRASES (used by index.html before AI fetch) ─────
+export const STATUS_PHRASES = {
+  thinking:  [
+    'Accessing the neural matrix, Sir.',
+    'Processing your query now.',
+    'Calculating the optimal response.',
+    'One moment while I analyse that.',
+    'Running deep search protocols.'
+  ],
+  searching: [
+    'Initiating web scan, Sir.',
+    'Querying live data feeds.',
+    'Pulling results from the network.',
+    'Searching across all nodes.'
+  ],
+  weather: [
+    'Connecting to atmospheric sensors.',
+    'Pulling weather telemetry now.',
+    'Fetching the latest forecast data.'
+  ],
+  youtube: [
+    'Scanning YouTube for your track, Sir.',
+    'Searching the media archive.',
+    'Locking onto audio stream.'
+  ],
+  image: [
+    'Generating diagram, Sir.',
+    'Rendering visual now.',
+    'Compiling the illustration.'
+  ],
+  continue: [
+    'Shall I continue, Sir?'
+  ]
+};
+
+// ── TEXT CLEANER ─────────────────────────────────────────────
 function cleanText(text) {
   return text
-    // strip markdown
     .replace(/\*\*/g, '')
     .replace(/\*/g, '')
     .replace(/#{1,6}\s/g, '')
     .replace(/`{1,3}/g, '')
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
     .replace(/\|/g, ', ')
-    // strip ALL html/xml tags — this kills any leaked SSML or backend tags
     .replace(/<[^>]+>/g, '')
-    // strip backend data labels that AI sometimes leaks into reply
     .replace(/\[HIGH CONFIDENCE\]/gi, '')
     .replace(/\[LOW CONFIDENCE\]/gi, '')
     .replace(/\[STALE\]/gi, '')
@@ -42,22 +97,20 @@ function cleanText(text) {
     .replace(/LIVE (CRYPTO|METALS|FOREX|WEATHER|SPORTS) DATA/gi, '')
     .replace(/WEB SEARCH[^\n]*/gi, '')
     .replace(/DATA GAP[^\n]*/gi, '')
-    // html entities
     .replace(/&amp;/g, 'and')
     .replace(/&lt;/g, '')
     .replace(/&gt;/g, '')
     .replace(/&nbsp;/g, ' ')
-    // clean up spacing
     .replace(/\n+/g, ' ')
     .replace(/\s{2,}/g, ' ')
     .trim();
 }
 
+// ── HANDLER ──────────────────────────────────────────────────
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
@@ -72,7 +125,6 @@ export default async function handler(req, res) {
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('Transfer-Encoding', 'chunked');
 
-    // PLAIN TEXT ONLY — no SSML, no XML, no tags
     const tts = new EdgeTTS(clean, profile.voice);
     const result = await tts.synthesize();
 
@@ -85,6 +137,7 @@ export default async function handler(req, res) {
       for await (const chunk of result.audioStream) res.write(chunk);
       return res.end();
     }
+
     const buf = Buffer.from(await result.audio.arrayBuffer());
     res.write(buf);
     return res.end();
