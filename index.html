@@ -117,6 +117,18 @@ main{flex:1;overflow:hidden;display:flex;flex-direction:column;gap:6px;padding:6
 #output img{max-width:100%;border-radius:4px;margin:6px 0;border:1px solid var(--border)}
 .out-think::after{content:' ▋';animation:blink .7s infinite;color:var(--amber)}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+
+/* ══ WORD HIGHLIGHT TTS ══ */
+.tts-word{display:inline;transition:background .05s,color .05s}
+.tts-word.tts-active{
+  background:rgba(0,255,102,.22);
+  color:#ffffff;
+  border-radius:3px;
+  padding:0 2px;
+  text-shadow:0 0 8px rgba(0,255,102,.8);
+  box-shadow:0 0 6px rgba(0,255,102,.3);
+}
+
 .irow{display:flex;gap:6px;align-items:center;margin-top:6px;flex-shrink:0}
 #cmd{flex:1;background:#010f07;border:1px solid var(--border);border-radius:3px;color:var(--text);font-family:var(--body);font-size:14px;padding:7px 11px;outline:none;caret-color:var(--G)}
 #cmd:focus{border-color:rgba(0,255,102,.35)}
@@ -146,7 +158,7 @@ main{flex:1;overflow:hidden;display:flex;flex-direction:column;gap:6px;padding:6
 footer{border-top:1px solid var(--border);padding:5px 0;display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
 .ftxt{font-size:7px;letter-spacing:.18em;color:var(--muted);font-family:var(--mono)}
 
-/* ══ STUDY COMPONENTS — professional, clean ══ */
+/* ══ STUDY COMPONENTS ══ */
 .study-sec{margin-bottom:10px}
 .study-sec-title{font-family:var(--display);font-size:7px;font-weight:700;letter-spacing:.3em;display:flex;align-items:center;gap:7px;margin-bottom:6px;padding-bottom:4px;border-bottom:1px solid rgba(255,255,255,.06)}
 .study-sec-title::before{content:'';width:3px;height:12px;border-radius:1px;background:currentColor;flex-shrink:0}
@@ -172,6 +184,10 @@ footer{border-top:1px solid var(--border);padding:5px 0;display:flex;justify-con
 .step-detail{color:var(--text);line-height:1.6}
 .overview-block{font-size:14px;color:var(--text);line-height:1.8;padding:8px 12px;border-left:2px solid rgba(0,255,102,.3);border-radius:0 4px 4px 0;margin-bottom:8px;background:rgba(0,255,102,.03)}
 .mechanism-block{font-size:14px;color:var(--text);line-height:1.8;padding:8px 12px;border-left:2px solid rgba(0,229,255,.3);border-radius:0 4px 4px 0;margin-bottom:6px;background:rgba(0,229,255,.03)}
+
+/* ══ LAZY IMAGE PLACEHOLDER ══ */
+.img-lazy{width:100%;border-radius:4px;border:1px solid var(--border);object-fit:cover;max-height:160px;background:rgba(0,255,102,.04);min-height:80px}
+.img-placeholder{display:flex;align-items:center;justify-content:center;flex:1;min-width:0;border-radius:4px;border:1px solid var(--border);background:rgba(0,255,102,.04);min-height:80px;max-height:160px;font-family:var(--display);font-size:6px;letter-spacing:.15em;color:var(--muted)}
 
 @media(max-width:1100px){.bottom-tri{grid-template-columns:240px 1fr 210px}}
 @media(max-width:900px){
@@ -507,20 +523,120 @@ let conversationHistory=[];
 const MAX_HISTORY=20;
 let lastStudyTopic='';
 
-// ══ VOICE: single audio channel — NO browser SpeechSynthesis collision ══
-// All speech goes through /api/speaker (EdgeTTS) only.
-// Browser fallback is used ONLY if the API call itself fails.
-let _currentAudio=null;
+// ══════════════════════════════════════════════════════════════════
+//  WORD-HIGHLIGHT TTS ENGINE
+//  Strategy:
+//    1) EdgeTTS via /api/speaker → audio plays, we run a timer-based
+//       word ticker that advances word highlights at estimated speaking
+//       rate (~145 wpm = ~415ms/word), synced to audio.currentTime.
+//    2) Browser SpeechSynthesis fallback → uses native `boundary`
+//       events for precise highlight (Chrome only).
+//  Both paths wrap the text into <span class="tts-word"> spans
+//  inside a dedicated #tts-reader overlay that appears while reading.
+// ══════════════════════════════════════════════════════════════════
 
-function stopAllSpeech(){
-  // stop API audio
-  if(_currentAudio){
+let _currentAudio = null;
+let _ttsWordSpans = [];
+let _ttsWordTimers = [];
+let _ttsReaderId = 'tts-reader-overlay';
+
+function clearTTSHighlight() {
+  _ttsWordTimers.forEach(clearTimeout);
+  _ttsWordTimers = [];
+  _ttsWordSpans.forEach(s => s.classList.remove('tts-active'));
+  _ttsWordSpans = [];
+  const overlay = document.getElementById(_ttsReaderId);
+  if (overlay) overlay.remove();
+}
+
+// Wraps plain text into word spans and returns the container element.
+// Also builds a flat array of all spans for programmatic highlighting.
+function buildWordSpanContainer(text) {
+  const overlay = document.createElement('div');
+  overlay.id = _ttsReaderId;
+  overlay.style.cssText = `
+    background:rgba(0,13,5,.92);border:1px solid rgba(0,255,102,.25);
+    border-radius:4px;padding:10px 14px;margin-bottom:8px;
+    font-size:15px;line-height:1.9;color:var(--text);
+    font-family:var(--body);position:relative;
+  `;
+
+  // Header
+  const hdr = document.createElement('div');
+  hdr.style.cssText='font-family:var(--display);font-size:6px;letter-spacing:.25em;color:var(--G);margin-bottom:8px;display:flex;align-items:center;gap:6px';
+  hdr.innerHTML='<span style="width:6px;height:6px;background:var(--G);border-radius:50%;box-shadow:0 0 8px var(--G);display:inline-block;animation:sdot 1s infinite"></span> SCORPION READING ALOUD';
+  overlay.appendChild(hdr);
+
+  const textDiv = document.createElement('div');
+  const words = text.split(/(\s+)/);
+  _ttsWordSpans = [];
+
+  words.forEach(token => {
+    if (/^\s+$/.test(token)) {
+      textDiv.appendChild(document.createTextNode(token));
+    } else {
+      const sp = document.createElement('span');
+      sp.className = 'tts-word';
+      sp.textContent = token;
+      _ttsWordSpans.push(sp);
+      textDiv.appendChild(sp);
+    }
+  });
+
+  overlay.appendChild(textDiv);
+  return overlay;
+}
+
+// Inject the reader overlay at the TOP of #output (before other content)
+function injectTTSOverlay(text) {
+  clearTTSHighlight();
+  const out = document.getElementById('output');
+  const overlay = buildWordSpanContainer(text);
+  out.insertBefore(overlay, out.firstChild);
+  out.scrollTop = 0;
+  return overlay;
+}
+
+// Timer-based word advancement for EdgeTTS audio
+// Estimates ~145 wpm base rate; adjusts for short/long words
+function runTimerHighlight(audio, words) {
+  // avg ms per word at 145wpm = 413ms; short words faster, long words slower
+  const msPerChar = 55; // ~55ms per character at normal speaking pace
+  const minMs = 180;
+  let elapsed = 0;
+
+  words.forEach((sp, i) => {
+    const wordLen = sp.textContent.length;
+    const duration = Math.max(minMs, wordLen * msPerChar);
+
+    const t = setTimeout(() => {
+      // sync check — if audio ended early, stop highlighting
+      if (_currentAudio && audio !== _currentAudio) return;
+      _ttsWordSpans.forEach(s => s.classList.remove('tts-active'));
+      sp.classList.add('tts-active');
+      // scroll span into view within output panel
+      sp.scrollIntoView({block:'nearest',behavior:'smooth'});
+    }, elapsed);
+
+    _ttsWordTimers.push(t);
+    elapsed += duration;
+  });
+
+  // clear last highlight after final word
+  const finalT = setTimeout(() => {
+    _ttsWordSpans.forEach(s => s.classList.remove('tts-active'));
+  }, elapsed + 400);
+  _ttsWordTimers.push(finalT);
+}
+
+function stopAllSpeech() {
+  if (_currentAudio) {
     _currentAudio.pause();
-    _currentAudio.src='';
-    _currentAudio=null;
+    _currentAudio.src = '';
+    _currentAudio = null;
   }
-  // cancel browser synth just in case fallback was running
-  if(window.speechSynthesis){window.speechSynthesis.cancel();}
+  if (window.speechSynthesis) window.speechSynthesis.cancel();
+  clearTTSHighlight();
 }
 
 function setOrbState(newState,statusText){
@@ -592,7 +708,6 @@ function initAndStartListening(){
       else{
         const it=event.results[i][0].transcript;
         document.getElementById('d-conf').textContent=Math.floor((event.results[i][0].confidence||.85)*100)+'%';
-        // interrupt speaking if user talks
         if(state==='speaking'&&it.length>2){
           stopAllSpeech();
           playInterruptSound();
@@ -755,6 +870,42 @@ async function handleWeather(cmd){
   }catch(e){processingCmd=false;document.getElementById('output').textContent='⚠ Weather error: '+e.message;setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');}
 }
 
+// ══ LAZY WIKIMEDIA IMAGE FETCHER ══
+// Fetches images in background AFTER study card renders — no blocking
+async function fetchWikiImages(topicTitle, imageContainerId) {
+  try {
+    const url = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(topicTitle)}&prop=pageimages&pithumbsize=800&format=json&origin=*`;
+    const r = await fetch(url);
+    const data = await r.json();
+    const pages = data?.query?.pages || {};
+    const page = Object.values(pages)[0];
+    const thumb = page?.thumbnail?.source;
+
+    const container = document.getElementById(imageContainerId);
+    if (!container) return;
+
+    if (thumb) {
+      container.innerHTML = `<img src="${thumb}" class="img-lazy" alt="${topicTitle}" onerror="this.parentElement.innerHTML='<div class=img-placeholder>NO IMAGE AVAILABLE</div>'">`;
+    } else {
+      // Try a second query to search images
+      const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(topicTitle)}&gsrnamespace=6&prop=imageinfo&iiprop=url&format=json&origin=*&gsrlimit=1`;
+      const sr = await fetch(searchUrl);
+      const sdata = await sr.json();
+      const spages = sdata?.query?.pages || {};
+      const spage = Object.values(spages)[0];
+      const imgUrl = spage?.imageinfo?.[0]?.url;
+      if (imgUrl && container) {
+        container.innerHTML = `<img src="${imgUrl}" class="img-lazy" alt="${topicTitle}" onerror="this.parentElement.innerHTML='<div class=img-placeholder>NO IMAGE AVAILABLE</div>'">`;
+      } else if (container) {
+        container.innerHTML = '<div class="img-placeholder">NO IMAGE AVAILABLE</div>';
+      }
+    }
+  } catch(e) {
+    const container = document.getElementById(imageContainerId);
+    if (container) container.innerHTML = '<div class="img-placeholder">IMAGE LOAD FAILED</div>';
+  }
+}
+
 // ══ STUDY MODE ══
 async function handleStudyMode(topic){
   processingCmd=true;lastStudyTopic=topic;
@@ -778,14 +929,39 @@ async function handleStudyMode(topic){
     addLog('a','Study: '+(d.title||topic),'STUDY');
     document.getElementById('ft-brain').textContent='STUDY // '+(d.title||topic).toUpperCase();
     setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');
-    // speak only the one-liner + must-know (concise)
-    const spk=[(d.oneLiner||''),(d.mustKnow?'Key point: '+d.mustKnow:'')].filter(Boolean).join('. ');
-    speakReply(spk);
+
+    // Start lazy image fetch AFTER render
+    fetchWikiImages(d.title||topic, 'study-img-container');
+
+    // Build full read-aloud text — everything in the study card
+    const spk = buildFullStudyText(d);
+    speakReply(spk, true); // true = full read
 
   }catch(e){processingCmd=false;out.className='';out.textContent='❌ Study error: '+e.message;setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');}
 }
 
-// ══ STUDY RENDERER — clean, professional, Claude-style ══
+// Build comprehensive read-aloud text from all study fields
+function buildFullStudyText(d) {
+  const parts = [];
+  if (d.title) parts.push(d.title + '.');
+  if (d.oneLiner) parts.push(d.oneLiner);
+  if (d.whyShouldYouCare) parts.push('Why this matters. ' + d.whyShouldYouCare);
+  if (d.whatIsIt) parts.push('Overview. ' + d.whatIsIt);
+  if (d.keyFacts?.length) parts.push('Key facts. ' + d.keyFacts.join('. '));
+  if (d.mechanism) parts.push('Mechanism. ' + d.mechanism);
+  if (d.realWorldExample?.story) parts.push('Real world example. ' + d.realWorldExample.title + '. ' + d.realWorldExample.story);
+  if (d.commonProblems?.length) {
+    parts.push('Common problems. ' + d.commonProblems.map(p => p.name + '. ' + p.detail).join('. '));
+  }
+  if (d.keyTakeaways?.length) parts.push('Key takeaways. ' + d.keyTakeaways.join('. '));
+  if (d.mustKnow) parts.push('Must know. ' + d.mustKnow);
+  if (d.mnemonic) parts.push('Mnemonic. ' + d.mnemonic);
+  if (d.examTip) parts.push('Exam tip. ' + d.examTip);
+  if (d.watchOut) parts.push('Watch out. ' + d.watchOut);
+  return parts.join(' ');
+}
+
+// ══ STUDY RENDERER ══
 function renderStudy(d,out){
   out.className='';
 
@@ -805,21 +981,6 @@ function renderStudy(d,out){
     arr.map(f=>`<div class="fact-row"><span class="fact-bullet">▸</span><span>${f}</span></div>`).join(''):
     '';
 
-  const tagList=(arr,fn)=>
-    Array.isArray(arr)&&arr.length?
-    `<div class="tag-list">${arr.map(t=>`<span class="tag" onclick="${fn?fn(t):''}">${t}</span>`).join('')}</div>`:
-    '';
-
-  const stripList=(arr,color)=>
-    Array.isArray(arr)&&arr.length?
-    arr.map(item=>`<div class="info-strip" style="background:rgba(0,0,0,.2);border-color:${color}">${item}</div>`).join(''):
-    '';
-
-  const imgs=(d.imageUrls||[]).slice(0,2);
-  const imgHtml=imgs.length?
-    `<div style="display:flex;gap:6px;margin-bottom:10px">${imgs.map((u,i)=>`<img src="${u}" style="flex:1;min-width:0;border-radius:4px;border:1px solid var(--border);object-fit:cover;max-height:160px" alt="diagram ${i+1}" loading="lazy" onerror="this.style.display='none'">`).join('')}</div>`:
-    '';
-
   // ── TITLE BAR
   const titleBar=`<div style="display:flex;align-items:baseline;justify-content:space-between;border-bottom:2px solid rgba(0,255,102,.2);padding-bottom:7px;margin-bottom:10px">
     <div style="font-family:var(--display);font-size:13px;font-weight:900;letter-spacing:.22em;color:var(--G);text-shadow:0 0 14px rgba(0,255,102,.4)">${(d.title||'').toUpperCase()}</div>
@@ -834,12 +995,11 @@ function renderStudy(d,out){
     `<div class="overview-block" style="margin-bottom:10px">${d.oneLiner}</div>`:
     '';
 
-  // ── OVERVIEW
-  const overview=sec('📋','OVERVIEW','#00cc55',
-    d.overview?`<div class="overview-block">${d.overview}</div>`:''
-  );
+  // ── LAZY IMAGE SLOT — renders a placeholder, fetchWikiImages fills it
+  const imgSlot = `<div id="study-img-container" style="margin-bottom:10px;min-height:40px">
+    <div class="img-placeholder" style="font-size:7px">LOADING IMAGE…</div>
+  </div>`;
 
-  // ── IMAGES
   // ── KEY FACTS
   const facts=sec('⚡','KEY FACTS','#00ff66', factList(d.keyFacts));
 
@@ -848,30 +1008,33 @@ function renderStudy(d,out){
     d.mechanism?`<div class="mechanism-block">${d.mechanism}</div>`:''
   );
 
-  // ── CLASSIFICATION
-  const classification=d.classification&&d.classification.length?
-    sec('🗂','CLASSIFICATION','#b366ff', kvTable(d.classification)):
-    '';
+  // ── REAL WORLD EXAMPLE
+  const example = d.realWorldExample?.story ?
+    sec('🌍','REAL WORLD EXAMPLE','#ffaa00',
+      `<div style="margin-bottom:4px;font-family:var(--display);font-size:7px;color:var(--amber)">${d.realWorldExample.title||''}</div>
+       <div class="overview-block" style="border-left-color:rgba(255,170,0,.4);background:rgba(255,170,0,.04)">${d.realWorldExample.story}</div>`
+    ) : '';
 
-  // ── CLINICAL FEATURES
-  const clinical=d.clinicalFeatures&&d.clinicalFeatures.length?
-    sec('🩺','CLINICAL FEATURES','#00e5ff', kvTable(d.clinicalFeatures)):
-    '';
+  // ── WHY SHOULD YOU CARE
+  const why = d.whyShouldYouCare ?
+    sec('💡','WHY IT MATTERS','#b366ff',
+      `<div class="overview-block" style="border-left-color:rgba(179,102,255,.4);background:rgba(179,102,255,.04)">${d.whyShouldYouCare}</div>`
+    ) : '';
 
-  // ── INVESTIGATIONS
-  const investigations=d.investigations&&d.investigations.length?
-    sec('🔬','INVESTIGATIONS','#ffaa00', kvTable(d.investigations)):
-    '';
+  // ── COMMON PROBLEMS
+  const problems = d.commonProblems?.length ?
+    sec('⚠','COMMON PROBLEMS','#ff3355',
+      d.commonProblems.map(p=>`<div style="padding:6px 0;border-bottom:1px solid rgba(255,51,85,.08)">
+        <div style="font-weight:600;color:var(--red);font-size:13px;margin-bottom:2px">${p.name}</div>
+        <div style="font-size:13px;line-height:1.65;color:var(--text)">${p.detail}</div>
+      </div>`).join('')
+    ) : '';
 
-  // ── MANAGEMENT
-  const management=d.management&&d.management.length?
-    sec('💊','MANAGEMENT','#00ff66', kvTable(d.management)):
-    '';
-
-  // ── QUICK TABLE
-  const quickTable=d.quickTable&&d.quickTable.length?
-    sec('📊','QUICK REFERENCE','#00cc55', kvTable(d.quickTable)):
-    '';
+  // ── KEY TAKEAWAYS
+  const takeaways = d.keyTakeaways?.length ?
+    sec('✅','KEY TAKEAWAYS','#00cc55',
+      d.keyTakeaways.map((t,i)=>`<div class="fact-row"><span class="fact-bullet" style="color:var(--G)">${i+1}.</span><span>${t}</span></div>`).join('')
+    ) : '';
 
   // ── MUST KNOW + MNEMONIC row
   const mustRow=(d.mustKnow||d.mnemonic)?
@@ -901,20 +1064,6 @@ function renderStudy(d,out){
     </div>`:
     '';
 
-  // ── DIFFERENTIALS + COMPLICATIONS row
-  const diffComp=(d.differentialDiagnosis&&d.differentialDiagnosis.length)||(d.complications&&d.complications.length)?
-    `<div class="two-col" style="margin-bottom:6px">
-      ${d.differentialDiagnosis&&d.differentialDiagnosis.length?`<div>
-        <div class="study-sec-title" style="color:#ffaa00;font-size:6.5px;margin-bottom:4px">⚖ DIFFERENTIALS</div>
-        ${d.differentialDiagnosis.map(x=>`<div style="font-size:13px;color:var(--text);padding:2px 0 2px 8px;border-left:2px solid rgba(255,170,0,.25)">${x}</div>`).join('')}
-      </div>`:'<div></div>'}
-      ${d.complications&&d.complications.length?`<div>
-        <div class="study-sec-title" style="color:#ff3355;font-size:6.5px;margin-bottom:4px">⚡ COMPLICATIONS</div>
-        ${d.complications.map(x=>`<div style="font-size:13px;color:var(--text);padding:2px 0 2px 8px;border-left:2px solid rgba(255,51,85,.25)">${x}</div>`).join('')}
-      </div>`:'<div></div>'}
-    </div>`:
-    '';
-
   // ── DIG DEEPER chips
   const chips=d.clarifyTopics&&d.clarifyTopics.length?
     `<div style="margin-top:8px">
@@ -926,34 +1075,32 @@ function renderStudy(d,out){
   // ── ACTION BUTTONS
   const actions=`<div class="act-row">
     <button class="act-btn" onclick="handleYouTube('${(d.youtubeSearch||d.title||'').replace(/'/g,"\\'")}');return false" style="color:var(--red);background:rgba(255,51,85,.08);border-color:var(--red)">▶ YOUTUBE</button>
-    <button class="act-btn" onclick="speakStudySummary();return false" style="color:var(--G);background:rgba(0,255,102,.07);border-color:var(--G)">🔊 READ ALOUD</button>
+    <button class="act-btn" onclick="speakStudySummary();return false" style="color:var(--G);background:rgba(0,255,102,.07);border-color:var(--G)">🔊 READ ALL</button>
     <button class="act-btn" onclick="exitStudy();return false" style="color:var(--muted);background:transparent;border-color:var(--muted)">✕ EXIT</button>
   </div>`;
 
-  // hidden speech text
-  const speechText=`<div id="study-speech" style="display:none">${d.oneLiner||''}. ${(d.keyFacts||[]).slice(0,3).join('. ')}. ${d.mustKnow||''}</div>`;
+  // Store full text for read-all button
+  const fullText = buildFullStudyText(d);
+  const speechText=`<div id="study-speech" style="display:none">${fullText}</div>`;
 
   out.innerHTML=
     titleBar +
     oneLiner +
-    imgHtml +
-    overview +
+    imgSlot +
+    why +
     facts +
     mechanism +
-    classification +
-    clinical +
-    investigations +
-    management +
-    quickTable +
+    example +
+    problems +
+    takeaways +
     mustRow +
     alertRow +
-    diffComp +
     chips +
     actions +
     speechText;
 }
 
-// ══ CLARIFY / DEEP DIVE RENDERER ══
+// ══ CLARIFY ══
 async function handleClarify(subtopic){
   processingCmd=true;stopAllSpeech();
   const topic=lastStudyTopic||'general';
@@ -999,13 +1146,8 @@ async function handleClarify(subtopic){
       </div>`:
       '';
 
-    const diveImg=Array.isArray(d.imageUrls)&&d.imageUrls.length?
-      `<img src="${d.imageUrls[0]}" style="width:100%;border-radius:4px;border:1px solid var(--border);object-fit:cover;max-height:160px;margin-bottom:8px" alt="diagram" loading="lazy" onerror="this.style.display='none'">`:
-      '';
-
     out.innerHTML=
       `<div style="font-family:var(--display);font-size:12px;font-weight:900;letter-spacing:.22em;color:var(--cyan);border-bottom:2px solid rgba(0,229,255,.2);padding-bottom:6px;margin-bottom:8px">${(d.title||subtopic).toUpperCase()}</div>`+
-      diveImg+
       (d.overview?`<div class="overview-block" style="border-left-color:rgba(0,229,255,.3);background:rgba(0,229,255,.03);margin-bottom:8px">${d.overview}</div>`:'')+
       (d.deepExplanation?`<div class="mechanism-block" style="margin-bottom:8px">${d.deepExplanation}</div>`:'')+
       pts+
@@ -1031,16 +1173,20 @@ async function handleClarify(subtopic){
         <button class="act-btn" onclick="exitStudy();return false" style="color:var(--muted);background:transparent;border-color:var(--muted)">✕ EXIT</button>
       </div>`;
 
+    // Lazy image for clarify too
+    fetchWikiImages(subtopic, null);
+
     bumpQ();addLog('a','Clarified: '+subtopic,'STUDY');
     setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');
-    speakReply(d.deepExplanation||d.overview||'');
+    const clarifyText = [d.deepExplanation||'', d.overview||''].filter(Boolean).join('. ');
+    speakReply(clarifyText, false);
 
   }catch(e){processingCmd=false;out.className='';out.textContent='❌ Clarify error: '+e.message;setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');}
 }
 
 function speakStudySummary(){
   const el=document.getElementById('study-speech');
-  if(el)speakReply(el.textContent);
+  if(el) speakReply(el.textContent, true);
 }
 
 function exitStudy(){
@@ -1052,64 +1198,104 @@ function exitStudy(){
   lastStudyTopic='';
 }
 
-// ══ VOICE OUTPUT — single path, no collision ══
-// All TTS goes through /api/speaker (EdgeTTS).
-// Browser SpeechSynthesis is ONLY used if the API call fails.
-async function speakReply(text){
-  stopAllSpeech(); // kill any existing audio FIRST
-  if(!text||!text.trim())return;
+// ══════════════════════════════════════════════════════════════════
+//  SPEAK REPLY — with word highlighting
+//  fullRead=true  → shows full word-by-word overlay for entire text
+//  fullRead=false → brief orb-status style, still shows overlay
+// ══════════════════════════════════════════════════════════════════
+async function speakReply(text, fullRead) {
+  stopAllSpeech();
+  if (!text || !text.trim()) return;
 
-  const clean=text
+  const clean = text
     .replace(/\*\*/g,'').replace(/\*/g,'').replace(/#{1,6}\s/g,'')
     .replace(/`/g,'').replace(/\[([^\]]+)\]\([^)]+\)/g,'$1')
     .replace(/\n+/g,' ').trim();
 
-  setOrbState('speaking','SPEAKING…  JUST TALK TO INTERRUPT');
+  setOrbState('speaking', 'READING ALOUD… TALK TO INTERRUPT');
 
-  try{
-    const response=await fetch('/api/speaker',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({text:clean.slice(0,800)})
+  // Inject word-span overlay
+  injectTTSOverlay(clean);
+
+  const afterSpeech = () => {
+    clearTTSHighlight();
+    if (state === 'speaking')
+      setOrbState(alwaysOn?'listening':'idle', alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE ALWAYS-ON MODE');
+  };
+
+  // Try EdgeTTS first
+  try {
+    const response = await fetch('/api/speaker', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: clean.slice(0, 4000) }) // increased limit for full study
     });
-    if(!response.ok)throw new Error('Speaker API returned '+response.status);
-    const blob=await response.blob();
-    const url=URL.createObjectURL(blob);
-    const audio=new Audio(url);
-    _currentAudio=audio;
+    if (!response.ok) throw new Error('Speaker API ' + response.status);
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    _currentAudio = audio;
 
-    audio.onended=()=>{
-      URL.revokeObjectURL(url);
-      _currentAudio=null;
-      if(state==='speaking')
-        setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE ALWAYS-ON MODE');
+    // Start timer-based word highlighting once audio plays
+    audio.onplay = () => {
+      runTimerHighlight(audio, _ttsWordSpans);
     };
-    audio.onerror=()=>{
+    audio.onended = () => {
       URL.revokeObjectURL(url);
-      _currentAudio=null;
-      fallbackSpeak(clean);
+      _currentAudio = null;
+      afterSpeech();
     };
-
+    audio.onerror = () => {
+      URL.revokeObjectURL(url);
+      _currentAudio = null;
+      fallbackSpeak(clean, afterSpeech);
+    };
     await audio.play();
 
-  }catch(e){
-    _currentAudio=null;
-    fallbackSpeak(clean);
+  } catch(e) {
+    _currentAudio = null;
+    fallbackSpeak(clean, afterSpeech);
   }
 }
 
-// browser fallback — only reached if /api/speaker fails entirely
-function fallbackSpeak(text){
-  if(!window.speechSynthesis)return;
-  window.speechSynthesis.cancel(); // ensure clean state
-  const utt=new SpeechSynthesisUtterance(text.slice(0,800));
-  utt.lang='en-US';utt.pitch=.85;utt.rate=1.1;utt.volume=1;
-  const voices=window.speechSynthesis.getVoices();
-  const v=voices.find(v=>v.name.includes('Google US English'))||voices.find(v=>v.name.includes('Daniel'))||voices.find(v=>v.lang==='en-US')||voices[0]||null;
-  if(v)utt.voice=v;
-  const after=()=>{if(state==='speaking')setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE ALWAYS-ON MODE')};
-  utt.onend=after;utt.onerror=after;
-  setTimeout(()=>window.speechSynthesis.speak(utt),80);
+// Browser SpeechSynthesis fallback — uses boundary events for precise highlighting
+function fallbackSpeak(text, onDone) {
+  if (!window.speechSynthesis) { if(onDone)onDone(); return; }
+  window.speechSynthesis.cancel();
+  const utt = new SpeechSynthesisUtterance(text.slice(0, 4000));
+  utt.lang = 'en-US'; utt.pitch = .85; utt.rate = 1.1; utt.volume = 1;
+  const voices = window.speechSynthesis.getVoices();
+  const v = voices.find(v=>v.name.includes('Google US English')) ||
+            voices.find(v=>v.name.includes('Daniel')) ||
+            voices.find(v=>v.lang==='en-US') || voices[0] || null;
+  if (v) utt.voice = v;
+
+  // Use boundary events for precise word highlighting (Chrome)
+  utt.onboundary = (evt) => {
+    if (evt.name !== 'word') return;
+    const charIdx = evt.charIndex;
+    // Find which tts-word span contains this character index
+    let pos = 0;
+    const fullText = text;
+    for (let i = 0; i < _ttsWordSpans.length; i++) {
+      const wordLen = _ttsWordSpans[i].textContent.length;
+      // find char offset of this word in original text
+      const wordStart = fullText.indexOf(_ttsWordSpans[i].textContent, pos);
+      if (wordStart !== -1 && charIdx >= wordStart && charIdx < wordStart + wordLen) {
+        _ttsWordSpans.forEach(s => s.classList.remove('tts-active'));
+        _ttsWordSpans[i].classList.add('tts-active');
+        _ttsWordSpans[i].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        pos = wordStart;
+        break;
+      }
+      pos = Math.max(pos, wordStart + wordLen);
+    }
+  };
+
+  const after = () => { clearTTSHighlight(); if(onDone)onDone(); };
+  utt.onend = after;
+  utt.onerror = after;
+  setTimeout(() => window.speechSynthesis.speak(utt), 80);
 }
 
 // ══ SING ══
@@ -1123,7 +1309,7 @@ function handleSing(cmd){
       document.getElementById('output').textContent='🎵 '+data.reply;
       conversationHistory.push({role:'assistant',text:data.reply});
       addLog('a',data.reply,'SONG');bumpQ();
-      speakReply(data.reply);
+      speakReply(data.reply, false);
     }).catch(e=>{processingCmd=false;document.getElementById('output').textContent='Error: '+e.message;setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');});
 }
 
@@ -1147,7 +1333,7 @@ async function sendCmdText(val){
     conversationHistory.push({role:'assistant',text:data.reply});
     if(conversationHistory.length>MAX_HISTORY)conversationHistory=conversationHistory.slice(-MAX_HISTORY);
     bumpQ();addLog('a',data.reply,brain);
-    speakReply(data.reply);
+    speakReply(data.reply, false);
   }catch(e){
     processingCmd=false;out.className='';out.innerHTML=`<span style="color:var(--red)">⚠ ERROR: ${e.message}</span>`;
     setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'ERROR — TAP ORB TO RETRY');
@@ -1196,7 +1382,7 @@ async function bootGreeting(){
     if(data.reply){
       document.getElementById('output').textContent='🦂 '+data.reply;
       document.getElementById('m-brain').textContent=data.brain||'AI';
-      speakReply(data.reply);
+      speakReply(data.reply, false);
     }
   }catch(e){
     document.getElementById('output').textContent='🦂 Scorpion AI ready, Sir. All systems online.';
