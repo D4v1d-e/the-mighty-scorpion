@@ -29,10 +29,8 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:9998;
 .brk-tl{top:8px;left:8px}.brk-tr{top:8px;right:8px;transform:scaleX(-1)}
 .brk-bl{bottom:8px;left:8px;transform:scaleY(-1)}.brk-br{bottom:8px;right:8px;transform:scale(-1)}
 
-/* ══ LAYOUT ══ */
 #app{position:relative;z-index:1;display:flex;flex-direction:column;height:100vh;max-width:1140px;margin:0 auto;padding:0 20px}
 
-/* ══ HEADER ══ */
 header{display:flex;align-items:center;justify-content:space-between;
   padding:12px 0 10px;border-bottom:1px solid var(--border);flex-shrink:0}
 .logo{display:flex;align-items:center;gap:14px}
@@ -45,13 +43,10 @@ header{display:flex;align-items:center;justify-content:space-between;
 .s-label{font-family:var(--display);font-size:7.5px;font-weight:700;letter-spacing:.28em;color:var(--G)}
 #clock{font-size:9px;letter-spacing:.18em;color:var(--muted)}
 
-/* ══ MAIN SCROLLABLE BODY ══ */
 main{flex:1;overflow:hidden;display:flex;flex-direction:column;gap:10px;padding:10px 0;min-height:0}
 
-/* ══ HERO 3-COL ══ */
 .hero{display:grid;grid-template-columns:175px 1fr 175px;gap:10px;align-items:start;flex-shrink:0}
 
-/* SIDE PANELS */
 .side-panels{display:flex;flex-direction:column;gap:8px}
 .holo-panel{background:var(--panel);border:1px solid var(--border);border-radius:3px;padding:10px 12px;position:relative;overflow:hidden}
 .holo-panel::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--G2),transparent)}
@@ -63,7 +58,6 @@ main{flex:1;overflow:hidden;display:flex;flex-direction:column;gap:10px;padding:
 .bar{flex:1;border-radius:1px 1px 0 0;background:linear-gradient(180deg,var(--G),rgba(0,255,102,.25));box-shadow:0 0 4px rgba(0,255,102,.3);animation:barBob var(--bd,1.4s) ease-in-out infinite var(--bdl,0s)}
 @keyframes barBob{0%,100%{transform:scaleY(1)}50%{transform:scaleY(.55)}}
 
-/* ══ CENTER ORB ══ */
 .orb-center{display:flex;flex-direction:column;align-items:center;gap:10px;padding:6px 0}
 #orb-stage{position:relative;width:300px;height:300px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center}
 #tick-ring{position:absolute;inset:0;animation:spin 18s linear infinite}
@@ -94,7 +88,6 @@ main{flex:1;overflow:hidden;display:flex;flex-direction:column;gap:10px;padding:
 #orb-status{font-family:var(--display);font-size:8px;font-weight:400;letter-spacing:.28em;color:var(--G);text-align:center;max-width:300px;text-shadow:0 0 14px rgba(0,255,102,.6);min-height:18px}
 .matrix-status{font-size:7px;letter-spacing:.12em;color:var(--muted);text-align:center}
 
-/* ══ METRICS ══ */
 .metrics{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;flex-shrink:0}
 .met{background:var(--panel);border:1px solid var(--border);border-radius:3px;padding:7px 10px;position:relative;overflow:hidden}
 .met::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--G3),transparent)}
@@ -102,10 +95,8 @@ main{flex:1;overflow:hidden;display:flex;flex-direction:column;gap:10px;padding:
 .met-val{font-size:16px;color:var(--G);text-shadow:0 0 10px rgba(0,255,102,.4);line-height:1.1}
 .met-unit{font-size:7px;color:var(--muted);margin-left:1px}
 
-/* ══ BOTTOM SPLIT ══ */
 .bottom-split{display:grid;grid-template-columns:1fr 320px;gap:10px;flex:1;min-height:0;overflow:hidden}
 
-/* ══ OUTPUT PANEL ══ */
 .panel{background:var(--panel);border:1px solid var(--border);border-radius:3px;padding:12px 14px;position:relative;overflow:hidden;display:flex;flex-direction:column}
 .panel::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--G2),transparent)}
 .plabel{font-family:var(--display);font-size:7px;font-weight:700;letter-spacing:.35em;color:var(--muted);margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-shrink:0}
@@ -121,7 +112,25 @@ main{flex:1;overflow:hidden;display:flex;flex-direction:column;gap:10px;padding:
 #send-btn:hover{background:rgba(0,255,102,.1);box-shadow:0 0 16px rgba(0,255,102,.25)}
 #send-btn:active{transform:scale(.97)}
 
-/* ══ HISTORY PANEL — FIXED HEIGHT, INTERNAL SCROLL ══ */
+/* ══ YOUTUBE PANEL ══ */
+#yt-panel{display:none;background:var(--panel);border:1px solid var(--border);border-radius:3px;padding:10px 12px;position:relative;overflow:hidden;flex-direction:column;gap:8px;flex-shrink:0}
+#yt-panel::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(255,0,80,.3),transparent)}
+#yt-panel.active{display:flex}
+.yt-label{font-family:var(--display);font-size:7px;font-weight:700;letter-spacing:.35em;color:var(--red);display:flex;align-items:center;gap:8px;flex-shrink:0}
+.yt-label::before{content:'▶';font-size:8px;color:var(--red)}
+.yt-label::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,rgba(255,51,85,.3),transparent)}
+#yt-title{font-size:9px;color:var(--G);letter-spacing:.05em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:0}
+#yt-channel{font-size:7px;color:var(--muted);letter-spacing:.1em;flex-shrink:0}
+#yt-frame-wrap{position:relative;width:100%;padding-top:56.25%;flex-shrink:0;border:1px solid var(--border);border-radius:2px;overflow:hidden;background:#000}
+#yt-frame{position:absolute;inset:0;width:100%;height:100%;border:none}
+.yt-controls{display:flex;gap:6px;align-items:center;flex-shrink:0}
+.yt-btn{background:transparent;border:1px solid var(--border);border-radius:2px;color:var(--G);font-family:var(--display);font-size:6.5px;font-weight:700;letter-spacing:.18em;padding:5px 10px;cursor:pointer;transition:all .2s;flex:1}
+.yt-btn:hover{background:rgba(0,255,102,.08);border-color:rgba(0,255,102,.3)}
+.yt-btn.danger{color:var(--red);border-color:rgba(255,51,85,.3)}
+.yt-btn.danger:hover{background:rgba(255,51,85,.08)}
+.yt-track-info{display:flex;justify-content:space-between;font-size:7px;color:var(--muted);flex-shrink:0}
+
+/* ══ HISTORY PANEL ══ */
 .history-panel{background:var(--panel);border:1px solid var(--border);border-radius:3px;position:relative;overflow:hidden;display:flex;flex-direction:column}
 .history-panel::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--G2),transparent)}
 .hist-header{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid var(--border);flex-shrink:0}
@@ -132,25 +141,22 @@ main{flex:1;overflow:hidden;display:flex;flex-direction:column;gap:10px;padding:
 #history::-webkit-scrollbar{width:3px}
 #history::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
 .hitem{display:flex;gap:8px;padding:6px 10px;background:var(--deep);border-left:2px solid;border-radius:0 3px 3px 0;font-size:10px;line-height:1.55}
-.hitem.u{border-color:var(--muted)}.hitem.a{border-color:var(--G)}
+.hitem.u{border-color:var(--muted)}.hitem.a{border-color:var(--G)}.hitem.yt{border-color:var(--red)}
 .hrole{font-family:var(--display);font-size:6px;font-weight:700;letter-spacing:.2em;min-width:28px;padding-top:2px}
-.hitem.u .hrole{color:var(--muted)}.hitem.a .hrole{color:var(--G)}
+.hitem.u .hrole{color:var(--muted)}.hitem.a .hrole{color:var(--G)}.hitem.yt .hrole{color:var(--red)}
 .htext{color:var(--text);flex:1}
 .hist-footer{display:flex;justify-content:flex-end;padding:6px 10px;border-top:1px solid var(--border);flex-shrink:0}
 #clear-btn{background:none;border:none;cursor:pointer;font-family:var(--mono);font-size:8px;color:var(--muted);transition:color .2s}
 #clear-btn:hover{color:var(--red)}
 
-/* ══ AUDIO VIZ ══ */
 #viz{display:flex;align-items:flex-end;gap:2px;height:22px}
 .vb{width:3px;min-height:2px;border-radius:1px 1px 0 0;background:linear-gradient(180deg,var(--G),rgba(0,255,102,.25));box-shadow:0 0 4px rgba(0,255,102,.25);opacity:.3}
 .vb.on{opacity:1;animation:vbp var(--vd) ease-in-out infinite var(--vdl)}
 @keyframes vbp{0%,100%{transform:scaleY(1)}50%{transform:scaleY(2)}}
 
-/* ══ SPARKLINE ══ */
 .spark{width:100%;height:22px;margin-top:5px}
 .gauge-arc{width:100%;height:38px}
 
-/* ══ FOOTER ══ */
 footer{border-top:1px solid var(--border);padding:7px 0;display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
 .ftxt{font-size:7px;letter-spacing:.2em;color:var(--muted)}
 
@@ -211,10 +217,8 @@ footer{border-top:1px solid var(--border);padding:7px 0;display:flex;justify-con
 
 <main>
 
-<!-- HERO -->
 <div class="hero">
 
-  <!-- LEFT PANELS -->
   <div class="side-panels">
     <div class="holo-panel">
       <div class="hp-title">NEURAL PROCESSING</div>
@@ -242,7 +246,6 @@ footer{border-top:1px solid var(--border);padding:7px 0;display:flex;justify-con
     </div>
   </div>
 
-  <!-- CENTER ORB -->
   <div class="orb-center">
     <div id="orb-stage" class="idle" onclick="orbTapped()" title="Tap to activate voice">
       <svg id="tick-ring" viewBox="0 0 300 300" style="position:absolute;inset:0;width:100%;height:100%">
@@ -315,12 +318,6 @@ footer{border-top:1px solid var(--border);padding:7px 0;display:flex;justify-con
           <path d="M119 100 Q134 96 144 100"><animateTransform attributeName="transform" type="rotate" values="0 130 99;4 130 99;0 130 99;-4 130 99;0 130 99" dur="1.9s" repeatCount="indefinite" begin="0.3s"/></path>
           <path d="M120 110 Q134 110 142 116"><animateTransform attributeName="transform" type="rotate" values="0 132 112;-3 132 112;0 132 112;3 132 112;0 132 112" dur="2s" repeatCount="indefinite" begin="0.6s"/></path>
         </g>
-        <g stroke="rgba(0,255,102,.4)" stroke-width="0.8" fill="none">
-          <path d="M96 88 L96 82 L88 82"><animate attributeName="opacity" values="0.4;1;0.4" dur="1.5s" repeatCount="indefinite"/></path>
-          <path d="M104 88 L104 82 L112 82"><animate attributeName="opacity" values="0.4;1;0.4" dur="1.5s" begin="0.5s" repeatCount="indefinite"/></path>
-          <circle cx="88" cy="82" r="1.5" fill="#00ff66"><animate attributeName="opacity" values="0;1;0" dur="1.5s" repeatCount="indefinite"/></circle>
-          <circle cx="112" cy="82" r="1.5" fill="#00ff66"><animate attributeName="opacity" values="0;1;0" dur="1.5s" begin="0.5s" repeatCount="indefinite"/></circle>
-        </g>
         <animateTransform attributeName="transform" type="translate" values="0,0;0,-6;0,0" dur="4s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1"/>
       </svg>
     </div>
@@ -328,7 +325,6 @@ footer{border-top:1px solid var(--border);padding:7px 0;display:flex;justify-con
     <div class="matrix-status" id="matrix-status">SYSTEM STATUS: OPTIMAL // CONSCIOUSNESS MATRIX STABLE</div>
   </div>
 
-  <!-- RIGHT PANELS -->
   <div class="side-panels">
     <div class="holo-panel">
       <div class="hp-title">AUTONOMOUS DECISION</div>
@@ -356,7 +352,7 @@ footer{border-top:1px solid var(--border);padding:7px 0;display:flex;justify-con
     </div>
   </div>
 
-</div><!-- /hero -->
+</div>
 
 <!-- METRICS -->
 <div class="metrics">
@@ -367,20 +363,38 @@ footer{border-top:1px solid var(--border);padding:7px 0;display:flex;justify-con
   <div class="met"><div class="met-lbl">SIGNAL</div><div class="met-val" id="m-sig">100<span class="met-unit">%</span></div></div>
 </div>
 
-<!-- BOTTOM SPLIT: OUTPUT LEFT, LOG RIGHT -->
+<!-- YOUTUBE PANEL — shown when playing -->
+<div id="yt-panel">
+  <div class="yt-label">YOUTUBE STREAM</div>
+  <div id="yt-title">—</div>
+  <div id="yt-channel">—</div>
+  <div id="yt-frame-wrap">
+    <iframe id="yt-frame" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+  </div>
+  <div class="yt-controls">
+    <button class="yt-btn" onclick="ytPrev()">⏮ PREV</button>
+    <button class="yt-btn" onclick="ytNext()">⏭ NEXT</button>
+    <button class="yt-btn" onclick="ytTogglePause()" id="yt-pause-btn">⏸ PAUSE</button>
+    <button class="yt-btn danger" onclick="ytClose()">✕ CLOSE</button>
+  </div>
+  <div class="yt-track-info">
+    <span id="yt-index">TRACK 1 OF 10</span>
+    <span style="color:var(--red)">▶ PLAYING</span>
+  </div>
+</div>
+
+<!-- BOTTOM SPLIT -->
 <div class="bottom-split">
 
-  <!-- OUTPUT PANEL -->
   <div class="panel">
     <div class="plabel">SCORPION RESPONSE CORE</div>
     <div id="output">SCORPION AI READY.</div>
     <div class="irow">
-      <input type="text" id="cmd" placeholder="Speak or type a command…" autocomplete="off" spellcheck="false">
+      <input type="text" id="cmd" placeholder="Speak or type a command… try 'play [song name]'" autocomplete="off" spellcheck="false">
       <button id="send-btn" onclick="sendCmd()">SEND ▶</button>
     </div>
   </div>
 
-  <!-- HISTORY PANEL — compact, internal scroll only -->
   <div class="history-panel">
     <div class="hist-header">
       <div class="hist-title">INTERACTION LOG</div>
@@ -397,12 +411,16 @@ footer{border-top:1px solid var(--border);padding:7px 0;display:flex;justify-con
 </main>
 
 <footer>
-  <div class="ftxt">SCORPION AI // DERIV NEURAL INTERFACE // 31ST CENTURY // MATRIX OF CONSCIOUSNESS</div>
+  <div class="ftxt">SCORPION AI // NEURAL INTERFACE // 31ST CENTURY // MATRIX OF CONSCIOUSNESS</div>
   <div class="ftxt" id="ft-brain">BRAIN: STANDBY</div>
 </footer>
 </div>
 
+<!-- YouTube IFrame API -->
+<script src="https://www.youtube.com/iframe_api"></script>
+
 <script>
+// ══ MATRIX BACKGROUND ══
 (function(){
   const c=document.getElementById('matrix-canvas'),ctx=c.getContext('2d');
   function resize(){c.width=innerWidth;c.height=innerHeight} resize();
@@ -422,6 +440,7 @@ footer{border-top:1px solid var(--border);padding:7px 0;display:flex;justify-con
   },55);
 })();
 
+// ══ TICK RING ══
 (function(){
   const g=document.getElementById('ticks');
   for(let i=0;i<36;i++){
@@ -473,6 +492,7 @@ makeBars('q-bars',10);makeBars('n-bars',10);makeBars('c-bars',10);
   render();setInterval(()=>{pts.shift();pts.push(Math.random()*14+4);render();},1100);
 })();
 
+// ══ CLOCK & UPTIME ══
 const t0=Date.now();
 setInterval(()=>{
   const n=new Date();
@@ -498,6 +518,7 @@ function bumpQ(){
   document.getElementById('hist-count').textContent=qcount+' ENTRIES';
 }
 
+// ══ CORE STATE ══
 let state='idle',alwaysOn=false,recognition=null,audioUnlocked=false,resumeTimer=null,processingCmd=false;
 let conversationHistory=[];
 const MAX_HISTORY=20;
@@ -539,7 +560,11 @@ function playTone(f1,f2,dur,vol,delay){
 function playActivationSound(){playTone(200,600,.3,.3,0);playTone(880,880,.15,.2,350)}
 function playInterruptSound(){playTone(800,300,.15,.2,0)}
 function playStopSound(){playTone(500,150,.25,.25,0)}
-function stopSpeaking(){if(resumeTimer){clearInterval(resumeTimer);resumeTimer=null}window.speechSynthesis.cancel()}
+function stopSpeaking(){
+  if(resumeTimer){clearInterval(resumeTimer);resumeTimer=null}
+  window.speechSynthesis.cancel();
+  if(window._currentAudio){window._currentAudio.pause();window._currentAudio=null;}
+}
 
 function orbTapped(){
   unlockAudio();
@@ -567,10 +592,7 @@ function initAndStartListening(){
       const inputBox=document.getElementById('cmd');
       if(document.activeElement===inputBox)return;
       inputBox.value=cmd;
-      if(/^(stop|quiet|silence|shut up|enough)$/i.test(cmd)){stopSpeaking();setOrbState('listening','ALWAYS ON — SPEAK ANYTIME');return}
-      if(/sing|song|hum|melody/i.test(cmd)){handleSing(cmd);return}
-      setOrbState('thinking','HEARD: '+cmd.toUpperCase().slice(0,45));
-      sendCmdText(cmd);
+      routeCommand(cmd);
     }
   };
   recognition.onerror=function(e){
@@ -583,53 +605,228 @@ function initAndStartListening(){
 }
 function stopRecognition(){if(recognition){try{recognition.abort()}catch(e){}recognition=null}}
 
+// ══ COMMAND ROUTER ══
+function routeCommand(cmd){
+  const c=cmd.toLowerCase().trim();
+
+  // YouTube voice commands
+  if(/^(play|put on|i want to listen to|search youtube for|youtube)\s+.+/i.test(c)){
+    const query=cmd.replace(/^(play|put on|i want to listen to|search youtube for|youtube)\s*/i,'').replace(/\s*(on youtube|for me|please)\s*/ig,'').trim();
+    handleYouTube(query);return;
+  }
+  if(/^(next|next song|next track|skip|skip song)/i.test(c)){ytNext();return;}
+  if(/^(previous|prev|go back|last song|previous song)/i.test(c)){ytPrev();return;}
+  if(/^(pause|pause music|pause video|pause song)/i.test(c)){ytPause();return;}
+  if(/^(resume|play|continue|unpause)/i.test(c)&&ytResults.length){ytResume();return;}
+  if(/^(close youtube|close player|stop video|hide youtube|close music)/i.test(c)){ytClose();return;}
+  if(/^(stop|quiet|silence|shut up|enough)$/i.test(c)){stopSpeaking();setOrbState('listening','ALWAYS ON — SPEAK ANYTIME');return;}
+  if(/sing|song|hum|melody/i.test(c)){handleSing(cmd);return;}
+
+  // Default: send to AI
+  setOrbState('thinking','HEARD: '+cmd.toUpperCase().slice(0,45));
+  sendCmdText(cmd);
+}
+
+// ══ YOUTUBE ENGINE ══
+let ytResults=[],ytIndex=0,ytPaused=false,ytPlayer=null,ytPlayerReady=false;
+
+// IFrame API callback
+window.onYouTubeIframeAPIReady=function(){
+  ytPlayer=new YT.Player('yt-frame',{
+    height:'100%',width:'100%',
+    playerVars:{autoplay:1,rel:0,modestbranding:1,playsinline:1},
+    events:{
+      onReady:()=>{ytPlayerReady=true;},
+      onStateChange:(e)=>{
+        if(e.data===YT.PlayerState.ENDED){
+          setTimeout(ytNext,1500);
+        }
+      }
+    }
+  });
+};
+
+async function handleYouTube(query){
+  if(!query||!query.trim()){
+    document.getElementById('output').textContent='⚠ What would you like me to play?';
+    return;
+  }
+  processingCmd=true;
+  stopSpeaking();
+  setOrbState('thinking','SEARCHING YOUTUBE...');
+  document.getElementById('output').textContent='🔍 Searching YouTube for: '+query;
+  addLog('u','play '+query);
+
+  try{
+    const r=await fetch('/api/youtube',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({query})
+    });
+    const data=await r.json();
+    processingCmd=false;
+
+    if(data.error){
+      document.getElementById('output').textContent='⚠ YouTube error: '+data.error;
+      setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');
+      return;
+    }
+    if(!data.results||data.results.length===0){
+      document.getElementById('output').textContent='⚠ No results found for: '+query;
+      setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');
+      return;
+    }
+
+    ytResults=data.results;
+    ytIndex=0;
+    ytPaused=false;
+    ytPlayIndex(0);
+
+  }catch(e){
+    processingCmd=false;
+    document.getElementById('output').textContent='⚠ YouTube error: '+e.message;
+    setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');
+  }
+}
+
+function ytPlayIndex(i){
+  if(!ytResults.length)return;
+  const item=ytResults[i];
+  const videoId=item.videoId;
+
+  // show panel
+  document.getElementById('yt-panel').classList.add('active');
+  document.getElementById('yt-title').textContent=item.title;
+  document.getElementById('yt-channel').textContent='📺 '+item.channel;
+  document.getElementById('yt-index').textContent='TRACK '+(i+1)+' OF '+ytResults.length;
+  document.getElementById('yt-pause-btn').textContent='⏸ PAUSE';
+  ytPaused=false;
+
+  if(ytPlayerReady&&ytPlayer&&ytPlayer.loadVideoById){
+    ytPlayer.loadVideoById(videoId);
+  } else {
+    // fallback: set src directly
+    document.getElementById('yt-frame').src=
+      'https://www.youtube.com/embed/'+videoId+'?autoplay=1&rel=0&modestbranding=1&enablejsapi=1';
+  }
+
+  document.getElementById('output').textContent='🎵 Now playing: '+item.title+'\n📺 '+item.channel;
+  addLog('a','Now playing: '+item.title,'YOUTUBE');
+  bumpQ();
+  setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');
+  document.getElementById('ft-brain').textContent='BRAIN: YOUTUBE // STREAMING';
+}
+
+function ytNext(){
+  if(!ytResults.length)return;
+  ytIndex=(ytIndex+1)%ytResults.length;
+  ytPlayIndex(ytIndex);
+}
+function ytPrev(){
+  if(!ytResults.length)return;
+  ytIndex=(ytIndex-1+ytResults.length)%ytResults.length;
+  ytPlayIndex(ytIndex);
+}
+function ytPause(){
+  if(!ytResults.length)return;
+  if(ytPlayerReady&&ytPlayer&&ytPlayer.pauseVideo){
+    ytPlayer.pauseVideo();
+    ytPaused=true;
+    document.getElementById('yt-pause-btn').textContent='▶ RESUME';
+    document.getElementById('output').textContent='⏸ Paused: '+ytResults[ytIndex].title;
+  }
+}
+function ytResume(){
+  if(!ytResults.length)return;
+  if(ytPlayerReady&&ytPlayer&&ytPlayer.playVideo){
+    ytPlayer.playVideo();
+    ytPaused=false;
+    document.getElementById('yt-pause-btn').textContent='⏸ PAUSE';
+    document.getElementById('output').textContent='▶ Resumed: '+ytResults[ytIndex].title;
+  }
+}
+function ytTogglePause(){
+  if(ytPaused){ytResume();}else{ytPause();}
+}
+function ytClose(){
+  if(ytPlayerReady&&ytPlayer&&ytPlayer.stopVideo)ytPlayer.stopVideo();
+  document.getElementById('yt-frame').src='';
+  document.getElementById('yt-panel').classList.remove('active');
+  ytResults=[];ytIndex=0;ytPaused=false;
+  document.getElementById('output').textContent='YouTube closed.';
+  document.getElementById('ft-brain').textContent='BRAIN: STANDBY';
+}
+
+// ══ VOICE SPEAK ══
 function getVoice(){
   const voices=window.speechSynthesis.getVoices();
   return voices.find(v=>v.name.includes('Google US English'))
     ||voices.find(v=>v.name.includes('Daniel'))
     ||voices.find(v=>v.name.includes('Alex'))
     ||voices.find(v=>v.lang==='en-US')
-    ||voices[0]
-    ||null;
+    ||voices[0]||null;
 }
 
+async function speakReply(text){
+  stopSpeaking();
+  const clean=text.replace(/\*\*/g,'').replace(/\*/g,'').replace(/#{1,6}\s/g,'').replace(/`/g,'')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g,'$1').replace(/\n+/g,' ').trim();
+  setOrbState('speaking','SPEAKING... JUST TALK TO INTERRUPT');
+
+  try{
+    const response=await fetch('/api/speaker',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({text:clean})
+    });
+    if(!response.ok)throw new Error('TTS failed');
+    const blob=await response.blob();
+    const url=URL.createObjectURL(blob);
+    const audio=new Audio(url);
+    window._currentAudio=audio;
+    audio.onended=()=>{
+      URL.revokeObjectURL(url);
+      window._currentAudio=null;
+      if(state==='speaking')setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE ALWAYS-ON MODE');
+    };
+    audio.onerror=()=>{URL.revokeObjectURL(url);fallbackSpeak(clean);};
+    audio.play();
+  }catch(e){
+    fallbackSpeak(clean);
+  }
+}
+
+function fallbackSpeak(text){
+  const utt=new SpeechSynthesisUtterance(text);
+  utt.lang='en-US';utt.pitch=.85;utt.rate=1.15;utt.volume=1;
+  const v=getVoice();if(v)utt.voice=v;
+  const after=()=>{if(resumeTimer){clearInterval(resumeTimer);resumeTimer=null}if(state==='speaking')setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE ALWAYS-ON MODE')};
+  utt.onend=after;utt.onerror=()=>{after();};
+  resumeTimer=setInterval(()=>{if(!window.speechSynthesis.speaking){clearInterval(resumeTimer);resumeTimer=null}else window.speechSynthesis.resume()},8000);
+  window.speechSynthesis.cancel();
+  setTimeout(()=>window.speechSynthesis.speak(utt),80);
+}
+
+// ══ SING ══
 function handleSing(cmd){
   processingCmd=true;
   setOrbState('thinking','COMPOSING A SONG...');
-  
-  // Request AI to generate song lyrics
   addLog('u',cmd);
   conversationHistory.push({role:'user',text:cmd});
   if(conversationHistory.length>MAX_HISTORY)conversationHistory=conversationHistory.slice(-MAX_HISTORY);
-  
   fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:conversationHistory})})
     .then(r=>r.json())
     .then(data=>{
       processingCmd=false;
-      if(data.error){
-        document.getElementById('output').textContent='Error generating song: '+data.error;
-        setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');
-        return;
-      }
-      
+      if(data.error){document.getElementById('output').textContent='Error: '+data.error;setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');return;}
       const lyrics=data.reply;
-      // Split by newlines or periods to get individual lines
       const lines=lyrics.split(/[\n.]+/).map(l=>l.trim()).filter(l=>l.length>0);
-      
       document.getElementById('output').innerText='🎵 '+lyrics;
       conversationHistory.push({role:'assistant',text:lyrics});
       if(conversationHistory.length>MAX_HISTORY)conversationHistory=conversationHistory.slice(-MAX_HISTORY);
-      addLog('a',lyrics,'SONG');
-      bumpQ();
-      
-      // Now sing the lyrics
-      singLines(lines);
+      addLog('a',lyrics,'SONG');bumpQ();singLines(lines);
     })
-    .catch(e=>{
-      processingCmd=false;
-      document.getElementById('output').textContent='Error: '+e.message;
-      setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');
-    });
+    .catch(e=>{processingCmd=false;document.getElementById('output').textContent='Error: '+e.message;setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');});
 }
 
 function singLines(lines){
@@ -638,47 +835,21 @@ function singLines(lines){
   const pitches=[1.4,1.1,1.6,1.0,1.2,0.9,1.3],rates=[.8,.88,.76,.9,.82,.85,.80];
   let i=0;
   function next(){
-    if(i>=lines.length){
-      setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE ALWAYS-ON MODE');
-      return;
-    }
+    if(i>=lines.length){setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE ALWAYS-ON MODE');return;}
     const line=lines[i];
-    if(!line||line.length===0){i++;setTimeout(next,200);return}
-    
+    if(!line||line.length===0){i++;setTimeout(next,200);return;}
     const utt=new SpeechSynthesisUtterance(line);
-    utt.lang='en-US';utt.volume=1;
-    utt.pitch=pitches[i%pitches.length];
-    utt.rate=rates[i%rates.length];
+    utt.lang='en-US';utt.volume=1;utt.pitch=pitches[i%pitches.length];utt.rate=rates[i%rates.length];
     const v=getVoice();if(v)utt.voice=v;
     utt.onend=()=>{i++;setTimeout(next,300)};
-    utt.onerror=(e)=>{console.warn('sing err',e.error);i++;setTimeout(next,300)};
+    utt.onerror=(e)=>{i++;setTimeout(next,300)};
     window.speechSynthesis.cancel();
     setTimeout(()=>window.speechSynthesis.speak(utt),100);
   }
   next();
 }
 
-function speakReply(text){
-  stopSpeaking();
-  const clean=text.replace(/\*\*/g,'').replace(/\*/g,'').replace(/#{1,6}\s/g,'').replace(/`/g,'')
-    .replace(/\[([^\]]+)\]\([^)]+\)/g,'$1').replace(/\n+/g,' ').trim();
-  setOrbState('speaking','SPEAKING... JUST TALK TO INTERRUPT');
-  function doSpeak(){
-    const utt=new SpeechSynthesisUtterance(clean);
-    utt.lang='en-US';utt.pitch=.85;utt.rate=1.15;utt.volume=1;
-    const v=getVoice();if(v)utt.voice=v;
-    const after=()=>{if(resumeTimer){clearInterval(resumeTimer);resumeTimer=null}if(state==='speaking')setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE ALWAYS-ON MODE')};
-    utt.onend=after;
-    utt.onerror=(e)=>{console.warn('speak err',e.error);after();};
-    resumeTimer=setInterval(()=>{if(!window.speechSynthesis.speaking){clearInterval(resumeTimer);resumeTimer=null}else window.speechSynthesis.resume()},8000);
-    window.speechSynthesis.cancel();
-    setTimeout(()=>window.speechSynthesis.speak(utt),80);
-  }
-  const voices=window.speechSynthesis.getVoices();
-  if(voices.length>0){doSpeak();}
-  else{window.speechSynthesis.onvoiceschanged=()=>{window.speechSynthesis.onvoiceschanged=null;doSpeak();};setTimeout(doSpeak,800);}
-}
-
+// ══ AI CHAT ══
 async function sendCmdText(val){
   processingCmd=true;document.getElementById('cmd').value='';
   const out=document.getElementById('output');out.className='out-think';out.textContent='NEURAL PROCESSING';
@@ -688,7 +859,7 @@ async function sendCmdText(val){
   try{
     const response=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:conversationHistory})});
     const data=await response.json();processingCmd=false;
-    if(data.error){out.className='';out.innerHTML=`<span style="color:var(--red)">⚠ ${data.error}</span>`;setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'ERROR — TAP ORB TO RETRY');return}
+    if(data.error){out.className='';out.innerHTML=`<span style="color:var(--red)">⚠ ${data.error}</span>`;setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'ERROR — TAP ORB TO RETRY');return;}
     const brain=data.brain||'AI';
     out.className='';out.textContent='🦂 '+data.reply;
     document.getElementById('ft-brain').textContent='BRAIN: '+brain+' // ONLINE';
@@ -702,19 +873,23 @@ async function sendCmdText(val){
 }
 
 async function sendCmd(){
-  unlockAudio();const val=document.getElementById('cmd').value.trim();if(!val)return;
+  unlockAudio();
+  const val=document.getElementById('cmd').value.trim();
+  if(!val)return;
   document.getElementById('cmd').value='';
-  if(/sing|song|hum|melody/i.test(val)){handleSing(val);return}
-  setOrbState('thinking','THINKING...');sendCmdText(val);
+  routeCommand(val);
 }
 document.getElementById('cmd').addEventListener('keydown',e=>{if(e.key==='Enter')sendCmd()});
 
+// ══ LOG ══
 let historyCount=0;
 function addLog(role,text,brain){
   const h=document.getElementById('history');
-  const d=document.createElement('div');d.className='hitem '+(role==='u'?'u':'a');
+  const d=document.createElement('div');
+  const isYt=brain==='YOUTUBE';
+  d.className='hitem '+(role==='u'?'u':isYt?'yt':'a');
   const brainTag=brain?`<span style="font-size:6px;color:var(--muted);margin-left:4px">[${brain}]</span>`:'';
-  const roleLabel=role==='u'?'YOU':'SCORP';
+  const roleLabel=role==='u'?'YOU':isYt?'YT':'SCORP';
   d.innerHTML=`<div class="hrole">${roleLabel}${role==='a'?brainTag:''}</div><div class="htext">${text.slice(0,220)}${text.length>220?'…':''}</div>`;
   h.appendChild(d);
   historyCount++;
