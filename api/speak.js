@@ -1,5 +1,10 @@
 const HF_URL = 'https://api-inference.huggingface.co/models/hexgrad/Kokoro-82M';
 
+// CRITICAL — tells Vercel to allow up to 60s instead of default 10s
+export const config = {
+  maxDuration: 60,
+};
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -25,10 +30,7 @@ export default async function handler(req, res) {
 
   const body = JSON.stringify({
     inputs: clean,
-    parameters: {
-      voice: 'am_adam',
-      speed: 1.0
-    }
+    parameters: { voice: 'am_adam', speed: 1.0 }
   });
 
   const headers = {
@@ -37,15 +39,33 @@ export default async function handler(req, res) {
     'Accept': 'audio/flac, audio/wav, audio/mpeg, */*'
   };
 
-  // HuggingFace cold-starts Kokoro-82M — first call may return 503 "loading"
-  // Retry up to 3 times with 4-second wait between attempts
   const MAX_ATTEMPTS = 3;
-  const RETRY_DELAY_MS = 4000;
+  const DEFAULT_RETRY_MS = 4000;
+  const PER_ATTEMPT_TIMEOUT_MS = 12000; // 12s per attempt — safe within 60s budget
 
   async function callKokoro(attempt) {
-    const hfRes = await fetch(HF_URL, { method: 'POST', headers, body });
+    // AbortController kills hung HF requests instead of waiting forever
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), PER_ATTEMPT_TIMEOUT_MS);
 
-    // 503 means model is warming up — retry
+    let hfRes;
+    try {
+      hfRes = await fetch(HF_URL, { method: 'POST', headers, body, signal: controller.signal });
+      clearTimeout(timeout);
+    } catch (e) {
+      clearTimeout(timeout);
+      if (e.name === 'AbortError') {
+        // HF hung — retry if attempts remain
+        if (attempt < MAX_ATTEMPTS) {
+          await new Promise(r => setTimeout(r, 1000));
+          return callKokoro(attempt + 1);
+        }
+        return res.status(503).json({ error: `Kokoro-82M timed out after ${attempt} attempt(s). Model may be cold — try again shortly.` });
+      }
+      throw e;
+    }
+
+    // 503 = model still warming up — use estimated_time from HF response if available
     if (hfRes.status === 503) {
       const errText = await hfRes.text();
       const isLoading =
@@ -53,18 +73,24 @@ export default async function handler(req, res) {
         errText.toLowerCase().includes('estimated_time');
 
       if (isLoading && attempt < MAX_ATTEMPTS) {
-        await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+        // Use HF's own estimated_time if present, capped at 8s
+        let waitMs = DEFAULT_RETRY_MS;
+        try {
+          const parsed = JSON.parse(errText);
+          if (parsed.estimated_time) waitMs = Math.min(parsed.estimated_time * 1000 + 500, 8000);
+        } catch (_) {}
+
+        await new Promise(r => setTimeout(r, waitMs));
         return callKokoro(attempt + 1);
       }
 
-      // Retries exhausted — hard fail, no browser fallback
       return res.status(503).json({
         error: `Kokoro-82M unavailable after ${attempt} attempt(s). Try again shortly.`,
         kokoro_error: errText.slice(0, 300)
       });
     }
 
-    // Any other non-OK response from HuggingFace
+    // Any other non-OK from HuggingFace
     if (!hfRes.ok) {
       const errText = await hfRes.text();
       return res.status(hfRes.status).json({
@@ -90,9 +116,7 @@ export default async function handler(req, res) {
       }
       return res.end();
     } catch (streamErr) {
-      if (!res.headersSent) {
-        return res.status(500).json({ error: 'Stream error: ' + streamErr.message });
-      }
+      if (!res.headersSent) return res.status(500).json({ error: 'Stream error: ' + streamErr.message });
       return res.end();
     }
   }
