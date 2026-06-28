@@ -140,7 +140,8 @@ export default async function handler(req, res) {
         const data = await r.json();
         const c = data[coinMap[coin]];
         if (!c) return null;
-        return `LIVE CRYPTO PRICE:\n${coin.toUpperCase()} = $${c.usd.toLocaleString()} USD\n24h Change: ${c.usd_24h_change?.toFixed(2)}%`;
+        // FIX: Only return exactly what the API gives — no extra fields
+        return `LIVE CRYPTO PRICE:\n${coin.toUpperCase()} = $${c.usd.toLocaleString()} USD\n24h Change: ${c.usd_24h_change?.toFixed(2)}%\nDATA SOURCE: CoinGecko live feed. Do NOT add any other statistics not listed here.`;
       } catch (e) { return null; }
     }
 
@@ -154,10 +155,12 @@ export default async function handler(req, res) {
         const gold = data.find(m => m.metal === 'gold');
         const silver = data.find(m => m.metal === 'silver');
         const platinum = data.find(m => m.metal === 'platinum');
-        let result = 'LIVE METALS PRICES:\n';
-        if (gold) result += `Gold (XAU/USD): $${gold.price.toFixed(2)}/oz\n`;
-        if (silver) result += `Silver (XAG/USD): $${silver.price.toFixed(2)}/oz\n`;
-        if (platinum) result += `Platinum: $${platinum.price.toFixed(2)}/oz\n`;
+        let result = 'LIVE METALS PRICES (per troy ounce, USD):\n';
+        if (gold) result += `Gold (XAU/USD): $${gold.price.toFixed(2)}\n`;
+        if (silver) result += `Silver (XAG/USD): $${silver.price.toFixed(2)}\n`;
+        if (platinum) result += `Platinum: $${platinum.price.toFixed(2)}\n`;
+        // FIX: Explicitly block AI from adding change/delta figures not in data
+        result += `DATA SOURCE: metals.live live feed. Do NOT calculate or invent price changes, deltas, or percentage moves not listed here.`;
         return result.trim();
       } catch (e) { return null; }
     }
@@ -175,6 +178,8 @@ export default async function handler(req, res) {
         pairs.forEach(p => {
           if (data.rates[p]) result += `USD/${p}: ${data.rates[p].toFixed(4)}\n`;
         });
+        // FIX: Block AI from adding "mid-market", "transfer", or other commentary
+        result += `DATA SOURCE: open.er-api live feed. Report only the rates listed above. Do NOT add commentary about mid-market rates, transfer fees, or provider differences.`;
         return result.trim();
       } catch (e) { return null; }
     }
@@ -183,12 +188,19 @@ export default async function handler(req, res) {
     async function getWeather(query) {
       const q = query.toLowerCase();
       if (!q.match(/weather|temperature|forecast|rain|humid|wind|sunny|cold|hot/)) return null;
-      const cityMatch = query.match(/(?:weather|temperature|forecast|rain|sunny|cold|hot)(?:\s+in|\s+at|\s+for)?\s+([a-zA-Z\s]+)/i);
-      const city = cityMatch ? cityMatch[1].trim() : 'Nairobi';
+
+      // FIX: Improved regex — stops capturing at trailing time/filler words
+      const cityMatch = query.match(
+        /(?:weather|temperature|forecast|rain|sunny|cold|hot)(?:\s+in|\s+at|\s+for)?\s+([a-zA-Z\s]+?)(?:\s+right\s+now|\s+today|\s+currently|\s+now|\s+please|\s+forecast|$)/i
+      );
+      // FIX: Clean up any trailing whitespace or stray words from city name
+      const rawCity = cityMatch ? cityMatch[1].trim() : 'Nairobi';
+      const city = rawCity.replace(/\s+(right|now|today|current|please|forecast)$/i, '').trim() || 'Nairobi';
+
       try {
         const geoR = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1`);
         const geoData = await geoR.json();
-        if (!geoData.results?.length) return null;
+        if (!geoData.results?.length) return `WEATHER ERROR: Location "${city}" not found. Only report this error, do not guess weather.`;
         const loc = geoData.results[0];
         const wR = await fetch(
           `https://api.open-meteo.com/v1/forecast?latitude=${loc.latitude}&longitude=${loc.longitude}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code,apparent_temperature&timezone=auto`
@@ -200,7 +212,7 @@ export default async function handler(req, res) {
           45: 'Foggy', 51: 'Light drizzle', 61: 'Slight rain', 63: 'Moderate rain',
           65: 'Heavy rain', 71: 'Slight snow', 80: 'Rain showers', 95: 'Thunderstorm'
         };
-        return `LIVE WEATHER — ${loc.name}, ${loc.country}:\nTemperature: ${cur.temperature_2m}°C (feels like ${cur.apparent_temperature}°C)\nCondition: ${conds[cur.weather_code] || 'Variable'}\nHumidity: ${cur.relative_humidity_2m}%\nWind: ${cur.wind_speed_10m} km/h`;
+        return `LIVE WEATHER — ${loc.name}, ${loc.country}:\nTemperature: ${cur.temperature_2m}°C (feels like ${cur.apparent_temperature}°C)\nCondition: ${conds[cur.weather_code] || 'Variable'}\nHumidity: ${cur.relative_humidity_2m}%\nWind: ${cur.wind_speed_10m} km/h\nDATA SOURCE: Open-Meteo live feed. Report only these exact figures.`;
       } catch (e) { return null; }
     }
 
@@ -211,11 +223,11 @@ export default async function handler(req, res) {
       try {
         const r = await fetch('https://www.thesportsdb.com/api/v1/json/3/eventsday.php?d=' + now.toISOString().slice(0, 10) + '&s=Soccer');
         const data = await r.json();
-        if (!data.events?.length) return null;
+        if (!data.events?.length) return 'SPORTS: No soccer events found for today. Do not invent scores or match results.';
         const events = data.events.slice(0, 5);
         return 'LIVE SPORTS RESULTS:\n' + events
-          .map(e => `${e.strHomeTeam} ${e.intHomeScore || '-'} vs ${e.intAwayScore || '-'} ${e.strAwayTeam} (${e.strLeague})`)
-          .join('\n');
+          .map(e => `${e.strHomeTeam} ${e.intHomeScore ?? '-'} vs ${e.intAwayScore ?? '-'} ${e.strAwayTeam} (${e.strLeague})`)
+          .join('\n') + '\nDATA SOURCE: TheSportsDB. Report only these matches. Do NOT add scorers, stats, or commentary not listed here.';
       } catch (e) { return null; }
     }
 
@@ -268,7 +280,7 @@ export default async function handler(req, res) {
       if (serperData) {
         webContext += (webContext ? '\n\nGOOGLE SEARCH:\n' : '') + serperData;
         searchedWeb = true;
-        dataSource = 'SERPER+LIVE';
+        dataSource = webContext.includes('LIVE') ? 'SERPER+LIVE' : 'SERPER';
       }
 
       // If Serper failed try NewsAPI for news questions
@@ -304,15 +316,18 @@ export default async function handler(req, res) {
 
     // ── SYSTEM PROMPT ──
     const webNote = searchedWeb
-      ? `\n\nCRITICAL INSTRUCTIONS:
-You have been given LIVE REAL-TIME DATA fetched right now.
-Rules you MUST follow:
-1. Use ONLY the data provided below — never invent facts
-2. NEVER add your own statistics, scores, prices or names not in the data
-3. If data is incomplete say: "I only have partial data on that Sir"
-4. If no data found say: "I could not find reliable data on that Sir"
-5. Be conversational and Jarvis-like but strictly factual
-6. Keep answers concise and natural — no bullet points
+      ? `\n\nCRITICAL DATA INSTRUCTIONS:
+You have been given LIVE REAL-TIME DATA fetched right now from verified APIs.
+Rules you MUST follow WITHOUT EXCEPTION:
+1. Report ONLY the exact figures, values, and facts present in the LIVE DATA below
+2. NEVER add statistics, prices, scores, change percentages, supply figures, or any numbers not explicitly listed in the data
+3. NEVER calculate, estimate, or infer values not in the data (e.g. do not compute price deltas from memory)
+4. NEVER add commentary like "mid-market rate", "transfer fees", "circulating supply", or any facts from your training knowledge
+5. If data says "DATA SOURCE: X — Do NOT add Y" — obey that instruction absolutely
+6. If data is incomplete say exactly: "I only have partial data on that, Sir"
+7. If no data was found say exactly: "I could not find reliable data on that, Sir"
+8. Be conversational and Jarvis-like but strictly factual — no bullet points, no markdown
+9. Speak in plain flowing sentences using only what the data gives you
 
 LIVE DATA:
 ${webContext}`
@@ -332,7 +347,8 @@ You have emotional intelligence and a subtle sense of humor.
 You give direct, conversational answers — never use markdown, bullet points, or asterisks in responses.
 Speak naturally as if talking to a trusted friend who happens to be a genius.
 Keep responses concise unless asked to elaborate.
-CRITICAL: Never fabricate facts, prices, scores or statistics. If unsure say so.
+CRITICAL: Never fabricate facts, prices, scores, statistics, or figures. If unsure, say so clearly.
+CRITICAL: Never add information from your training knowledge when live data has been provided — use ONLY the live data.
 If asked for the time or date, the current value is: ${timeStr}.${webNote}`;
 
     // ── BRAIN ROSTER ──
