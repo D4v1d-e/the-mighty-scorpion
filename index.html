@@ -205,7 +205,7 @@ footer{border-top:1px solid var(--border);padding:5px 0;display:flex;justify-con
     </svg>
     <div>
       <div class="logo-main">THE MIGHTY SCORPION</div>
-      <div class="logo-sub">NEURAL CORE v3100.0 // JARVIS INTELLIGENCE MATRIX</div>
+      <div class="logo-sub">NEURAL CORE v3100.0 // GEMINI INTELLIGENCE MATRIX</div>
     </div>
   </div>
   <div class="hdr-right">
@@ -390,7 +390,7 @@ footer{border-top:1px solid var(--border);padding:5px 0;display:flex;justify-con
 </main>
 
 <footer>
-  <div class="ftxt">SCORPION AI // NEURAL INTERFACE // 31ST CENTURY // MATRIX OF CONSCIOUSNESS</div>
+  <div class="ftxt">SCORPION AI // GEMINI NEURAL INTERFACE // 31ST CENTURY // MATRIX OF CONSCIOUSNESS</div>
   <div class="ftxt" id="ft-brain">BRAIN: STANDBY</div>
 </footer>
 </div>
@@ -492,13 +492,12 @@ let conversationHistory=[];
 const MAX_HISTORY=20;
 let lastStudyTopic='';
 
-// ══ KOKORO VOICE — single audio channel, NO browser fallback ══
+// ══ GEMINI VOICE — single audio channel ══
 let _currentAudio=null;
-let _speakRequestId=0; // race condition guard
+let _speakRequestId=0;
 
 function stopAllSpeech(){
   if(_currentAudio){_currentAudio.pause();_currentAudio.src='';_currentAudio=null;}
-  // increment ID so any in-flight fetch knows it's been superseded
   _speakRequestId++;
 }
 
@@ -514,7 +513,7 @@ function setOrbState(newState,statusText){
     idle:'SYSTEM STATUS: OPTIMAL // CONSCIOUSNESS MATRIX STABLE',
     listening:'NEURAL RECEPTORS ACTIVE // AWAITING VOICE INPUT',
     thinking:'QUANTUM PROCESSING // CALCULATING OPTIMAL RESPONSE',
-    speaking:'VOCAL SYNTHESIS ACTIVE // KOKORO NEURAL OUTPUT',
+    speaking:'VOCAL SYNTHESIS ACTIVE // GEMINI NEURAL OUTPUT',
   }[newState]||'';
 }
 
@@ -820,12 +819,12 @@ function exitStudy(){
   lastStudyTopic='';
 }
 
-// ══ KOKORO VOICE OUTPUT — strict, no browser fallback ══
+// ══ GEMINI VOICE OUTPUT ══
 async function speakReply(text){
-  stopAllSpeech(); // kills current audio AND increments _speakRequestId
+  stopAllSpeech();
   if(!text||!text.trim())return;
 
-  const myId=_speakRequestId; // capture AFTER stopAllSpeech incremented it
+  const myId=_speakRequestId;
 
   const clean=text
     .replace(/\*\*/g,'').replace(/\*/g,'').replace(/#{1,6}\s/g,'')
@@ -841,28 +840,25 @@ async function speakReply(text){
       body:JSON.stringify({text:clean.slice(0,800)})
     });
 
-    // If a newer speakReply() was called while we were fetching, abandon this one
     if(myId!==_speakRequestId)return;
 
-    // Kokoro unavailable (503 after retries, or other error) — no browser fallback
     if(!response.ok){
       const errData=await response.json().catch(()=>({}));
       setOrbState(
         alwaysOn?'listening':'idle',
-        'KOKORO UNAVAILABLE — '+(errData.error||'TRY AGAIN SHORTLY').slice(0,40)
+        'GEMINI TTS UNAVAILABLE — '+(errData.error||'TRY AGAIN SHORTLY').slice(0,40)
       );
       return;
     }
 
     const blob=await response.blob();
-    if(myId!==_speakRequestId)return; // check again after slow blob read
+    if(myId!==_speakRequestId)return;
 
     const url=URL.createObjectURL(blob);
     const audio=new Audio(url);
     _currentAudio=audio;
 
-    // Only set speaking state NOW — audio is actually ready to play
-    setOrbState('speaking','KOKORO VOICE ACTIVE // SPEAK TO INTERRUPT');
+    setOrbState('speaking','GEMINI VOICE ACTIVE // SPEAK TO INTERRUPT');
 
     audio.onended=()=>{
       URL.revokeObjectURL(url);
@@ -877,7 +873,6 @@ async function speakReply(text){
     audio.onerror=()=>{
       URL.revokeObjectURL(url);
       _currentAudio=null;
-      // Audio playback error — no fallback, just reset state
       if(myId===_speakRequestId)
         setOrbState(
           alwaysOn?'listening':'idle',
@@ -892,7 +887,7 @@ async function speakReply(text){
     _currentAudio=null;
     setOrbState(
       alwaysOn?'listening':'idle',
-      'KOKORO OFFLINE — '+(e.message?.slice(0,35)||'NETWORK ERROR')
+      'GEMINI OFFLINE — '+(e.message?.slice(0,35)||'NETWORK ERROR')
     );
   }
 }
