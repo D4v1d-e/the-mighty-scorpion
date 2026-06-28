@@ -588,14 +588,9 @@ export default async function handler(req, res) {
       }
     ];
 
-    let lastError = '';
-
-    // BRAIN FALLBACK LOOP
-    for (const brain of brains) {
-      if (!brain.key) continue;
+    // BRAIN RACE — all available brains run in parallel, fastest valid reply wins
+    async function callBrain(brain) {
       try {
-        let reply = null;
-
         if (brain.name === 'GEMINI') {
           const geminiMessages = formattedMessages.map(m => ({
             role: m.role === 'assistant' ? 'model' : 'user',
@@ -614,9 +609,10 @@ export default async function handler(req, res) {
             }
           );
           const gData = await gRes.json();
-          if (gData.error) { lastError = gData.error.message; continue; }
-          reply = gData?.candidates?.[0]?.content?.parts?.[0]?.text;
-
+          if (gData.error) throw new Error(gData.error.message);
+          const reply = gData?.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (!reply) throw new Error('Empty reply from ' + brain.name);
+          return { reply, brain: brain.name };
         } else {
           const oRes = await fetch(brain.url, {
             method: 'POST',
@@ -629,23 +625,34 @@ export default async function handler(req, res) {
             })
           });
           const oData = await oRes.json();
-          if (oData.error) { lastError = oData.error?.message || JSON.stringify(oData.error); continue; }
-          reply = oData?.choices?.[0]?.message?.content;
+          if (oData.error) throw new Error(oData.error?.message || JSON.stringify(oData.error));
+          const reply = oData?.choices?.[0]?.message?.content;
+          if (!reply) throw new Error('Empty reply from ' + brain.name);
+          return { reply, brain: brain.name };
         }
-
-        if (!reply) { lastError = 'Empty reply from ' + brain.name; continue; }
-        return res.status(200).json({
-          reply,
-          brain: brain.name + (searchedWeb ? ' + ' + dataSource : '')
-        });
-
       } catch (e) {
-        lastError = brain.name + ': ' + e.message;
-        continue;
+        throw new Error(brain.name + ': ' + e.message);
       }
     }
 
-    return res.status(500).json({ error: 'All brains failed. Last: ' + lastError });
+    // Fire all available brains simultaneously
+    const activeBrains = brains.filter(b => b.key);
+    if (activeBrains.length === 0) {
+      return res.status(500).json({ error: 'No brain API keys configured' });
+    }
+
+    // Promise.any returns the first one that resolves (fastest valid reply wins)
+    // If all fail, it throws an AggregateError with all failure reasons
+    try {
+      const result = await Promise.any(activeBrains.map(b => callBrain(b)));
+      return res.status(200).json({
+        reply: result.reply,
+        brain: result.brain + (searchedWeb ? ' + ' + dataSource : '')
+      });
+    } catch (aggErr) {
+      const errors = aggErr.errors?.map(e => e.message).join(' | ') || aggErr.message;
+      return res.status(500).json({ error: 'All brains failed: ' + errors });
+    }
 
   } catch (e) {
     return res.status(500).json({ error: e.message });
