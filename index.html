@@ -509,6 +509,8 @@ function bumpQ(){
 let state='idle',alwaysOn=false,recognition=null,audioUnlocked=false,resumeTimer=null,processingCmd=false;
 let conversationHistory=[];
 const MAX_HISTORY=20;
+// Store last study topic for clarify
+let lastStudyTopic='';
 
 function setOrbState(newState,statusText){
   state=newState;
@@ -716,41 +718,31 @@ async function handleWeather(cmd){
   processingCmd=true;
   setOrbState('thinking','CHECKING WEATHER...');
   addLog('u',cmd);
-
-  // extract city from command
   const cityMatch=cmd.match(/(?:weather|temperature|forecast|rain|sunny|humidity|wind)\s+(?:in|at|for|of)?\s*([a-zA-Z\s]+)/i);
   const city=cityMatch?cityMatch[1].trim():'Nairobi';
-
   try{
-    // get coordinates from Open-Meteo geocoding
     const geoRes=await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1`);
     const geoData=await geoRes.json();
-
     if(!geoData.results||geoData.results.length===0){
       processingCmd=false;
       document.getElementById('output').textContent='⚠ Could not find location: '+city;
       setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');
       return;
     }
-
     const loc=geoData.results[0];
     const weatherRes=await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${loc.latitude}&longitude=${loc.longitude}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code,apparent_temperature&timezone=auto`);
     const weatherData=await weatherRes.json();
     const cur=weatherData.current;
-
     const conditions={0:'Clear sky',1:'Mainly clear',2:'Partly cloudy',3:'Overcast',45:'Foggy',48:'Icy fog',51:'Light drizzle',61:'Slight rain',63:'Moderate rain',65:'Heavy rain',71:'Slight snow',80:'Rain showers',95:'Thunderstorm'};
     const condition=conditions[cur.weather_code]||'Variable conditions';
     const emoji=cur.weather_code===0?'☀️':cur.weather_code<=2?'⛅':cur.weather_code<=3?'☁️':cur.weather_code<=48?'🌫️':cur.weather_code<=67?'🌧️':cur.weather_code<=77?'❄️':'⛈️';
-
     const reply=`${emoji} Weather in ${loc.name}, ${loc.country}:\n\n🌡️ Temperature: ${cur.temperature_2m}°C (Feels like ${cur.apparent_temperature}°C)\n💧 Humidity: ${cur.relative_humidity_2m}%\n💨 Wind: ${cur.wind_speed_10m} km/h\n☁️ Conditions: ${condition}`;
-
     processingCmd=false;
     document.getElementById('output').textContent=reply;
     addLog('a',reply,'WEATHER');
     bumpQ();
     setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');
     speakReply(`Weather in ${loc.name}. Temperature is ${cur.temperature_2m} degrees celsius, feels like ${cur.apparent_temperature}. Humidity ${cur.relative_humidity_2m}%. Wind speed ${cur.wind_speed_10m} kilometres per hour. Conditions: ${condition}.`);
-
   }catch(e){
     processingCmd=false;
     document.getElementById('output').textContent='⚠ Weather error: '+e.message;
@@ -758,9 +750,12 @@ async function handleWeather(cmd){
   }
 }
 
-// ══ STUDY MODE ENGINE ══
+// ══════════════════════════════════════════════
+// STUDY MODE ENGINE — FIXED (matches study.js API fields)
+// ══════════════════════════════════════════════
 async function handleStudyMode(topic){
   processingCmd=true;
+  lastStudyTopic=topic;
   stopSpeaking();
   setOrbState('thinking','LOADING STUDY MODE: '+topic.toUpperCase());
   addLog('u','study: '+topic);
@@ -781,60 +776,113 @@ async function handleStudyMode(topic){
       return;
     }
 
-    const imagesHtml=data.imageUrls.map((url,i)=>`
+    // ── Images
+    const imagesHtml=(data.imageUrls||[]).map((url,i)=>`
       <div style="flex:1;min-width:110px">
         <img src="${url}" alt="Image ${i+1}"
           style="width:100%;border-radius:4px;border:1px solid var(--border);background:var(--deep);display:block"
           onerror="this.style.display='none'">
       </div>`).join('');
 
-    const keyPointsHtml=data.keyPoints.map(pt=>`
+    // ── Key Facts  (API returns keyFacts, not keyPoints)
+    const keyFactsHtml=(data.keyFacts||[]).map(pt=>`
       <div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:5px">
         <span style="color:var(--G);flex-shrink:0">▸</span>
         <span style="font-size:11px;color:var(--text)">${pt}</span>
       </div>`).join('');
 
+    // ── Quick Table
+    const tableHtml=(data.quickTable&&data.quickTable.length)?`
+      <div style="margin-top:10px">
+        <div style="font-family:var(--display);font-size:7px;font-weight:700;letter-spacing:.25em;color:var(--Gdim);margin-bottom:6px">📊 QUICK TABLE</div>
+        ${data.quickTable.map(row=>`
+          <div style="display:flex;justify-content:space-between;padding:4px 8px;border-bottom:1px solid var(--border);font-size:10px">
+            <span style="color:var(--muted)">${row.label}</span>
+            <span style="color:var(--G)">${row.value}</span>
+          </div>`).join('')}
+      </div>`:'';
+
+    // ── Clarify Buttons
+    const clarifyBtns=(data.clarifyTopics||[]).map(ct=>`
+      <button onclick="handleClarify('${ct.replace(/'/g,"\\'")}')"
+        style="background:rgba(0,229,255,.07);border:1px solid rgba(0,229,255,.3);border-radius:3px;color:var(--cyan);font-family:var(--display);font-size:6.5px;font-weight:700;letter-spacing:.1em;padding:6px 11px;cursor:pointer">
+        🔍 ${ct}
+      </button>`).join('');
+
     out.className='';
     out.innerHTML=`
-      <div style="font-family:var(--display);font-size:10px;font-weight:700;letter-spacing:.3em;color:var(--G);margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border)">
-        📚 ${data.title.toUpperCase()}
+      <div style="font-family:var(--display);font-size:10px;font-weight:700;letter-spacing:.3em;color:var(--G);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border)">
+        📚 ${(data.title||topic).toUpperCase()}
       </div>
-      <div style="font-size:12px;color:var(--text);line-height:1.8;margin-bottom:12px">${data.explanation}</div>
-      <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">${imagesHtml}</div>
-      <div style="font-family:var(--display);font-size:7px;font-weight:700;letter-spacing:.25em;color:var(--Gdim);margin-bottom:8px">KEY POINTS</div>
-      ${keyPointsHtml}
+
+      ${data.oneLiner?`<div style="font-size:11px;color:var(--cyan);font-style:italic;margin-bottom:10px;line-height:1.6">${data.oneLiner}</div>`:''}
+
+      <div style="font-family:var(--display);font-size:7px;font-weight:700;letter-spacing:.25em;color:var(--Gdim);margin-bottom:7px">⚡ KEY FACTS</div>
+      ${keyFactsHtml}
+
+      ${data.mustKnow?`
+      <div style="margin-top:10px;padding:8px 12px;background:rgba(0,229,255,.05);border-left:2px solid var(--cyan);border-radius:0 4px 4px 0">
+        <div style="font-family:var(--display);font-size:6px;letter-spacing:.2em;color:var(--cyan);margin-bottom:3px">🎯 MUST KNOW</div>
+        <div style="font-size:11px;color:var(--text)">${data.mustKnow}</div>
+      </div>`:''}
+
+      ${data.mnemonic?`
+      <div style="margin-top:8px;padding:8px 12px;background:rgba(179,102,255,.06);border-left:2px solid var(--purple);border-radius:0 4px 4px 0">
+        <div style="font-family:var(--display);font-size:6px;letter-spacing:.2em;color:var(--purple);margin-bottom:3px">🧠 MNEMONIC</div>
+        <div style="font-size:11px;color:var(--text)">${data.mnemonic}</div>
+      </div>`:''}
+
+      ${data.watchOut?`
+      <div style="margin-top:8px;padding:8px 12px;background:rgba(255,51,85,.06);border-left:2px solid var(--red);border-radius:0 4px 4px 0">
+        <div style="font-family:var(--display);font-size:6px;letter-spacing:.2em;color:var(--red);margin-bottom:3px">⚠️ WATCH OUT</div>
+        <div style="font-size:11px;color:var(--text)">${data.watchOut}</div>
+      </div>`:''}
+
+      ${data.examTip?`
+      <div style="margin-top:8px;padding:8px 12px;background:rgba(255,170,0,.06);border-left:2px solid var(--amber);border-radius:0 4px 4px 0">
+        <div style="font-family:var(--display);font-size:6px;letter-spacing:.2em;color:var(--amber);margin-bottom:3px">📝 EXAM TIP</div>
+        <div style="font-size:11px;color:var(--text)">${data.examTip}</div>
+      </div>`:''}
+
+      ${tableHtml}
+
       ${data.funFact?`
       <div style="margin-top:10px;padding:8px 12px;background:rgba(0,255,102,.05);border-left:2px solid var(--G);border-radius:0 4px 4px 0">
-        <span style="font-family:var(--display);font-size:6px;letter-spacing:.2em;color:var(--Gdim)">FUN FACT</span><br>
-        <span style="font-size:11px;color:var(--text)">${data.funFact}</span>
+        <div style="font-family:var(--display);font-size:6px;letter-spacing:.2em;color:var(--Gdim);margin-bottom:3px">💡 FUN FACT</div>
+        <div style="font-size:11px;color:var(--text)">${data.funFact}</div>
       </div>`:''}
-      ${data.wikiSummary?`
-      <div style="margin-top:10px;padding:8px 12px;background:rgba(0,100,255,.04);border-left:2px solid #4488ff;border-radius:0 4px 4px 0">
-        <span style="font-family:var(--display);font-size:6px;letter-spacing:.2em;color:#4488ff">WIKIPEDIA</span><br>
-        <span style="font-size:10px;color:var(--text);opacity:.8">${data.wikiSummary}...</span>
-      </div>`:''}
-      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
-        <button onclick="handleYouTube('${data.youtubeSearch.replace(/'/g,"\\'")}');return false"
-          style="background:rgba(255,51,85,.1);border:1px solid rgba(255,51,85,.3);border-radius:3px;color:#ff3355;font-family:var(--display);font-size:7px;font-weight:700;letter-spacing:.15em;padding:7px 14px;cursor:pointer">
+
+      ${imagesHtml?`<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">${imagesHtml}</div>`:''}
+
+      <div style="margin-top:14px;display:flex;gap:7px;flex-wrap:wrap">
+        <button onclick="handleYouTube('${(data.youtubeSearch||topic).replace(/'/g,"\\'")}')"
+          style="background:rgba(255,51,85,.1);border:1px solid rgba(255,51,85,.3);border-radius:3px;color:#ff3355;font-family:var(--display);font-size:6.5px;font-weight:700;letter-spacing:.15em;padding:7px 13px;cursor:pointer">
           ▶ WATCH ON YOUTUBE
         </button>
-        <button onclick="speakStudy();return false"
-          style="background:rgba(0,255,102,.08);border:1px solid rgba(0,255,102,.25);border-radius:3px;color:var(--G);font-family:var(--display);font-size:7px;font-weight:700;letter-spacing:.15em;padding:7px 14px;cursor:pointer">
+        <button onclick="speakStudy()"
+          style="background:rgba(0,255,102,.08);border:1px solid rgba(0,255,102,.25);border-radius:3px;color:var(--G);font-family:var(--display);font-size:6.5px;font-weight:700;letter-spacing:.15em;padding:7px 13px;cursor:pointer">
           🔊 READ ALOUD
         </button>
-        <button onclick="document.getElementById('panel-label').textContent='SCORPION RESPONSE CORE';document.getElementById('output').textContent='SCORPION AI READY.';return false"
-          style="background:rgba(255,170,0,.08);border:1px solid rgba(255,170,0,.25);border-radius:3px;color:var(--amber);font-family:var(--display);font-size:7px;font-weight:700;letter-spacing:.15em;padding:7px 14px;cursor:pointer">
+        <button onclick="exitStudy()"
+          style="background:rgba(255,170,0,.08);border:1px solid rgba(255,170,0,.25);border-radius:3px;color:var(--amber);font-family:var(--display);font-size:6.5px;font-weight:700;letter-spacing:.15em;padding:7px 13px;cursor:pointer">
           ✕ EXIT STUDY
         </button>
       </div>
-      <div id="study-speech" style="display:none">${data.explanation}. Key points: ${data.keyPoints.join('. ')}. ${data.funFact||''}</div>
+
+      ${clarifyBtns?`
+      <div style="margin-top:10px">
+        <div style="font-family:var(--display);font-size:6px;letter-spacing:.2em;color:var(--muted);margin-bottom:7px">🔍 DIG DEEPER:</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">${clarifyBtns}</div>
+      </div>`:''}
+
+      <div id="study-speech" style="display:none">${data.oneLiner||''}. ${(data.keyFacts||[]).join('. ')}. ${data.mustKnow||''}</div>
     `;
 
     bumpQ();
-    addLog('a','Study: '+data.title,'STUDY');
-    document.getElementById('ft-brain').textContent='BRAIN: STUDY MODE // '+data.title.toUpperCase();
+    addLog('a','Study: '+(data.title||topic),'STUDY');
+    document.getElementById('ft-brain').textContent='BRAIN: STUDY MODE // '+(data.title||topic).toUpperCase()+' // '+data.brain;
     setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');
-    speakReply('Here is what I found about '+data.title+'. '+data.explanation+'. Key points: '+data.keyPoints.slice(0,3).join('. '));
+    speakReply((data.oneLiner||'')+(data.keyFacts||[]).slice(0,3).join('. ')+(data.mustKnow?'. Must know: '+data.mustKnow:''));
 
   }catch(e){
     processingCmd=false;
@@ -843,9 +891,107 @@ async function handleStudyMode(topic){
   }
 }
 
+// ══ CLARIFY MODE ENGINE ══
+async function handleClarify(subtopic){
+  processingCmd=true;
+  stopSpeaking();
+  const topic=lastStudyTopic||'general';
+  setOrbState('thinking','CLARIFYING: '+subtopic.toUpperCase());
+  addLog('u','clarify: '+subtopic);
+
+  const out=document.getElementById('output');
+  out.className='out-think';
+  out.textContent='🔍 CLARIFYING: '+subtopic.toUpperCase();
+  document.getElementById('panel-label').textContent='🔍 CLARIFY — '+subtopic.toUpperCase();
+
+  try{
+    const response=await fetch('/api/study',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topic,clarify:subtopic})});
+    const data=await response.json();
+    processingCmd=false;
+
+    if(data.error){
+      out.className='';out.textContent='❌ Clarify error: '+data.error;
+      setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');
+      return;
+    }
+
+    const keyPointsHtml=(data.keyPoints||[]).map(pt=>`
+      <div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:5px">
+        <span style="color:var(--cyan);flex-shrink:0">▸</span>
+        <span style="font-size:11px;color:var(--text)">${pt}</span>
+      </div>`).join('');
+
+    const relatedHtml=(data.relatedConcepts||[]).map(r=>`
+      <span style="background:rgba(0,229,255,.08);border:1px solid rgba(0,229,255,.2);border-radius:2px;padding:3px 8px;font-size:9px;color:var(--cyan)">${r}</span>`).join('');
+
+    out.className='';
+    out.innerHTML=`
+      <div style="font-family:var(--display);font-size:10px;font-weight:700;letter-spacing:.3em;color:var(--cyan);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border)">
+        🔍 ${(data.title||subtopic).toUpperCase()}
+      </div>
+
+      <div style="font-size:12px;color:var(--text);line-height:1.85;margin-bottom:12px">${data.deepExplanation||''}</div>
+
+      ${keyPointsHtml?`
+      <div style="font-family:var(--display);font-size:7px;font-weight:700;letter-spacing:.25em;color:rgba(0,229,255,.7);margin-bottom:7px">KEY POINTS</div>
+      ${keyPointsHtml}`:''}
+
+      ${data.example?`
+      <div style="margin-top:10px;padding:8px 12px;background:rgba(0,229,255,.05);border-left:2px solid var(--cyan);border-radius:0 4px 4px 0">
+        <div style="font-family:var(--display);font-size:6px;letter-spacing:.2em;color:var(--cyan);margin-bottom:3px">📋 CLINICAL EXAMPLE</div>
+        <div style="font-size:11px;color:var(--text)">${data.example}</div>
+      </div>`:''}
+
+      ${data.mnemonic?`
+      <div style="margin-top:8px;padding:8px 12px;background:rgba(179,102,255,.06);border-left:2px solid var(--purple);border-radius:0 4px 4px 0">
+        <div style="font-family:var(--display);font-size:6px;letter-spacing:.2em;color:var(--purple);margin-bottom:3px">🧠 MNEMONIC</div>
+        <div style="font-size:11px;color:var(--text)">${data.mnemonic}</div>
+      </div>`:''}
+
+      ${relatedHtml?`
+      <div style="margin-top:12px">
+        <div style="font-family:var(--display);font-size:6px;letter-spacing:.2em;color:var(--muted);margin-bottom:7px">RELATED CONCEPTS</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">${relatedHtml}</div>
+      </div>`:''}
+
+      <div style="margin-top:14px;display:flex;gap:7px;flex-wrap:wrap">
+        <button onclick="handleYouTube('${(data.youtubeSearch||subtopic).replace(/'/g,"\\'")}')"
+          style="background:rgba(255,51,85,.1);border:1px solid rgba(255,51,85,.3);border-radius:3px;color:#ff3355;font-family:var(--display);font-size:6.5px;font-weight:700;letter-spacing:.15em;padding:7px 13px;cursor:pointer">
+          ▶ WATCH ON YOUTUBE
+        </button>
+        <button onclick="handleStudyMode('${lastStudyTopic.replace(/'/g,"\\'")}')"
+          style="background:rgba(0,255,102,.08);border:1px solid rgba(0,255,102,.25);border-radius:3px;color:var(--G);font-family:var(--display);font-size:6.5px;font-weight:700;letter-spacing:.15em;padding:7px 13px;cursor:pointer">
+          ← BACK TO STUDY
+        </button>
+        <button onclick="exitStudy()"
+          style="background:rgba(255,170,0,.08);border:1px solid rgba(255,170,0,.25);border-radius:3px;color:var(--amber);font-family:var(--display);font-size:6.5px;font-weight:700;letter-spacing:.15em;padding:7px 13px;cursor:pointer">
+          ✕ EXIT STUDY
+        </button>
+      </div>
+    `;
+
+    bumpQ();
+    addLog('a','Clarified: '+subtopic,'STUDY');
+    setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');
+    speakReply(data.deepExplanation||'');
+
+  }catch(e){
+    processingCmd=false;
+    out.className='';out.textContent='❌ Clarify error: '+e.message;
+    setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');
+  }
+}
+
 function speakStudy(){
   const el=document.getElementById('study-speech');
   if(el)speakReply(el.textContent);
+}
+function exitStudy(){
+  document.getElementById('panel-label').textContent='SCORPION RESPONSE CORE';
+  document.getElementById('output').className='';
+  document.getElementById('output').textContent='SCORPION AI READY.';
+  document.getElementById('ft-brain').textContent='BRAIN: STANDBY';
+  lastStudyTopic='';
 }
 
 // ══ VOICE OUTPUT ══
@@ -856,6 +1002,7 @@ function getVoice(){
 
 async function speakReply(text){
   stopSpeaking();
+  if(!text||!text.trim())return;
   const clean=text.replace(/\*\*/g,'').replace(/\*/g,'').replace(/#{1,6}\s/g,'').replace(/`/g,'').replace(/\[([^\]]+)\]\([^)]+\)/g,'$1').replace(/\n+/g,' ').trim();
   setOrbState('speaking','SPEAKING... JUST TALK TO INTERRUPT');
   try{
@@ -967,7 +1114,7 @@ function clearLog(){
   document.getElementById('hist-count').textContent='0';
   const o=document.getElementById('output');o.className='';o.textContent='SCORPION AI READY.';
   document.getElementById('panel-label').textContent='SCORPION RESPONSE CORE';
-  conversationHistory=[];
+  conversationHistory=[];lastStudyTopic='';
 }
 </script>
 </body>
