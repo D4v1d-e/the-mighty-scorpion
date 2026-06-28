@@ -1,8 +1,8 @@
 {
-  "functions": {
-    "api/*.js": {
-      "memory": 512,
-      "maxDuration": 30
-    }
+  "name": "the-mighty-scorpion",
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "edge-tts-universal": "latest"
   }
 }
