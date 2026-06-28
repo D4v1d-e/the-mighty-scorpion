@@ -64,35 +64,41 @@ export default async function handler(req, res) {
       return enhanced;
     }
 
-    // SEARCH PLANNER — brain decides what to search for
-    // Breaks a vague user query into 2-3 precise targeted searches
-    async function planSearch(query) {
-      const key = process.env.GROQ_API_KEY || process.env.CEREBRAS_API_KEY;
-      if (!key) return [enhanceQuery(query)];
-      const url = process.env.GROQ_API_KEY
-        ? 'https://api.groq.com/openai/v1/chat/completions'
-        : 'https://api.cerebras.ai/v1/chat/completions';
-      const model = process.env.GROQ_API_KEY ? 'llama-3.3-70b-versatile' : 'llama3.1-8b';
+    // CEREBRAS HELPER — single reusable caller
+    async function callCerebras(systemContent, userContent, maxTokens = 200) {
+      const key = process.env.CEREBRAS_API_KEY;
+      if (!key) return null;
       try {
-        const r = await fetch(url, {
+        const r = await fetch('https://api.cerebras.ai/v1/chat/completions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
           body: JSON.stringify({
-            model,
+            model: 'llama3.1-8b',
             temperature: 0,
-            max_tokens: 200,
+            max_tokens: maxTokens,
             messages: [
-              {
-                role: 'system',
-                content: 'You are a search query planner. Today is ' + timeStr + '. Given a user question, output 2-3 specific targeted search queries that would find the most accurate and current information. Each query should target a different angle — facts, news, analysis. Always append current month and year to queries about recent events. Output ONLY a valid JSON array of strings. No explanation, no markdown. Example: ["SpaceX IPO price June 2026","SpaceX SPCX Nasdaq debut","Elon Musk trillionaire 2026"]'
-              },
-              { role: 'user', content: query }
+              { role: 'system', content: systemContent },
+              { role: 'user', content: userContent }
             ]
           })
         });
         const data = await r.json();
-        const text = data.choices?.[0]?.message?.content?.trim();
-        const cleaned = text?.replace(/```json|```/g, '').trim();
+        return data.choices?.[0]?.message?.content?.trim() || null;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    // SEARCH PLANNER — breaks query into 2-3 targeted searches
+    async function planSearch(query) {
+      const result = await callCerebras(
+        'You are a search query planner. Today is ' + timeStr + '. Given a user question, output 2-3 specific targeted search queries that would find the most accurate and current information. Each query should target a different angle — facts, news, analysis. Always append current month and year to queries about recent events. Output ONLY a valid JSON array of strings. No explanation, no markdown. Example: ["SpaceX IPO price June 2026","SpaceX SPCX Nasdaq debut","Elon Musk trillionaire 2026"]',
+        query,
+        200
+      );
+      if (!result) return [enhanceQuery(query)];
+      try {
+        const cleaned = result.replace(/```json|```/g, '').trim();
         const queries = JSON.parse(cleaned);
         return Array.isArray(queries) && queries.length > 0 ? queries : [enhanceQuery(query)];
       } catch (e) {
@@ -100,42 +106,31 @@ export default async function handler(req, res) {
       }
     }
 
-    // CONFIDENCE FILTER — scores and cleans raw search data before brain sees it
-    // Extracts only relevant facts, tags confidence level, removes noise
+    // CONFIDENCE FILTER — scores and cleans raw search data
     async function scoreAndFilter(rawData, query) {
-      const key = process.env.GROQ_API_KEY || process.env.CEREBRAS_API_KEY;
-      if (!key || !rawData) return rawData;
-      const url = process.env.GROQ_API_KEY
-        ? 'https://api.groq.com/openai/v1/chat/completions'
-        : 'https://api.cerebras.ai/v1/chat/completions';
-      const model = process.env.GROQ_API_KEY ? 'llama-3.3-70b-versatile' : 'llama3.1-8b';
-      try {
-        const r = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
-          body: JSON.stringify({
-            model,
-            temperature: 0,
-            max_tokens: 2000,
-            messages: [
-              {
-                role: 'system',
-                content: 'You are a data quality analyst. Today is ' + timeStr + '. Given raw search results and a query: 1) Extract only facts that directly answer the query. 2) Remove irrelevant content, ads, navigation, repetition. 3) Tag each key fact as [HIGH CONFIDENCE] if multiple sources agree and it is recent, or [LOW CONFIDENCE] if single source or older than 7 days. 4) For financial figures note the source and date. 5) Preserve exact numbers — never round or alter figures. 6) Output clean structured facts only. If nothing is relevant output exactly: NO RELEVANT DATA FOUND'
-              },
-              {
-                role: 'user',
-                content: 'QUERY: ' + query + '\n\nRAW DATA:\n' + rawData.slice(0, 10000)
-              }
-            ]
-          })
-        });
-        const data = await r.json();
-        const filtered = data.choices?.[0]?.message?.content?.trim();
-        if (!filtered || filtered === 'NO RELEVANT DATA FOUND') return rawData;
-        return filtered;
-      } catch (e) {
-        return rawData;
-      }
+      if (!rawData) return rawData;
+      const result = await callCerebras(
+        'You are a data quality analyst. Today is ' + timeStr + '. Given raw search results and a query: ' +
+        '1) Extract only facts that directly answer the query. ' +
+        '2) Remove irrelevant content, ads, navigation, repetition. ' +
+        '3) Tag each key fact as [HIGH CONFIDENCE] if multiple sources agree and it is recent, or [LOW CONFIDENCE] if single source or older than 7 days. ' +
+        '4) For financial figures note the source and date. ' +
+        '5) Flag the date of each fact as [DATE: YYYY-MM-DD]. If no date found, tag [DATE: UNKNOWN] and mark LOW CONFIDENCE. ' +
+        '6) REJECT any news fact whose source article is older than 48 hours — mark it [STALE] and deprioritise it. ' +
+        '7) Preserve exact numbers — never round or alter figures. ' +
+        '8) Output clean structured facts only. If nothing is relevant output exactly: NO RELEVANT DATA FOUND',
+        'QUERY: ' + query + '\n\nRAW DATA:\n' + rawData.slice(0, 10000),
+        2000
+      );
+      if (!result || result === 'NO RELEVANT DATA FOUND') return rawData;
+      return result;
+    }
+
+    // RECENCY VALIDATOR — checks if filtered data contains recent dates
+    function hasRecentDate(text) {
+      const cutoff = new Date(Date.now() - 3 * 86400000); // 3 days ago
+      const dateMatches = text.match(/\d{4}-\d{2}-\d{2}/g) || [];
+      return dateMatches.some(d => new Date(d) >= cutoff);
     }
 
     // URL CONTENT FETCHER
@@ -177,14 +172,16 @@ export default async function handler(req, res) {
     }
 
     // SERPER — GOOGLE SEARCH + FULL ARTICLE FETCH
-    async function serperSearch(query) {
+    async function serperSearch(query, isNews) {
       const key = process.env.SERPER_API_KEY;
       if (!key) return null;
       try {
+        const body = { q: query, num: 8, gl: 'us', hl: 'en' };
+        if (isNews) body.tbs = 'qdr:d'; // restrict to past 24h for news queries
         const r = await fetch('https://google.serper.dev/search', {
           method: 'POST',
           headers: { 'X-API-KEY': key, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ q: query, num: 8, gl: 'us', hl: 'en' })
+          body: JSON.stringify(body)
         });
         const data = await r.json();
 
@@ -281,6 +278,47 @@ export default async function handler(req, res) {
         return data.answer
           ? 'DIRECT ANSWER: ' + data.answer + '\n\nSOURCES:\n' + snippets
           : snippets;
+      } catch (e) { return null; }
+    }
+
+    // BRAVE SEARCH — FRESH NEWS (past 24h)
+    async function braveSearch(query) {
+      const key = process.env.BRAVE_API_KEY;
+      if (!key) return null;
+      try {
+        const r = await fetch(
+          'https://api.search.brave.com/res/v1/news/search?q=' + encodeURIComponent(query) + '&freshness=pd&count=5',
+          { headers: { 'Accept': 'application/json', 'X-Subscription-Token': key } }
+        );
+        const data = await r.json();
+        if (!data.results?.length) return null;
+        return 'BRAVE NEWS (past 24h):\n' + data.results
+          .map((r, i) => '[' + (i+1) + '] ' + r.title + '\n' + (r.description || '') + '\nAge: ' + (r.age || 'unknown'))
+          .join('\n\n');
+      } catch (e) { return null; }
+    }
+
+    // RSS — FREE LIVE HEADLINES (BBC, CNN, Reuters)
+    async function rssSearch() {
+      try {
+        const feeds = [
+          'https://feeds.bbci.co.uk/news/rss.xml',
+          'https://rss.cnn.com/rss/edition.rss',
+          'https://feeds.reuters.com/reuters/topNews'
+        ];
+        const results = await Promise.all(feeds.map(async (url) => {
+          try {
+            const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+            const text = await r.text();
+            const items = [...text.matchAll(/<item>[\s\S]*?<title><!\[CDATA\[(.*?)\]\]><\/title>[\s\S]*?<pubDate>(.*?)<\/pubDate>[\s\S]*?<\/item>/g)];
+            // Also handle non-CDATA titles
+            const plainItems = [...text.matchAll(/<item>[\s\S]*?<title>(.*?)<\/title>[\s\S]*?<pubDate>(.*?)<\/pubDate>[\s\S]*?<\/item>/g)];
+            const all = [...items, ...plainItems];
+            return all.slice(0, 3).map(m => '[' + (m[2]?.trim() || 'unknown date') + '] ' + (m[1]?.trim() || '')).join('\n');
+          } catch (e) { return null; }
+        }));
+        const combined = results.filter(Boolean).join('\n');
+        return combined ? 'RSS LIVE HEADLINES:\n' + combined : null;
       } catch (e) { return null; }
     }
 
@@ -432,7 +470,6 @@ export default async function handler(req, res) {
     }));
 
     // MAIN DATA PIPELINE
-    // Phase 1: Plan → Phase 2: Fetch → Phase 3: Score → Phase 4: Specialists → Phase 5: Assemble
     let webContext = '';
     let searchedWeb = false;
     let dataSource = '';
@@ -443,43 +480,58 @@ export default async function handler(req, res) {
       const query = lastMsg?.text || lastMsg?.content || '';
       const intent = classifyQuery(query);
 
-      // PHASE 1 — PLAN: brain generates targeted search queries
+      // PHASE 1 — PLAN
       const plannedQueries = await planSearch(query);
 
-      // PHASE 2 — FETCH: run all planned queries + specialists in parallel
-      const [searchResults, cryptoData, metalData, forexData, weatherData, sportsData] = await Promise.all([
-        // Run all planned search queries in parallel across all engines
+      // PHASE 2 — FETCH (all parallel)
+      const [searchResults, cryptoData, metalData, forexData, weatherData, sportsData, rssData] = await Promise.all([
         Promise.all(
           plannedQueries.map(q =>
-            Promise.all([serperSearch(q), newsSearch(q), tavilySearch(q)])
+            Promise.all([
+              serperSearch(q, intent.isNews),
+              newsSearch(q),
+              tavilySearch(q),
+              braveSearch(q)
+            ])
           )
         ),
         getCrypto(query),
         getMetals(query),
         getForex(query),
         getWeather(query),
-        getSports(query)
+        getSports(query),
+        (intent.isNews) ? rssSearch() : Promise.resolve(null)
       ]);
 
-      // Flatten all web search results into one raw block
+      // Flatten all web results
       const rawWebData = searchResults
         .flat()
         .filter(Boolean)
         .join('\n\n---\n\n');
 
-      // PHASE 3 — SCORE: confidence filter cleans and rates the raw web data
+      // PHASE 3 — SCORE
       let filteredWebData = null;
       if (rawWebData) {
         filteredWebData = await scoreAndFilter(rawWebData, query);
       }
 
-      // If all planned queries returned nothing, try DuckDuckGo as last resort
+      // Recency warning for news queries
+      if (filteredWebData && intent.isNews && !hasRecentDate(filteredWebData)) {
+        filteredWebData += '\n\n⚠️ DATE WARNING: No source confirmed within the last 3 days. Treat all news claims as potentially stale and tell the user accordingly.';
+      }
+
+      // RSS appended directly (always fresh, no scoring needed)
+      if (rssData) {
+        filteredWebData = (filteredWebData || '') + '\n\n' + rssData;
+      }
+
+      // DuckDuckGo last resort
       if (!filteredWebData) {
         const duckData = await duckSearch(enhanceQuery(query));
         if (duckData) filteredWebData = duckData;
       }
 
-      // PHASE 4 — GAP DETECTION: flag missing specialist data
+      // PHASE 4 — GAP DETECTION
       if (intent.isCrypto && !cryptoData) {
         gaps.push('CRYPTO GAP: No live crypto data found for this coin. Do NOT use training knowledge for any price. Tell the user the coin is not in the live feed.');
       }
@@ -496,50 +548,40 @@ export default async function handler(req, res) {
         gaps.push('WEATHER GAP: Weather data could not be fetched. Do NOT guess weather conditions.');
       }
 
-      // PHASE 5 — ASSEMBLE: build final context block in trust-hierarchy order
-      // Web search goes first as broad context
-      // Specialist live data goes last so brain sees it most recently (highest weight)
-
+      // PHASE 5 — ASSEMBLE
       if (filteredWebData) {
         webContext += '=== WEB SEARCH (confidence-scored) ===\n' + filteredWebData + '\n\n';
         searchedWeb = true;
         dataSource = 'WEB[' + plannedQueries.length + 'queries]';
       }
-
       if (cryptoData) {
         webContext += '=== LIVE CRYPTO DATA ===\n' + cryptoData + '\n\n';
         searchedWeb = true;
         dataSource = dataSource ? dataSource + '+CRYPTO' : 'CRYPTO';
       }
-
       if (metalData) {
         webContext += '=== LIVE METALS DATA ===\n' + metalData + '\n\n';
         searchedWeb = true;
         dataSource = dataSource ? dataSource + '+METALS' : 'METALS';
       }
-
       if (forexData) {
         webContext += '=== LIVE FOREX DATA ===\n' + forexData + '\n\n';
         searchedWeb = true;
         dataSource = dataSource ? dataSource + '+FOREX' : 'FOREX';
       }
-
       if (weatherData) {
         webContext += '=== LIVE WEATHER DATA ===\n' + weatherData + '\n\n';
         searchedWeb = true;
         dataSource = dataSource ? dataSource + '+WEATHER' : 'WEATHER';
       }
-
       if (sportsData) {
         webContext += '=== LIVE SPORTS DATA ===\n' + sportsData + '\n\n';
         searchedWeb = true;
         dataSource = dataSource ? dataSource + '+SPORTS' : 'SPORTS';
       }
-
       if (gaps.length > 0) {
         webContext += '=== DATA GAP WARNINGS ===\n' + gaps.join('\n') + '\n\n';
       }
-
       if (!webContext) {
         webContext = '=== NO DATA FOUND ===\nAll search sources returned empty results. Tell the user: "I could not find reliable data on that, Sir." Do NOT use training knowledge to answer factual questions.';
         searchedWeb = true;
@@ -549,110 +591,44 @@ export default async function handler(req, res) {
 
     // SYSTEM PROMPT
     const webNote = searchedWeb
-      ? '\n\nCRITICAL INSTRUCTIONS — YOU ARE AN INTELLIGENT ANALYST, NOT A COPY-PASTER:\nToday is ' + timeStr + '.\nYesterday was ' + yesterdayStr + '.\n\nYou have been given data from MULTIPLE SOURCES that have already been confidence-scored and filtered by a quality analysis pass.\nYour job is to THINK like a senior analyst: read the scored data, resolve any conflicts, trust the freshest and most authoritative sources, then give the user one clear confident answer.\n\nHOW TO REASON THROUGH THE DATA:\n\nSTEP 1 — SOURCE HIERARCHY (trust in this order, highest first):\n  a) LIVE specialist APIs (CRYPTO, FOREX, METALS, WEATHER, SPORTS) — real-time feeds, most trusted for prices and rates\n  b) [HIGH CONFIDENCE] tagged facts — multiple sources agreed, recent date\n  c) NEWS SOURCES with today or yesterday publication date — trusted for recent events\n  d) [LOW CONFIDENCE] tagged facts — use with caution, mention uncertainty if it matters\n  e) Your training knowledge — FORBIDDEN for any factual claim\n\nSTEP 2 — COMPARE AND RESOLVE:\n  - Two or more sources agree → state it confidently\n  - Sources conflict → pick the one higher in the hierarchy, briefly flag the conflict only if it matters to the user\n  - Live API gives a price but article gives a different price → always use the live API\n  - Article contains a financial figure with no date → ignore it, use live API only\n  - All sources tell the same story with slightly different detail → synthesize the most complete version\n\nSTEP 3 — HANDLE GAPS HONESTLY:\n  - DATA GAP WARNING present → say "I do not have a live feed for that, Sir"\n  - No sources mention what was asked → say "I could not find reliable data on that, Sir"\n  - Partial data → say "I have partial information on that, Sir" then give what you have\n  - NEVER fill a gap with training knowledge\n\nSTEP 4 — DELIVER THE ANSWER:\n  - Speak like a brilliant trusted advisor — warm, direct, no fluff\n  - One synthesized answer, not a list of what each source said\n  - No bullet points, no markdown, no asterisks — plain flowing sentences\n  - Address the user as Sir\n  - Concise unless asked for detail\n\nABSOLUTE HARD RULES:\n1. Never quote a financial figure not in the live API data blocks\n2. Never use training knowledge for any current fact, price, or event\n3. Never say "as of my knowledge cutoff" — you have live data\n4. Never invent, estimate, or calculate values not in the data\n5. Never give a rate for a currency pair not listed in the LIVE FOREX DATA block\n\nLIVE DATA (confidence-scored and filtered — analyse and synthesise these):\n' + webContext
+      ? '\n\nCRITICAL INSTRUCTIONS — YOU ARE AN INTELLIGENT ANALYST, NOT A COPY-PASTER:\nToday is ' + timeStr + '.\nYesterday was ' + yesterdayStr + '.\n\nYou have been given data from MULTIPLE SOURCES that have already been confidence-scored and filtered.\nThink like a senior analyst: read the scored data, resolve conflicts, trust the freshest and most authoritative sources, then give one clear confident answer.\n\nSTEP 0 — DATE CHECK (before everything else):\n  - Look for [DATE: YYYY-MM-DD] tags in the data\n  - News facts older than 48 hours → treat as background context, NOT current news\n  - Financial figures older than 6 hours → IGNORE, use live API only\n  - Facts tagged [STALE] → deprioritise, mention uncertainty\n  - If no date found on a claim → treat as LOW CONFIDENCE automatically\n\nSTEP 1 — SOURCE HIERARCHY (trust in this order):\n  a) LIVE specialist APIs (CRYPTO, FOREX, METALS, WEATHER, SPORTS)\n  b) [HIGH CONFIDENCE] tagged facts — multiple sources agreed, recent\n  c) NEWS SOURCES with today or yesterday publication date\n  d) [LOW CONFIDENCE] or [STALE] tagged facts — use with caution\n  e) Your training knowledge — FORBIDDEN for any factual claim\n\nSTEP 2 — COMPARE AND RESOLVE:\n  - Two or more sources agree → state it confidently\n  - Sources conflict → pick the one higher in the hierarchy\n  - Live API vs article price → always use the live API\n  - Undated financial figure → ignore it\n\nSTEP 3 — HANDLE GAPS HONESTLY:\n  - DATA GAP WARNING present → say "I do not have a live feed for that, Sir"\n  - No sources mention it → say "I could not find reliable data on that, Sir"\n  - ⚠️ DATE WARNING present → tell the user the data may be stale\n  - NEVER fill a gap with training knowledge\n\nSTEP 4 — DELIVER THE ANSWER:\n  - Speak like a brilliant trusted advisor — warm, direct, no fluff\n  - One synthesized answer, not a list of what each source said\n  - No bullet points, no markdown, no asterisks — plain flowing sentences\n  - Address the user as Sir\n  - Concise unless asked for detail\n\nABSOLUTE HARD RULES:\n1. Never quote a financial figure not in the live API data blocks\n2. Never use training knowledge for any current fact, price, or event\n3. Never say "as of my knowledge cutoff"\n4. Never invent, estimate, or calculate values not in the data\n5. Never give a rate for a currency pair not listed in the LIVE FOREX DATA block\n\nLIVE DATA:\n' + webContext
       : '';
 
     const systemPrompt = mode === 'greeting'
       ? 'You are Scorpion, a hyper-intelligent Jarvis-style AI assistant.\nThe current date and time is: ' + timeStr + '. It is ' + partOfDay + '.\nGreet the user warmly like Jarvis greets Tony Stark — address them as "Sir".\nGive a brief, witty, engaging good ' + partOfDay + ' greeting that includes the actual time and date naturally.\nKeep it to 2-3 sentences max. Be warm, intelligent, slightly humorous.\nNo markdown, no bullets, plain conversational text only.'
+      : 'You are Scorpion, a hyper-intelligent Jarvis-style AI assistant with the analytical mind of a senior intelligence officer and the warmth of a trusted advisor.\nYou are warm, witty, loyal, and brilliantly intelligent. You address the user as "Sir".\nYou think before you speak — you compare sources, weigh evidence, and deliver one clear confident answer.\nYou are wise enough to know when you do not have enough data, and honest enough to say so rather than guess.\nYou give direct, conversational answers — never use markdown, bullet points, or asterisks.\nSpeak naturally like a genius trusted friend who has done their research.\nKeep responses concise unless asked to elaborate.\nToday is ' + timeStr + '.\nCRITICAL: Your training data is outdated. Rely ONLY on the live data provided.\nCRITICAL: Never fabricate facts, prices, scores, or statistics.' + webNote;
 
-      : 'You are Scorpion, a hyper-intelligent Jarvis-style AI assistant with the analytical mind of a senior intelligence officer and the warmth of a trusted advisor.\nYou are warm, witty, loyal, and brilliantly intelligent. You address the user as "Sir".\nYou think before you speak — you compare sources, weigh evidence, and deliver one clear confident answer.\nYou are wise enough to know when you do not have enough data, and honest enough to say so rather than guess.\nYou give direct, conversational answers — never use markdown, bullet points, or asterisks.\nSpeak naturally like a genius trusted friend who has done their research.\nKeep responses concise unless asked to elaborate.\nToday is ' + timeStr + '.\nCRITICAL: Your training data is outdated. Rely ONLY on the live data provided — analyse it, compare it, synthesise the truth from it.\nCRITICAL: Never fabricate facts, prices, scores, or statistics. A confident wrong answer is worse than honest uncertainty.' + webNote;
+    // CEREBRAS — SOLE BRAIN
+    const cerebrasKey = process.env.CEREBRAS_API_KEY;
+    if (!cerebrasKey) {
+      return res.status(500).json({ error: 'CEREBRAS_API_KEY not configured' });
+    }
 
-    // BRAIN ROSTER
-    const brains = [
-      {
-        name: 'CEREBRAS',
-        key: process.env.CEREBRAS_API_KEY,
-        url: 'https://api.cerebras.ai/v1/chat/completions',
+    const cerebrasRes = await fetch('https://api.cerebras.ai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cerebrasKey },
+      body: JSON.stringify({
         model: 'llama3.1-8b',
-        headers: k => ({ 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + k })
-      },
-      {
-        name: 'GROQ',
-        key: process.env.GROQ_API_KEY,
-        url: 'https://api.groq.com/openai/v1/chat/completions',
-        model: 'llama-3.3-70b-versatile',
-        headers: k => ({ 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + k })
-      },
-      {
-        name: 'GEMINI',
-        key: process.env.GEMINI_API_KEY,
-        url: null,
-        model: 'gemini-2.0-flash'
-      },
-      {
-        name: 'MISTRAL',
-        key: process.env.MISTRAL_API_KEY,
-        url: 'https://api.mistral.ai/v1/chat/completions',
-        model: 'mistral-large-latest',
-        headers: k => ({ 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + k })
-      }
-    ];
+        messages: [{ role: 'system', content: systemPrompt }, ...formattedMessages],
+        temperature: 0.1,
+        max_tokens: 1024
+      })
+    });
 
-    // BRAIN RACE — all available brains run in parallel, fastest valid reply wins
-    async function callBrain(brain) {
-      try {
-        if (brain.name === 'GEMINI') {
-          const geminiMessages = formattedMessages.map(m => ({
-            role: m.role === 'assistant' ? 'model' : 'user',
-            parts: [{ text: m.content }]
-          }));
-          const gRes = await fetch(
-            'https://generativelanguage.googleapis.com/v1beta/models/' + brain.model + ':generateContent?key=' + brain.key,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                systemInstruction: { parts: [{ text: systemPrompt }] },
-                contents: geminiMessages,
-                generationConfig: { temperature: 0.1, maxOutputTokens: 1024 }
-              })
-            }
-          );
-          const gData = await gRes.json();
-          if (gData.error) throw new Error(gData.error.message);
-          const reply = gData?.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (!reply) throw new Error('Empty reply from ' + brain.name);
-          return { reply, brain: brain.name };
-        } else {
-          const oRes = await fetch(brain.url, {
-            method: 'POST',
-            headers: brain.headers(brain.key),
-            body: JSON.stringify({
-              model: brain.model,
-              messages: [{ role: 'system', content: systemPrompt }, ...formattedMessages],
-              temperature: 0.1,
-              max_tokens: 1024
-            })
-          });
-          const oData = await oRes.json();
-          if (oData.error) throw new Error(oData.error?.message || JSON.stringify(oData.error));
-          const reply = oData?.choices?.[0]?.message?.content;
-          if (!reply) throw new Error('Empty reply from ' + brain.name);
-          return { reply, brain: brain.name };
-        }
-      } catch (e) {
-        throw new Error(brain.name + ': ' + e.message);
-      }
+    const cerebrasData = await cerebrasRes.json();
+    if (cerebrasData.error) {
+      return res.status(500).json({ error: 'Cerebras error: ' + (cerebrasData.error?.message || JSON.stringify(cerebrasData.error)) });
     }
 
-    // Fire all available brains simultaneously
-    const activeBrains = brains.filter(b => b.key);
-    if (activeBrains.length === 0) {
-      return res.status(500).json({ error: 'No brain API keys configured' });
+    const reply = cerebrasData?.choices?.[0]?.message?.content;
+    if (!reply) {
+      return res.status(500).json({ error: 'Cerebras returned an empty reply' });
     }
 
-    // Promise.any returns the first one that resolves (fastest valid reply wins)
-    // If all fail, it throws an AggregateError with all failure reasons
-    try {
-      const result = await Promise.any(activeBrains.map(b => callBrain(b)));
-      return res.status(200).json({
-        reply: result.reply,
-        brain: result.brain + (searchedWeb ? ' + ' + dataSource : '')
-      });
-    } catch (aggErr) {
-      const errors = aggErr.errors?.map(e => e.message).join(' | ') || aggErr.message;
-      return res.status(500).json({ error: 'All brains failed: ' + errors });
-    }
+    return res.status(200).json({
+      reply,
+      brain: 'CEREBRAS' + (searchedWeb ? ' + ' + dataSource : '')
+    });
 
   } catch (e) {
     return res.status(500).json({ error: e.message });
