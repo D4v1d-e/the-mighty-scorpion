@@ -33,8 +33,22 @@ export default async function handler(req, res) {
     const currentYear = now.getFullYear();
     const currentMonth = now.toLocaleString('en-US', { month: 'long' });
 
+    // ── QUERY CLASSIFIER ──
+    // Determines what kind of data the query needs so we can flag gaps accurately
+    function classifyQuery(query) {
+      const q = query.toLowerCase();
+      return {
+        isCrypto: /bitcoin|btc|ethereum|eth|solana|sol|bnb|dogecoin|doge|xrp|cardano|ada|crypto|coin/.test(q),
+        isForex: /forex|currency|exchange rate|usd|eur|gbp|kes|jpy|cad|aud|zar|ngn|ugx|tzs|convert|shilling|dollar|euro|pound/.test(q),
+        isMetals: /gold|silver|xau|xag|platinum|palladium|metal/.test(q),
+        isWeather: /weather|temperature|forecast|rain|humid|wind|sunny|cold|hot/.test(q),
+        isSports: /football|soccer|premier league|champions league|la liga|serie a|bundesliga|sport|score|match|goal/.test(q),
+        isFinancial: /rate|exchange|currency|price|convert|worth|cost|how much|value|market|stock|share|trading/.test(q),
+        isNews: /news|happened|latest|today|yesterday|this week|breaking|announced|said|reported/.test(q)
+      };
+    }
+
     // ── SMART QUERY ENHANCER ──
-    // Detects time words and appends actual dates so Google returns correct timeframe
     function enhanceQuery(query) {
       const q = query.toLowerCase();
       let enhanced = query;
@@ -52,16 +66,14 @@ export default async function handler(req, res) {
     }
 
     // ── URL CONTENT FETCHER ──
-    // Fetches full article content from a URL — the core upgrade
     async function fetchPageContent(url) {
       try {
-        // Skip known paywalled/blocked domains
         const blocked = ['wsj.com', 'ft.com', 'bloomberg.com', 'nytimes.com',
                          'economist.com', 'washingtonpost.com', 'thetimes.co.uk'];
         if (blocked.some(d => url.includes(d))) return null;
 
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 5000); // 5s timeout per URL
+        const timeout = setTimeout(() => controller.abort(), 5000);
 
         const r = await fetch(url, {
           signal: controller.signal,
@@ -75,7 +87,6 @@ export default async function handler(req, res) {
         if (!r.ok) return null;
         const html = await r.text();
 
-        // Extract readable text — strip all HTML tags
         let text = html
           .replace(/<script[\s\S]*?<\/script>/gi, '')
           .replace(/<style[\s\S]*?<\/style>/gi, '')
@@ -86,10 +97,9 @@ export default async function handler(req, res) {
           .replace(/\s{2,}/g, ' ')
           .trim();
 
-        // Return first 1500 chars of meaningful content — enough for brain to work with
-        return text.length > 200 ? text.slice(0, 1500) : null;
+        return text.length > 200 ? text.slice(0, 2000) : null;
       } catch (e) {
-        return null; // Silently skip blocked/failed URLs
+        return null;
       }
     }
 
@@ -102,33 +112,30 @@ export default async function handler(req, res) {
         const r = await fetch('https://google.serper.dev/search', {
           method: 'POST',
           headers: { 'X-API-KEY': key, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ q: enhanced, num: 6, gl: 'us', hl: 'en' })
+          body: JSON.stringify({ q: enhanced, num: 8, gl: 'us', hl: 'en' })
         });
         const data = await r.json();
 
         let results = '';
 
-        // Direct answer box — highest priority
         if (data.answerBox) {
           const ab = data.answerBox;
           results += `DIRECT ANSWER: ${ab.answer || ab.snippet || ab.title || ''}\n\n`;
         }
 
-        // Knowledge graph
         if (data.knowledgeGraph) {
           const kg = data.knowledgeGraph;
           results += `KNOWLEDGE: ${kg.title || ''} — ${kg.description || ''}\n\n`;
         }
 
-        // Organic results — snippets first as fallback
         if (data.organic?.length) {
           results += 'SEARCH SNIPPETS:\n';
-          data.organic.slice(0, 5).forEach((r, i) => {
+          data.organic.slice(0, 6).forEach((r, i) => {
             results += `[${i + 1}] ${r.title}\n${r.snippet}\nSource: ${r.link}\n\n`;
           });
 
-          // Now fetch full content from top URLs in parallel
-          const urls = data.organic.slice(0, 4).map(r => r.link).filter(Boolean);
+          // Fetch full content from top URLs in parallel
+          const urls = data.organic.slice(0, 5).map(r => r.link).filter(Boolean);
           const contents = await Promise.all(urls.map(url => fetchPageContent(url)));
 
           const fullArticles = contents
@@ -146,13 +153,12 @@ export default async function handler(req, res) {
       } catch (e) { return null; }
     }
 
-    // ── NEWSAPI — LIVE NEWS (RUNS PARALLEL WITH SERPER) ──
+    // ── NEWSAPI — LIVE NEWS ──
     async function newsSearch(query) {
       const key = process.env.NEWS_API_KEY;
       if (!key) return null;
       try {
         const enhanced = enhanceQuery(query);
-        // Search both everything and top headlines for maximum coverage
         const [everythingRes, headlinesRes] = await Promise.all([
           fetch(`https://newsapi.org/v2/everything?q=${encodeURIComponent(enhanced)}&sortBy=publishedAt&pageSize=5&language=en&apiKey=${key}`),
           fetch(`https://newsapi.org/v2/top-headlines?q=${encodeURIComponent(query)}&pageSize=3&language=en&apiKey=${key}`)
@@ -173,7 +179,7 @@ export default async function handler(req, res) {
 
         if (everything.articles?.length) {
           result += 'RECENT NEWS:\n' + everything.articles
-            .slice(0, 4)
+            .slice(0, 5)
             .map((a, i) => `[${i + 1}] ${a.title}\n${a.description || ''}\nPublished: ${a.publishedAt?.slice(0, 10)}\nSource: ${a.source?.name}`)
             .join('\n\n');
         }
@@ -182,7 +188,7 @@ export default async function handler(req, res) {
       } catch (e) { return null; }
     }
 
-    // ── TAVILY — BACKUP SEARCH ──
+    // ── TAVILY — DEEP SEARCH ──
     async function tavilySearch(query) {
       const key = process.env.TAVILY_API_KEY;
       if (!key) return null;
@@ -194,15 +200,15 @@ export default async function handler(req, res) {
             api_key: key,
             query: enhanceQuery(query),
             search_depth: 'advanced',
-            max_results: 5,
+            max_results: 6,
             include_answer: true,
-            include_raw_content: true  // Gets full content directly
+            include_raw_content: true
           })
         });
         const data = await r.json();
         if (!data.results?.length) return null;
         const snippets = data.results
-          .map((r, i) => `[${i + 1}] ${r.title}\n${(r.raw_content || r.content)?.slice(0, 1000)}`)
+          .map((r, i) => `[${i + 1}] ${r.title}\n${(r.raw_content || r.content)?.slice(0, 1500)}`)
           .join('\n\n');
         return data.answer
           ? `DIRECT ANSWER: ${data.answer}\n\nSOURCES:\n${snippets}`
@@ -210,7 +216,7 @@ export default async function handler(req, res) {
       } catch (e) { return null; }
     }
 
-    // ── DUCKDUCKGO — FREE UNLIMITED BACKUP ──
+    // ── DUCKDUCKGO — FREE FALLBACK ──
     async function duckSearch(query) {
       try {
         const r = await fetch(
@@ -220,7 +226,7 @@ export default async function handler(req, res) {
         let result = '';
         if (data.AbstractText) result += `ANSWER: ${data.AbstractText}\n\n`;
         if (data.RelatedTopics?.length) {
-          data.RelatedTopics.slice(0, 3).forEach(t => {
+          data.RelatedTopics.slice(0, 4).forEach(t => {
             if (t.Text) result += `- ${t.Text}\n`;
           });
         }
@@ -228,7 +234,7 @@ export default async function handler(req, res) {
       } catch (e) { return null; }
     }
 
-    // ── CRYPTO — FREE UNLIMITED ──
+    // ── CRYPTO — LIVE PRICES ONLY ──
     async function getCrypto(query) {
       const q = query.toLowerCase();
       const coinMap = {
@@ -248,11 +254,11 @@ export default async function handler(req, res) {
         const data = await r.json();
         const c = data[coinMap[coin]];
         if (!c) return null;
-        return `LIVE CRYPTO PRICE:\n${coin.toUpperCase()} = $${c.usd.toLocaleString()} USD\n24h Change: ${c.usd_24h_change?.toFixed(2)}%\nINSTRUCTION: Report only these two values. Do NOT add circulating supply, market cap, volume, or any other statistics.`;
+        return `LIVE CRYPTO PRICE (fetched now):\n${coin.toUpperCase()} = $${c.usd.toLocaleString()} USD\n24h Change: ${c.usd_24h_change?.toFixed(2)}%\nINSTRUCTION: Report only these exact values. No other statistics.`;
       } catch (e) { return null; }
     }
 
-    // ── GOLD & METALS — FREE UNLIMITED ──
+    // ── METALS — LIVE PRICES ONLY ──
     async function getMetals(query) {
       const q = query.toLowerCase();
       if (!q.match(/gold|silver|xau|xag|platinum|palladium|metal/)) return null;
@@ -262,39 +268,40 @@ export default async function handler(req, res) {
         const gold = data.find(m => m.metal === 'gold');
         const silver = data.find(m => m.metal === 'silver');
         const platinum = data.find(m => m.metal === 'platinum');
-        let result = 'LIVE METALS PRICES (per troy ounce, USD):\n';
+        let result = 'LIVE METALS PRICES (fetched now, per troy ounce, USD):\n';
         if (gold) result += `Gold (XAU/USD): $${gold.price.toFixed(2)}\n`;
         if (silver) result += `Silver (XAG/USD): $${silver.price.toFixed(2)}\n`;
         if (platinum) result += `Platinum: $${platinum.price.toFixed(2)}\n`;
-        result += `INSTRUCTION: Report only the prices listed. Do NOT calculate or mention price changes, deltas, or percentage moves.`;
+        result += `INSTRUCTION: Report only prices listed. Do NOT calculate changes or add any extra data.`;
         return result.trim();
       } catch (e) { return null; }
     }
 
-    // ── FOREX — FREE UNLIMITED ──
+    // ── FOREX — SUPPORTED PAIRS ONLY, EXPLICIT UNSUPPORTED LIST ──
+    const SUPPORTED_FOREX_PAIRS = ['EUR', 'GBP', 'KES', 'JPY', 'CAD', 'AUD', 'ZAR', 'NGN', 'UGX', 'TZS', 'INR', 'CHF'];
+
     async function getForex(query) {
       const q = query.toLowerCase();
-      if (!q.match(/forex|currency|exchange rate|usd|eur|gbp|kes|jpy|cad|aud|zar|ngn/)) return null;
+      if (!q.match(/forex|currency|exchange rate|usd|eur|gbp|kes|jpy|cad|aud|zar|ngn|ugx|tzs|convert|shilling|dollar|euro|pound|rate/)) return null;
       try {
         const r = await fetch('https://open.er-api.com/v6/latest/USD');
         const data = await r.json();
         if (!data.rates) return null;
-        const pairs = ['EUR', 'GBP', 'KES', 'JPY', 'CAD', 'AUD', 'ZAR', 'NGN', 'UGX', 'TZS', 'INR', 'CHF'];
-        let result = 'LIVE FOREX RATES (vs USD):\n';
-        pairs.forEach(p => {
+        let result = 'LIVE FOREX RATES (fetched now, vs USD):\n';
+        SUPPORTED_FOREX_PAIRS.forEach(p => {
           if (data.rates[p]) result += `USD/${p}: ${data.rates[p].toFixed(4)}\n`;
         });
-        result += `INSTRUCTION: Report only the rates listed. Do NOT add mid-market commentary, transfer fees, or provider differences.`;
+        result += `\nSUPPORTED PAIRS ONLY: ${SUPPORTED_FOREX_PAIRS.join(', ')}`;
+        result += `\nINSTRUCTION: If the user asked for a pair NOT in this list, tell them "I do not have a live feed for that pair, Sir." Do NOT estimate or use training data for any unlisted pair.`;
         return result.trim();
       } catch (e) { return null; }
     }
 
-    // ── WEATHER — FREE UNLIMITED (FIXED REGEX) ──
+    // ── WEATHER — LIVE ──
     async function getWeather(query) {
       const q = query.toLowerCase();
       if (!q.match(/weather|temperature|forecast|rain|humid|wind|sunny|cold|hot/)) return null;
 
-      // Robust city extraction
       let city = 'Nairobi';
       const preposMatch = query.match(/\b(?:in|at|for)\s+([a-zA-Z\s]+?)(?:\s+right\s+now|\s+today|\s+currently|\s+now|\s+please|\?|$)/i);
       if (preposMatch) {
@@ -320,11 +327,11 @@ export default async function handler(req, res) {
           45: 'Foggy', 51: 'Light drizzle', 61: 'Slight rain', 63: 'Moderate rain',
           65: 'Heavy rain', 71: 'Slight snow', 80: 'Rain showers', 95: 'Thunderstorm'
         };
-        return `LIVE WEATHER — ${loc.name}, ${loc.country}:\nTemperature: ${cur.temperature_2m}°C (feels like ${cur.apparent_temperature}°C)\nCondition: ${conds[cur.weather_code] || 'Variable'}\nHumidity: ${cur.relative_humidity_2m}%\nWind: ${cur.wind_speed_10m} km/h\nINSTRUCTION: Report only these exact values. Do NOT add forecasts, UV index, or any data not listed here.`;
+        return `LIVE WEATHER (fetched now) — ${loc.name}, ${loc.country}:\nTemperature: ${cur.temperature_2m}°C (feels like ${cur.apparent_temperature}°C)\nCondition: ${conds[cur.weather_code] || 'Variable'}\nHumidity: ${cur.relative_humidity_2m}%\nWind: ${cur.wind_speed_10m} km/h\nINSTRUCTION: Report only these exact values. No forecasts or extra data.`;
       } catch (e) { return null; }
     }
 
-    // ── SPORTS — FREE UNLIMITED ──
+    // ── SPORTS — LIVE ──
     async function getSports(query) {
       const q = query.toLowerCase();
       if (!q.match(/football|soccer|premier league|champions league|la liga|serie a|bundesliga|sport|score|match|goal/)) return null;
@@ -332,10 +339,10 @@ export default async function handler(req, res) {
         const r = await fetch('https://www.thesportsdb.com/api/v1/json/3/eventsday.php?d=' + todayStr + '&s=Soccer');
         const data = await r.json();
         if (!data.events?.length) return 'SPORTS: No soccer events found for today. Tell the user there are no matches today. Do NOT invent scores or results.';
-        const events = data.events.slice(0, 5);
-        return 'LIVE SPORTS RESULTS:\n' + events
+        const events = data.events.slice(0, 6);
+        return 'LIVE SPORTS RESULTS (fetched now):\n' + events
           .map(e => `${e.strHomeTeam} ${e.intHomeScore ?? '-'} vs ${e.intAwayScore ?? '-'} ${e.strAwayTeam} (${e.strLeague})`)
-          .join('\n') + '\nINSTRUCTION: Report only these matches and scores. Do NOT add scorers, stats, or commentary not listed here.';
+          .join('\n') + '\nINSTRUCTION: Report only these matches. No scorers, stats, or commentary not listed here.';
       } catch (e) { return null; }
     }
 
@@ -356,71 +363,124 @@ export default async function handler(req, res) {
       content: m.text || m.content || ''
     }));
 
-    // ── SMART DATA FETCH ──
+    // ── MAIN DATA FETCH — SEARCH FIRST, SPECIALISTS SECOND ──
     let webContext = '';
     let searchedWeb = false;
     let dataSource = '';
+    let gaps = []; // tracks what was queried but not found
 
     if (mode !== 'greeting' && !isSimpleCommand(userMessages)) {
       const lastMsg = userMessages[userMessages.length - 1];
       const query = lastMsg?.text || lastMsg?.content || '';
+      const intent = classifyQuery(query);
 
-      // Run ALL sources in parallel for maximum speed and coverage
-      const [
-        cryptoData, metalData, forexData, weatherData, sportsData,
-        serperData, newsData
-      ] = await Promise.all([
+      // STEP 1 — Web search always runs first, all sources in parallel
+      const [serperData, newsData, tavilyData] = await Promise.all([
+        serperSearch(query),
+        newsSearch(query),
+        tavilySearch(query)
+      ]);
+
+      // STEP 2 — Specialist APIs for structured live data, all in parallel
+      const [cryptoData, metalData, forexData, weatherData, sportsData] = await Promise.all([
         getCrypto(query),
         getMetals(query),
         getForex(query),
         getWeather(query),
-        getSports(query),
-        serperSearch(query),      // Now includes full article content
-        newsSearch(query)         // Now runs parallel always, not just fallback
+        getSports(query)
       ]);
 
-      // Combine specialist APIs
-      const specialistData = [cryptoData, metalData, forexData, weatherData, sportsData]
-        .filter(Boolean).join('\n\n');
-
-      if (specialistData) {
-        webContext += specialistData;
-        searchedWeb = true;
-        dataSource = 'LIVE DATA';
+      // STEP 3 — Detect financial gaps where specialist returned nothing
+      // This prevents the brain from filling gaps with training knowledge
+      if (intent.isCrypto && !cryptoData) {
+        gaps.push('CRYPTO GAP: The crypto API returned no data for this coin. Do NOT use training knowledge for any price. Tell the user the coin is not in the live feed.');
+      }
+      if (intent.isMetals && !metalData) {
+        gaps.push('METALS GAP: The metals API returned no data. Do NOT estimate any metal price. Tell the user live metals data is unavailable.');
+      }
+      if (intent.isForex && !forexData) {
+        gaps.push('FOREX GAP: The forex API returned no data. Do NOT estimate any exchange rate. Tell the user you could not fetch live forex data.');
+      }
+      if (intent.isForex && forexData) {
+        // Even when forex data exists, flag if the specific pair asked about may not be supported
+        gaps.push(`FOREX PAIR CHECK: Only these pairs are in the live feed: ${SUPPORTED_FOREX_PAIRS.join(', ')}. If the user asked for any other pair, tell them "I do not have a live feed for that pair, Sir." Do NOT estimate unlisted pairs.`);
+      }
+      if (intent.isWeather && !weatherData) {
+        gaps.push('WEATHER GAP: Weather data could not be fetched. Do NOT guess weather conditions. Tell the user weather data is unavailable.');
       }
 
-      // Add Serper results (with full articles)
+      // STEP 4 — Build context block: web search first, then specialists on top
+      // Web search provides the broad context; specialists provide precise live numbers
+
       if (serperData) {
-        webContext += (webContext ? '\n\n' : '') + 'GOOGLE SEARCH + FULL ARTICLES:\n' + serperData;
+        webContext += '=== GOOGLE SEARCH + FULL ARTICLES ===\n' + serperData + '\n\n';
         searchedWeb = true;
-        dataSource = webContext.includes('LIVE DATA') ? 'SERPER+LIVE' : 'SERPER';
+        dataSource = 'SERPER';
       }
 
-      // Add NewsAPI results (always, not just fallback)
       if (newsData) {
-        webContext += (webContext ? '\n\n' : '') + 'NEWS SOURCES:\n' + newsData;
+        webContext += '=== NEWS SOURCES ===\n' + newsData + '\n\n';
         searchedWeb = true;
         dataSource = dataSource ? dataSource + '+NEWS' : 'NEWS';
       }
 
-      // Fallback: Tavily (if both Serper and News failed)
-      if (!serperData && !newsData) {
-        const tavilyData = await tavilySearch(query);
-        if (tavilyData) {
-          webContext += (webContext ? '\n\n' : '') + tavilyData;
+      if (tavilyData) {
+        webContext += '=== TAVILY DEEP SEARCH ===\n' + tavilyData + '\n\n';
+        searchedWeb = true;
+        dataSource = dataSource ? dataSource + '+TAVILY' : 'TAVILY';
+      }
+
+      // Specialist live data — highest priority, always placed last so brain sees it most recently
+      if (cryptoData) {
+        webContext += '=== LIVE CRYPTO DATA ===\n' + cryptoData + '\n\n';
+        searchedWeb = true;
+        dataSource = dataSource ? dataSource + '+CRYPTO' : 'CRYPTO';
+      }
+
+      if (metalData) {
+        webContext += '=== LIVE METALS DATA ===\n' + metalData + '\n\n';
+        searchedWeb = true;
+        dataSource = dataSource ? dataSource + '+METALS' : 'METALS';
+      }
+
+      if (forexData) {
+        webContext += '=== LIVE FOREX DATA ===\n' + forexData + '\n\n';
+        searchedWeb = true;
+        dataSource = dataSource ? dataSource + '+FOREX' : 'FOREX';
+      }
+
+      if (weatherData) {
+        webContext += '=== LIVE WEATHER DATA ===\n' + weatherData + '\n\n';
+        searchedWeb = true;
+        dataSource = dataSource ? dataSource + '+WEATHER' : 'WEATHER';
+      }
+
+      if (sportsData) {
+        webContext += '=== LIVE SPORTS DATA ===\n' + sportsData + '\n\n';
+        searchedWeb = true;
+        dataSource = dataSource ? dataSource + '+SPORTS' : 'SPORTS';
+      }
+
+      // STEP 5 — Append gap warnings so brain knows what it cannot answer
+      if (gaps.length > 0) {
+        webContext += '=== DATA GAP WARNINGS ===\n' + gaps.join('\n') + '\n\n';
+      }
+
+      // STEP 6 — Last resort DuckDuckGo if all web searches failed
+      if (!serperData && !newsData && !tavilyData) {
+        const duckData = await duckSearch(query);
+        if (duckData) {
+          webContext += '=== DUCKDUCKGO RESULTS ===\n' + duckData + '\n\n';
           searchedWeb = true;
-          dataSource = dataSource ? dataSource + '+TAVILY' : 'TAVILY';
+          dataSource = dataSource ? dataSource + '+DDG' : 'DDG';
         }
       }
 
-      // Last resort: DuckDuckGo
-      if (!webContext) {
-        const duckData = await duckSearch(query);
-        if (duckData) {
-          webContext = duckData;
-          searchedWeb = true;
-          dataSource = 'DDG';
-        }
+      // STEP 7 — If absolutely nothing was found, force brain to admit it
+      if (!webContext && !gaps.length) {
+        webContext = '=== NO DATA FOUND ===\nAll search sources returned empty results for this query. You must tell the user: "I could not find reliable data on that, Sir." Do NOT use training knowledge to answer factual questions.';
+        searchedWeb = true;
+        dataSource = 'EMPTY';
       }
     }
 
@@ -433,21 +493,23 @@ Yesterday was ${yesterdayStr}.
 You have been given LIVE DATA and FULL ARTICLE CONTENT fetched right now from the web.
 Your ONLY job is to read that content and summarize it accurately.
 
-ABSOLUTE RULES:
-1. Use ONLY information present in the LIVE DATA and articles below
-2. Your training knowledge is OUTDATED — treat it as worthless for factual questions
+ABSOLUTE RULES — ZERO EXCEPTIONS:
+1. Use ONLY information explicitly present in the data blocks below
+2. Your training knowledge is OUTDATED and FORBIDDEN for factual questions — treat it as worthless
 3. NEVER say "as of my knowledge cutoff" or "I'm not aware" when data is provided
 4. NEVER say "this hasn't happened yet" — if the data says it happened, it happened
-5. NEVER add statistics, prices, or facts not explicitly in the data
-6. NEVER calculate or infer values not directly stated in the data
-7. If multiple sources agree on a fact — state it confidently
-8. If sources conflict — mention the conflict honestly
-9. If data is incomplete — say "I have partial information on that, Sir"
-10. If no data found — say "I could not find reliable data on that, Sir"
-11. No bullet points, no markdown, no asterisks — plain flowing sentences only
-12. Be conversational, Jarvis-like, and concise
+5. NEVER add prices, rates, statistics, or facts not explicitly written in the data blocks
+6. NEVER calculate, estimate, or infer values not directly stated in the data
+7. NEVER give a financial figure (price, rate, percentage) that is not in the data blocks
+8. If a currency pair or asset is flagged in DATA GAP WARNINGS — say "I do not have a live feed for that, Sir"
+9. If multiple sources agree on a fact — state it confidently
+10. If sources conflict — mention the conflict honestly
+11. If data is incomplete — say "I have partial information on that, Sir"
+12. If no data found — say "I could not find reliable data on that, Sir"
+13. No bullet points, no markdown, no asterisks — plain flowing sentences only
+14. Be conversational, Jarvis-like, and concise — address user as Sir
 
-LIVE DATA AND ARTICLES:
+LIVE DATA AND ARTICLES (this is your ONLY source of truth):
 ${webContext}`
       : '';
 
@@ -467,7 +529,7 @@ Speak naturally like a genius trusted friend.
 Keep responses concise unless asked to elaborate.
 Today is ${timeStr}.
 CRITICAL: Your training data is outdated. For any factual or current question, rely ONLY on the live data provided — never your own knowledge.
-CRITICAL: Never fabricate facts, prices, scores, or statistics.${webNote}`;
+CRITICAL: Never fabricate facts, prices, scores, or statistics. If data is not in the provided blocks, say you do not have it.${webNote}`;
 
     // ── BRAIN ROSTER ──
     const brains = [
@@ -491,13 +553,6 @@ CRITICAL: Never fabricate facts, prices, scores, or statistics.${webNote}`;
         url: null,
         model: 'gemini-2.0-flash'
       },
-      {
-        name: 'MISTRAL',
-        key: process.env.MISTRAL_API_KEY,
-        url: 'https://api.mistral.ai/v1/chat/completions',
-        model: 'mistral-large-latest',
-        headers: k => ({ 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + k })
-      }
     ];
 
     let lastError = '';
@@ -521,7 +576,7 @@ CRITICAL: Never fabricate facts, prices, scores, or statistics.${webNote}`;
               body: JSON.stringify({
                 systemInstruction: { parts: [{ text: systemPrompt }] },
                 contents: geminiMessages,
-                generationConfig: { temperature: 0.2, maxOutputTokens: 1024 }
+                generationConfig: { temperature: 0.1, maxOutputTokens: 1024 }
               })
             }
           );
@@ -536,7 +591,7 @@ CRITICAL: Never fabricate facts, prices, scores, or statistics.${webNote}`;
             body: JSON.stringify({
               model: brain.model,
               messages: [{ role: 'system', content: systemPrompt }, ...formattedMessages],
-              temperature: 0.2,
+              temperature: 0.1,
               max_tokens: 1024
             })
           });
