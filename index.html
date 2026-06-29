@@ -498,7 +498,7 @@ function bumpQ(){
 }
 
 // ══════════════════════════════════════════════════════
-// STATUS PHRASES (mirrored from speaker.js for pre-fetch audio)
+// STATUS PHRASES
 // ══════════════════════════════════════════════════════
 const STATUS_PHRASES={
   thinking:['Accessing the neural matrix, Sir.','Processing your query now.','Calculating the optimal response.','One moment while I analyse that.','Running deep search protocols.'],
@@ -506,6 +506,7 @@ const STATUS_PHRASES={
   weather:['Connecting to atmospheric sensors.','Pulling weather telemetry now.','Fetching the latest forecast data.'],
   youtube:['Scanning YouTube for your track, Sir.','Searching the media archive.','Locking onto audio stream.'],
   image:['Generating diagram, Sir.','Rendering visual now.','Compiling the illustration.'],
+  resolving:['Let me confirm the exact track, Sir.','Verifying the precise song before I play it.','One moment, checking the details.','Cross-checking the correct title now.'],
   continue:['Shall I continue, Sir?']
 };
 function rndPhrase(key){const arr=STATUS_PHRASES[key]||STATUS_PHRASES.thinking;return arr[Math.floor(Math.random()*arr.length)];}
@@ -593,7 +594,6 @@ async function showOrbImage(prompt){
   const img=document.getElementById('orb-img');
   const scorp=document.getElementById('scorp-svg');
   try{
-    // Speak status while fetching
     speakStatus('image');
     const url=`/api/generate-image?prompt=${encodeURIComponent(prompt)}`;
     img.src=url;
@@ -677,7 +677,7 @@ function orbTapped(){
 
 // ── MIC DELAY TRACKER — prevents self-interruption ──
 let _speechEndTimer=null;
-const MIC_DELAY_MS=900; // wait 900ms after speech ends before accepting new input
+const MIC_DELAY_MS=900;
 
 function initAndStartListening(){
   if(!('webkitSpeechRecognition' in window)&&!('SpeechRecognition' in window)){
@@ -690,13 +690,10 @@ function initAndStartListening(){
   recognition.interimResults=true;
   recognition.lang='en-US';
 
-  let micOpen=true; // gate: false during speaking + MIC_DELAY_MS after
-
-  // Close mic while speaking
-  const _origSetOrbState=setOrbState;
+  let micOpen=true;
 
   recognition.onresult=function(event){
-    if(!micOpen)return; // mic gated — ignore self-audio
+    if(!micOpen)return;
     let ft='';
     for(let i=event.resultIndex;i<event.results.length;i++){
       if(event.results[i].isFinal){
@@ -704,13 +701,11 @@ function initAndStartListening(){
       }else{
         const it=event.results[i][0].transcript;
         document.getElementById('d-conf').textContent=Math.floor((event.results[i][0].confidence||.85)*100)+'%';
-        // Interrupt detection — user spoke while Scorpion was speaking
         if(state==='speaking'&&it.length>3){
           const savedText=_currentAudio?_interruptedText||'':'' ;
           stopAllSpeech();
           playInterruptSound();
           setOrbState('listening','INTERRUPTED — LISTENING...');
-          // Ask to continue
           setTimeout(()=>{
             speakReply('Shall I continue Sir?').then(()=>{
               showContinueBanner(savedText);
@@ -720,7 +715,6 @@ function initAndStartListening(){
       }
     }
     if(ft.trim()&&!processingCmd){
-      // If continue banner is showing, interpret yes/no
       if(_interrupted){
         const ans=ft.trim().toLowerCase();
         if(/\b(yes|yeah|continue|go on|please|sure|do it|affirmative)\b/.test(ans)){
@@ -733,7 +727,6 @@ function initAndStartListening(){
       const cmd=ft.trim();
       if(document.activeElement===document.getElementById('cmd'))return;
       document.getElementById('cmd').value=cmd;
-      // Clear orb image on new question
       if(_orbImgShown)clearOrbImage();
       routeCommand(cmd);
     }
@@ -745,12 +738,9 @@ function initAndStartListening(){
   };
   recognition.onend=function(){if(alwaysOn)setTimeout(()=>{if(alwaysOn&&recognition)try{recognition.start()}catch(e){}},150);};
 
-  // Gate mic when orb enters speaking state, open after delay when done
-  const origSetOrb=setOrbState;
   window._micGate=function(speaking){
     micOpen=!speaking;
     if(!speaking){
-      // after speech ends, wait before accepting voice again
       clearTimeout(_speechEndTimer);
       _speechEndTimer=setTimeout(()=>{micOpen=true;},MIC_DELAY_MS);
     }
@@ -767,7 +757,6 @@ function stopRecognition(){if(recognition){try{recognition.abort()}catch(e){}rec
 // ══════════════════════════════════════════════════════
 async function speakStatus(key){
   const phrase=rndPhrase(key);
-  // Fire and forget — don't await
   _speakRaw(phrase);
 }
 
@@ -777,13 +766,13 @@ async function speakStatus(key){
 function routeCommand(cmd){
   const c=cmd.toLowerCase().trim();
 
+  // ── PLAY — brain-first song resolution before YouTube search ──
   if(/^(play|put on|i want to (hear|listen to)|search (youtube )?for|youtube|queue|stream)\s+.+/i.test(c)){
     const q=cmd.replace(/^(play|put on|i want to (hear|listen to)|search (youtube )?for|youtube|queue|stream)\s*/i,'').replace(/\s*(on youtube|for me|please|now)\s*/ig,'').trim();
-    speakStatus('youtube'); // 🔊 spoken status before fetch
-    handleYouTube(q);return;
+    resolveAndPlay(q);return;
   }
   if(/\b(weather|temperature|forecast|raining|rain|sunny|humidity|wind speed)\b/i.test(c)){
-    speakStatus('weather'); // 🔊 spoken status before fetch
+    speakStatus('weather');
     handleWeather(cmd);return;
   }
   if(/\b(next|skip|next song|next track|skip this)\b/i.test(c)){ytNext();return;}
@@ -811,9 +800,32 @@ function routeCommand(cmd){
     showOrbImage(imagePrompt);
   }
 
-  speakStatus('thinking'); // 🔊 spoken status before AI fetch
+  speakStatus('thinking');
   setOrbState('thinking','HEARD: '+cmd.toUpperCase().slice(0,45));
   sendCmdText(cmd);
+}
+
+// ══════════════════════════════════════════════════════
+// RESOLVE AND PLAY — brain-first track identification
+// ══════════════════════════════════════════════════════
+async function resolveAndPlay(rawQuery){
+  if(!rawQuery||!rawQuery.trim()){document.getElementById('output').textContent='What would you like me to play, Sir?';return;}
+  processingCmd=true;
+  speakStatus('resolving');
+  setOrbState('thinking','CONFIRMING EXACT TRACK...');
+  document.getElementById('output').textContent='Confirming track: '+rawQuery;
+  addLog('u','play '+rawQuery);
+  let finalQuery=rawQuery;
+  try{
+    const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'resolve_song',query:rawQuery})});
+    const data=await r.json();
+    if(data&&data.searchQuery)finalQuery=data.searchQuery;
+  }catch(e){/* silent fallback to raw query */}
+  processingCmd=false;
+  if(finalQuery.toLowerCase()!==rawQuery.toLowerCase()){
+    addLog('a','Identified track: '+finalQuery,'BRAIN');
+  }
+  handleYouTube(finalQuery,true); // pass skipLog=true since we already logged above
 }
 
 // ══════════════════════════════════════════════════════
@@ -843,12 +855,13 @@ window.onYouTubeIframeAPIReady=function(){
   });
 };
 
-async function handleYouTube(query){
+// skipLog=true when called from resolveAndPlay which already logged
+async function handleYouTube(query,skipLog){
   if(!query||!query.trim()){document.getElementById('output').textContent='What would you like me to play?';return;}
   processingCmd=true;stopAllSpeech();
   setOrbState('thinking','SEARCHING YOUTUBE...');
   document.getElementById('output').textContent='Searching: '+query;
-  addLog('u','play '+query);
+  if(!skipLog)addLog('u','play '+query);
   try{
     const r=await fetch('/api/youtube',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query})});
     const data=await r.json();processingCmd=false;
@@ -952,7 +965,7 @@ async function speakReply(text){
   const clean=cleanForSpeech(text);
   if(!clean)return Promise.resolve();
   setOrbState('speaking','SPEAKING — JUST TALK TO INTERRUPT');
-  if(window._micGate)window._micGate(true); // close mic
+  if(window._micGate)window._micGate(true);
 
   return new Promise((resolve)=>{
     fetch('/api/speaker',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:clean})})
@@ -964,7 +977,7 @@ async function speakReply(text){
         _currentAudio=audio;
         audio.onended=()=>{
           URL.revokeObjectURL(url);_currentAudio=null;
-          if(window._micGate)window._micGate(false); // re-open mic after delay
+          if(window._micGate)window._micGate(false);
           if(state==='speaking')setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE ALWAYS-ON MODE');
           resolve();
         };
@@ -1019,7 +1032,6 @@ async function sendCmdText(val){
     const brain=data.brain||'AI';
     out.className='';
 
-    // If image was triggered, show image in output + orb
     if(IMAGE_TRIGGERS.test(val)){
       const imagePrompt=val.replace(/^(explain|show me|what is|how does|diagram of|illustrate|show|demonstrate)\s*/i,'').trim()||val;
       const imgUrl=`/api/generate-image?prompt=${encodeURIComponent(imagePrompt)}`;
