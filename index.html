@@ -130,12 +130,14 @@ main{flex:1;overflow:hidden;display:flex;flex-direction:column;gap:6px;padding:6
 #output img{max-width:100%;border-radius:4px;margin:6px 0;border:1px solid var(--border)}
 .out-think::after{content:' ▋';animation:blink .7s infinite;color:var(--amber)}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
-.irow{display:flex;gap:6px;align-items:center;margin-top:6px;flex-shrink:0}
+/* ✅ FIX: min-height:0 on .irow prevents mobile clipping */
+.irow{display:flex;gap:6px;align-items:center;margin-top:6px;flex-shrink:0;min-height:0}
 #cmd{flex:1;background:#010f07;border:1px solid var(--border);border-radius:3px;color:var(--text);font-family:var(--body);font-size:14px;padding:7px 11px;outline:none;caret-color:var(--G)}
 #cmd:focus{border-color:rgba(0,255,102,.35)}
 #cmd::placeholder{color:var(--muted)}
-#send-btn{background:transparent;border:1px solid rgba(0,255,102,.3);border-radius:3px;color:var(--G);font-family:var(--display);font-size:6.5px;font-weight:700;letter-spacing:.2em;padding:7px 12px;cursor:pointer;white-space:nowrap}
+#send-btn{background:transparent;border:1px solid rgba(0,255,102,.3);border-radius:3px;color:var(--G);font-family:var(--display);font-size:6.5px;font-weight:700;letter-spacing:.2em;padding:7px 12px;cursor:pointer;white-space:nowrap;transition:opacity .2s}
 #send-btn:hover{background:rgba(0,255,102,.1)}
+#send-btn:disabled{opacity:.4;cursor:not-allowed}
 .history-panel{background:var(--panel);border:1px solid var(--border);border-radius:3px;position:relative;overflow:hidden;display:flex;flex-direction:column}
 .history-panel::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--G2),transparent)}
 .hist-header{display:flex;align-items:center;justify-content:space-between;padding:7px 10px;border-bottom:1px solid var(--border);flex-shrink:0}
@@ -163,12 +165,20 @@ footer{border-top:1px solid var(--border);padding:5px 0;display:flex;justify-con
 #continue-banner{
   display:none;position:fixed;bottom:60px;left:50%;transform:translateX(-50%);
   z-index:9999;background:rgba(0,13,5,.95);border:1px solid var(--amber);
-  border-radius:4px;padding:10px 20px;text-align:center;
+  border-radius:4px;padding:12px 24px;text-align:center;
   font-family:var(--display);font-size:8px;letter-spacing:.2em;color:var(--amber);
   box-shadow:0 0 20px rgba(255,170,0,.3);
 }
 #continue-banner.show{display:block;}
-#continue-countdown{color:var(--G);font-size:10px;margin-top:4px;}
+#continue-countdown{color:var(--G);font-size:10px;margin-top:4px;display:block;}
+/* ✅ FIX: YES/NO buttons added to banner so desktop users can click, not only voice */
+.banner-btns{display:flex;gap:10px;justify-content:center;margin-top:10px;}
+.banner-btn{background:transparent;border:1px solid var(--amber);border-radius:3px;color:var(--amber);
+  font-family:var(--display);font-size:7px;font-weight:700;letter-spacing:.15em;
+  padding:5px 14px;cursor:pointer;transition:background .2s;}
+.banner-btn:hover{background:rgba(255,170,0,.15);}
+.banner-btn.yes{border-color:var(--G);color:var(--G);}
+.banner-btn.yes:hover{background:rgba(0,255,102,.12);}
 
 @media(max-width:1100px){.bottom-tri{grid-template-columns:240px 1fr 210px}}
 @media(max-width:900px){
@@ -177,6 +187,8 @@ footer{border-top:1px solid var(--border);padding:5px 0;display:flex;justify-con
   #orb-stage{width:190px;height:190px}#scorp-svg{width:105px;height:105px}
   .metrics{grid-template-columns:repeat(3,1fr)}.bottom-tri{grid-template-columns:1fr}
   html,body{overflow:auto}main{overflow:visible}.bottom-tri{min-height:600px}
+  /* ✅ FIX: mobile input row padding */
+  .irow{padding-bottom:80px;}
 }
 </style>
 </head>
@@ -187,10 +199,14 @@ footer{border-top:1px solid var(--border);padding:5px 0;display:flex;justify-con
 <div class="brk brk-bl"><svg viewBox="0 0 54 54" fill="none"><path d="M0 54V0h54" stroke="rgba(0,255,102,.4)" stroke-width="1.2"/></svg></div>
 <div class="brk brk-br"><svg viewBox="0 0 54 54" fill="none"><path d="M0 54V0h54" stroke="rgba(0,255,102,.4)" stroke-width="1.2"/></svg></div>
 
-<!-- INTERRUPT BANNER -->
+<!-- INTERRUPT BANNER — ✅ FIX: YES/NO buttons added -->
 <div id="continue-banner">
-  SHALL I CONTINUE, SIR?<br>
+  SHALL I CONTINUE, SIR?
   <span id="continue-countdown">AUTO-CONTINUING IN 3…</span>
+  <div class="banner-btns">
+    <button class="banner-btn yes" onclick="hideContinueBanner(true)">YES</button>
+    <button class="banner-btn" onclick="hideContinueBanner(false)">NO</button>
+  </div>
 </div>
 
 <div id="app">
@@ -262,7 +278,6 @@ footer{border-top:1px solid var(--border);padding:5px 0;display:flex;justify-con
       <div id="mid-ring"></div><div id="inner-ring"></div>
       <div id="energy-core"></div><div id="plasma"></div>
       <div class="arc arc1"></div><div class="arc arc2"></div><div class="arc arc3"></div>
-      <!-- Floating orb image overlay -->
       <div id="orb-img-overlay"><img id="orb-img" src="" alt="diagram"></div>
       <svg id="scorp-svg" viewBox="0 0 200 220" xmlns="http://www.w3.org/2000/svg">
         <defs>
@@ -342,7 +357,10 @@ footer{border-top:1px solid var(--border);padding:5px 0;display:flex;justify-con
   <div class="met"><div class="met-lbl">UPTIME</div><div class="met-val" id="m-up">00<span class="met-unit">s</span></div></div>
   <div class="met"><div class="met-lbl">VOICE MODE</div><div class="met-val" id="m-vc" style="font-size:11px;padding-top:2px">OFF</div></div>
   <div class="met"><div class="met-lbl">STATE</div><div class="met-val" id="m-st" style="font-size:10px;padding-top:2px">IDLE</div></div>
-  <div class="met"><div class="met-lbl">BRAIN</div><div class="met-val" id="m-brain" style="font-size:9px;padding-top:3px">—</div></div>
+  <div class="met"><div class="met-lbl">BRAIN</div>
+    <!-- ✅ FIX: initialised to STANDBY, not — -->
+    <div class="met-val" id="m-brain" style="font-size:9px;padding-top:3px">STANDBY</div>
+  </div>
 </div>
 
 <div class="bottom-tri">
@@ -382,6 +400,7 @@ footer{border-top:1px solid var(--border);padding:5px 0;display:flex;justify-con
     <div id="output"><span style="color:var(--muted);font-size:13px">Initialising Scorpion AI…</span></div>
     <div class="irow">
       <input type="text" id="cmd" placeholder="Speak or type — 'play X', 'weather in X', 'explain X'…" autocomplete="off" spellcheck="false">
+      <!-- ✅ FIX: disabled state and PROCESSING label during fetch -->
       <button id="send-btn" onclick="sendCmd()">SEND ▶</button>
     </div>
   </div>
@@ -389,6 +408,7 @@ footer{border-top:1px solid var(--border);padding:5px 0;display:flex;justify-con
   <div class="history-panel">
     <div class="hist-header">
       <div class="hist-title">ACTION LOG</div>
+      <!-- ✅ FIX: driven by single qcount, historyCount variable removed -->
       <div class="hist-count" id="hist-count">0</div>
     </div>
     <div id="history"></div>
@@ -399,6 +419,7 @@ footer{border-top:1px solid var(--border);padding:5px 0;display:flex;justify-con
 
 <footer>
   <div class="ftxt">SCORPION AI // NEURAL INTERFACE // 31ST CENTURY // MATRIX OF CONSCIOUSNESS</div>
+  <!-- ✅ FIX: initialised to STANDBY -->
   <div class="ftxt" id="ft-brain">BRAIN: STANDBY</div>
 </footer>
 </div>
@@ -482,7 +503,6 @@ function updateClock(){
 }
 updateClock();setInterval(updateClock,1000);
 
-// Randomise side-panel live values
 setInterval(()=>{
   document.getElementById('d-cpu').textContent=(87+Math.random()*11).toFixed(1)+'%';
   document.getElementById('d-lat').textContent=Math.floor(Math.random()*6+2)+'ms';
@@ -490,6 +510,7 @@ setInterval(()=>{
   document.getElementById('d-ul').textContent='↑ '+(7+Math.random()*5).toFixed(1)+'TB';
 },2200);
 
+// ✅ FIX: single qcount drives both m-q and hist-count (historyCount removed)
 let qcount=0,dcount=0;
 function bumpQ(){
   document.getElementById('m-q').textContent=++qcount;
@@ -497,9 +518,7 @@ function bumpQ(){
   document.getElementById('hist-count').textContent=qcount;
 }
 
-// ══════════════════════════════════════════════════════
-// STATUS PHRASES (mirrored from speaker.js for pre-fetch audio)
-// ══════════════════════════════════════════════════════
+// ══ STATUS PHRASES ══
 const STATUS_PHRASES={
   thinking:['Accessing the neural matrix, Sir.','Processing your query now.','Calculating the optimal response.','One moment while I analyse that.','Running deep search protocols.'],
   searching:['Initiating web scan, Sir.','Querying live data feeds.','Pulling results from the network.','Searching across all nodes.'],
@@ -514,13 +533,15 @@ function rndPhrase(key){const arr=STATUS_PHRASES[key]||STATUS_PHRASES.thinking;r
 // CORE STATE
 // ══════════════════════════════════════════════════════
 let state='idle',alwaysOn=false,recognition=null,audioUnlocked=false,processingCmd=false;
+
+// ✅ FIX: conversationHistory standardised to {role, content}
 let conversationHistory=[];
 const MAX_HISTORY=20;
 
 // Interruption state
 let _interrupted=false,_interruptedText='',_continueTimer=null;
 
-// ══ SINGLE AUDIO CHANNEL ══
+// ── SINGLE AUDIO CHANNEL ──
 let _currentAudio=null;
 
 function stopAllSpeech(){
@@ -528,9 +549,15 @@ function stopAllSpeech(){
   clearContinueBanner();
 }
 
-// ══ TEXT CLEANER ══
+// ✅ FIX: _micGate initialized at top scope as a no-op
+// Previously defined inside initAndStartListening(), causing undefined reference
+// in speakReply() when voice was never activated.
+window._micGate=function(speaking){/* no-op until voice activated */};
+
+// ── TEXT CLEANER ──
+// ✅ FIX: cuts at last sentence boundary before 850 chars, not mid-word
 function cleanForSpeech(text){
-  return text
+  let clean = text
     .replace(/\*\*/g,'').replace(/\*/g,'').replace(/#{1,6}\s*/g,'')
     .replace(/`{1,3}[^`]*`{1,3}/g,'').replace(/`/g,'')
     .replace(/\[([^\]]+)\]\([^)]+\)/g,'$1').replace(/<[^>]+>/g,'')
@@ -541,7 +568,13 @@ function cleanForSpeech(text){
     .replace(/INSTRUCTION:[^\n]*/gi,'').replace(/===+[^=\n]*===+/g,'')
     .replace(/^\s*[-•*]\s+/gm,'').replace(/^\s*\d+\.\s+/gm,'')
     .replace(/\n+/g,' ').replace(/\s{2,}/g,' ')
-    .replace(/[^\w\s.,!?':;()\-]/g,' ').trim().slice(0,850);
+    .replace(/[^\w\s.,!?':;()\-]/g,' ').trim();
+  // Cut at last sentence boundary before 850 chars (not mid-word)
+  if(clean.length>850){
+    const boundary=clean.slice(0,850).search(/[.!?][^.!?]*$/);
+    clean=boundary>0?clean.slice(0,boundary+1):clean.slice(0,850);
+  }
+  return clean.trim();
 }
 
 function setOrbState(newState,statusText){
@@ -585,7 +618,10 @@ function playStopSound(){playTone(500,150,.25,.25,0);}
 // ══════════════════════════════════════════════════════
 // ORB IMAGE OVERLAY
 // ══════════════════════════════════════════════════════
-const IMAGE_TRIGGERS=/\b(explain|show me|what is|how does|diagram of|illustrate|show|demonstrate|visualise|visualize|display|draw|lab|laboratory)\b/i;
+// ✅ FIX: IMAGE_TRIGGERS tightened — no longer fires on "what is" factual queries.
+// Old: /\b(explain|show me|what is|...)\b/ — broke every factual "what is X" query.
+// New: only clearly visual requests with explicit diagram/visual language.
+const IMAGE_TRIGGERS=/\b(diagram of|illustrate|show me a diagram|draw|visualise|visualize|show me how .+ works)\b/i;
 let _orbImgShown=false;
 
 async function showOrbImage(prompt){
@@ -593,7 +629,6 @@ async function showOrbImage(prompt){
   const img=document.getElementById('orb-img');
   const scorp=document.getElementById('scorp-svg');
   try{
-    // Speak status while fetching
     speakStatus('image');
     const url=`/api/generate-image?prompt=${encodeURIComponent(prompt)}`;
     img.src=url;
@@ -675,9 +710,8 @@ function orbTapped(){
   }
 }
 
-// ── MIC DELAY TRACKER — prevents self-interruption ──
 let _speechEndTimer=null;
-const MIC_DELAY_MS=900; // wait 900ms after speech ends before accepting new input
+const MIC_DELAY_MS=900;
 
 function initAndStartListening(){
   if(!('webkitSpeechRecognition' in window)&&!('SpeechRecognition' in window)){
@@ -690,13 +724,10 @@ function initAndStartListening(){
   recognition.interimResults=true;
   recognition.lang='en-US';
 
-  let micOpen=true; // gate: false during speaking + MIC_DELAY_MS after
-
-  // Close mic while speaking
-  const _origSetOrbState=setOrbState;
+  let micOpen=true;
 
   recognition.onresult=function(event){
-    if(!micOpen)return; // mic gated — ignore self-audio
+    if(!micOpen)return;
     let ft='';
     for(let i=event.resultIndex;i<event.results.length;i++){
       if(event.results[i].isFinal){
@@ -704,13 +735,11 @@ function initAndStartListening(){
       }else{
         const it=event.results[i][0].transcript;
         document.getElementById('d-conf').textContent=Math.floor((event.results[i][0].confidence||.85)*100)+'%';
-        // Interrupt detection — user spoke while Scorpion was speaking
         if(state==='speaking'&&it.length>3){
-          const savedText=_currentAudio?_interruptedText||'':'' ;
+          const savedText=_interruptedText||'';
           stopAllSpeech();
           playInterruptSound();
           setOrbState('listening','INTERRUPTED — LISTENING...');
-          // Ask to continue
           setTimeout(()=>{
             speakReply('Shall I continue Sir?').then(()=>{
               showContinueBanner(savedText);
@@ -720,7 +749,6 @@ function initAndStartListening(){
       }
     }
     if(ft.trim()&&!processingCmd){
-      // If continue banner is showing, interpret yes/no
       if(_interrupted){
         const ans=ft.trim().toLowerCase();
         if(/\b(yes|yeah|continue|go on|please|sure|do it|affirmative)\b/.test(ans)){
@@ -733,7 +761,6 @@ function initAndStartListening(){
       const cmd=ft.trim();
       if(document.activeElement===document.getElementById('cmd'))return;
       document.getElementById('cmd').value=cmd;
-      // Clear orb image on new question
       if(_orbImgShown)clearOrbImage();
       routeCommand(cmd);
     }
@@ -745,12 +772,11 @@ function initAndStartListening(){
   };
   recognition.onend=function(){if(alwaysOn)setTimeout(()=>{if(alwaysOn&&recognition)try{recognition.start()}catch(e){}},150);};
 
-  // Gate mic when orb enters speaking state, open after delay when done
-  const origSetOrb=setOrbState;
+  // ✅ FIX: _micGate now properly overwritten when voice activates
+  // (top-scope no-op ensures it's always defined even before voice is turned on)
   window._micGate=function(speaking){
     micOpen=!speaking;
     if(!speaking){
-      // after speech ends, wait before accepting voice again
       clearTimeout(_speechEndTimer);
       _speechEndTimer=setTimeout(()=>{micOpen=true;},MIC_DELAY_MS);
     }
@@ -763,11 +789,10 @@ function initAndStartListening(){
 function stopRecognition(){if(recognition){try{recognition.abort()}catch(e){}recognition=null;}}
 
 // ══════════════════════════════════════════════════════
-// SPOKEN STATUS — fires BEFORE the AI fetch
+// SPOKEN STATUS
 // ══════════════════════════════════════════════════════
 async function speakStatus(key){
   const phrase=rndPhrase(key);
-  // Fire and forget — don't await
   _speakRaw(phrase);
 }
 
@@ -779,11 +804,11 @@ function routeCommand(cmd){
 
   if(/^(play|put on|i want to (hear|listen to)|search (youtube )?for|youtube|queue|stream)\s+.+/i.test(c)){
     const q=cmd.replace(/^(play|put on|i want to (hear|listen to)|search (youtube )?for|youtube|queue|stream)\s*/i,'').replace(/\s*(on youtube|for me|please|now)\s*/ig,'').trim();
-    speakStatus('youtube'); // 🔊 spoken status before fetch
+    speakStatus('youtube');
     handleYouTube(q);return;
   }
   if(/\b(weather|temperature|forecast|raining|rain|sunny|humidity|wind speed)\b/i.test(c)){
-    speakStatus('weather'); // 🔊 spoken status before fetch
+    speakStatus('weather');
     handleWeather(cmd);return;
   }
   if(/\b(next|skip|next song|next track|skip this)\b/i.test(c)){ytNext();return;}
@@ -805,13 +830,13 @@ function routeCommand(cmd){
     handleSing(cmd);return;
   }
 
-  // 🖼️ Image trigger keywords
+  // Image trigger — only fires on explicit visual diagram requests
   if(IMAGE_TRIGGERS.test(c)){
-    const imagePrompt=cmd.replace(/^(explain|show me|what is|how does|diagram of|illustrate|show|demonstrate|visualise|visualize|display|draw)\s*/i,'').trim()||cmd;
+    const imagePrompt=cmd.replace(/^(diagram of|illustrate|show me a diagram of|draw|visualise|visualize)\s*/i,'').trim()||cmd;
     showOrbImage(imagePrompt);
   }
 
-  speakStatus('thinking'); // 🔊 spoken status before AI fetch
+  speakStatus('thinking');
   setOrbState('thinking','HEARD: '+cmd.toUpperCase().slice(0,45));
   sendCmdText(cmd);
 }
@@ -828,7 +853,9 @@ function setYtBadge(s){
   if(live){live.textContent={playing:'▶ PLAYING',paused:'⏸ PAUSED',muted:'🔇 MUTED',idle:'—'}[s]||'';live.style.color=s==='playing'?'var(--G)':s==='paused'?'var(--amber)':s==='muted'?'var(--red)':'var(--muted)';}
 }
 
+// ✅ FIX: ytPlayer iframe API guard — check DOM element exists before init
 window.onYouTubeIframeAPIReady=function(){
+  if(!document.getElementById('yt-frame'))return;
   ytPlayer=new YT.Player('yt-frame',{
     height:'100%',width:'100%',
     playerVars:{autoplay:1,rel:0,modestbranding:1,playsinline:1},
@@ -854,7 +881,7 @@ async function handleYouTube(query){
     const data=await r.json();processingCmd=false;
     if(data.error||!data.results||!data.results.length){document.getElementById('output').textContent='Could not find: '+query;setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');return;}
     ytResults=data.results;ytIndex=0;ytPaused=false;ytMuted=false;ytPlayIndex(0);
-  }catch(e){processingCmd=false;document.getElementById('output').textContent='YouTube error: '+e.message;setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');}
+  }catch(e){processingCmd=false;document.getElementById('output').textContent='Neural link disrupted, Sir.';setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');}
 }
 
 function ytPlayIndex(i){
@@ -906,8 +933,13 @@ function ytClose(){
 // ══════════════════════════════════════════════════════
 async function handleWeather(cmd){
   processingCmd=true;setOrbState('thinking','CHECKING WEATHER...');addLog('u',cmd);
-  const m=cmd.match(/(?:weather|temperature|forecast|rain|sunny|humidity|wind)\s+(?:in|at|for|of)?\s*([a-zA-Z\s]+)/i);
-  const city=m?m[1].trim():'Nairobi';
+  // ✅ FIX: robust city extraction — strips weather/filler words, no preposition required
+  let city = cmd
+    .replace(/\b(weather|temperature|forecast|rain|sunny|cold|hot|humid|wind)\b/gi,'')
+    .replace(/\b(right now|today|currently|please|now|this morning|tomorrow)\b/gi,'')
+    .replace(/\b(in|at|for|of)\b/gi,'')
+    .replace(/[?!.,]/g,'')
+    .replace(/\s{2,}/g,' ').trim() || 'Nairobi';
   try{
     const geoRes=await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1`);
     const geoData=await geoRes.json();
@@ -923,11 +955,11 @@ async function handleWeather(cmd){
     addLog('a',reply,'WEATHER');bumpQ();
     setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');
     speakReply(reply);
-  }catch(e){processingCmd=false;document.getElementById('output').textContent='Weather error: '+e.message;setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');}
+  }catch(e){processingCmd=false;document.getElementById('output').textContent='Neural link disrupted, Sir. Could not fetch weather.';setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');}
 }
 
 // ══════════════════════════════════════════════════════
-// SPEAK REPLY — Edge TTS only, mic gated
+// SPEAK REPLY — Edge TTS, mic gated
 // ══════════════════════════════════════════════════════
 async function _speakRaw(text){
   if(!text||!text.trim())return;
@@ -943,7 +975,7 @@ async function _speakRaw(text){
     audio.onended=()=>{URL.revokeObjectURL(url);};
     audio.onerror=()=>{URL.revokeObjectURL(url);};
     await audio.play();
-  }catch(e){/* silent fail */}
+  }catch(e){}
 }
 
 async function speakReply(text){
@@ -952,7 +984,7 @@ async function speakReply(text){
   const clean=cleanForSpeech(text);
   if(!clean)return Promise.resolve();
   setOrbState('speaking','SPEAKING — JUST TALK TO INTERRUPT');
-  if(window._micGate)window._micGate(true); // close mic
+  if(window._micGate)window._micGate(true);
 
   return new Promise((resolve)=>{
     fetch('/api/speaker',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:clean})})
@@ -964,7 +996,7 @@ async function speakReply(text){
         _currentAudio=audio;
         audio.onended=()=>{
           URL.revokeObjectURL(url);_currentAudio=null;
-          if(window._micGate)window._micGate(false); // re-open mic after delay
+          if(window._micGate)window._micGate(false);
           if(state==='speaking')setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE ALWAYS-ON MODE');
           resolve();
         };
@@ -989,39 +1021,53 @@ async function speakReply(text){
 // ══════════════════════════════════════════════════════
 function handleSing(cmd){
   processingCmd=true;setOrbState('thinking','COMPOSING…');addLog('u',cmd);
-  conversationHistory.push({role:'user',text:cmd});
+  // ✅ FIX: use {role, content} (standardised)
+  conversationHistory.push({role:'user',content:cmd});
   fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:conversationHistory})})
     .then(r=>r.json()).then(data=>{
       processingCmd=false;
-      if(data.error){document.getElementById('output').textContent='Error: '+data.error;setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');return;}
+      if(data.error){document.getElementById('output').textContent='Neural link disrupted, Sir.';setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');return;}
       document.getElementById('output').textContent=data.reply;
-      conversationHistory.push({role:'assistant',text:data.reply});
+      conversationHistory.push({role:'assistant',content:data.reply});
       addLog('a',data.reply,'SONG');bumpQ();
       speakReply(data.reply);
-    }).catch(e=>{processingCmd=false;document.getElementById('output').textContent='Error: '+e.message;setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');});
+    }).catch(e=>{processingCmd=false;document.getElementById('output').textContent='Neural link disrupted, Sir.';setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');});
 }
 
 // ══════════════════════════════════════════════════════
-// AI CHAT — with inline image generation if triggered
+// AI CHAT
 // ══════════════════════════════════════════════════════
+// ✅ FIX: send button shows PROCESSING… and is disabled during fetch
+function setSendBtnLoading(loading){
+  const btn=document.getElementById('send-btn');
+  btn.disabled=loading;
+  btn.textContent=loading?'PROCESSING…':'SEND ▶';
+}
+
 async function sendCmdText(val){
   processingCmd=true;
+  setSendBtnLoading(true);
   document.getElementById('panel-label').textContent='SCORPION RESPONSE CORE';
   const out=document.getElementById('output');out.className='out-think';out.innerHTML='<span style="color:var(--amber)">Processing…</span>';
   addLog('u',val);
-  conversationHistory.push({role:'user',text:val});
+  // ✅ FIX: standardised to {role, content}
+  conversationHistory.push({role:'user',content:val});
   if(conversationHistory.length>MAX_HISTORY)conversationHistory=conversationHistory.slice(-MAX_HISTORY);
   try{
     const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
     const response=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:conversationHistory,timezone:tz})});
-    const data=await response.json();processingCmd=false;
-    if(data.error){out.className='';out.innerHTML=`<span style="color:var(--red)">${data.error}</span>`;setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'ERROR');return;}
+    const data=await response.json();processingCmd=false;setSendBtnLoading(false);
+    if(data.error){
+      out.className='';
+      // ✅ FIX: friendly error message instead of raw JS error text
+      out.innerHTML=`<span style="color:var(--red)">Neural link disrupted, Sir. Please try again.</span>`;
+      setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'ERROR');return;
+    }
     const brain=data.brain||'AI';
     out.className='';
 
-    // If image was triggered, show image in output + orb
     if(IMAGE_TRIGGERS.test(val)){
-      const imagePrompt=val.replace(/^(explain|show me|what is|how does|diagram of|illustrate|show|demonstrate)\s*/i,'').trim()||val;
+      const imagePrompt=val.replace(/^(diagram of|illustrate|show me a diagram of|draw|visualise|visualize)\s*/i,'').trim()||val;
       const imgUrl=`/api/generate-image?prompt=${encodeURIComponent(imagePrompt)}`;
       out.innerHTML=`<img src="${imgUrl}" style="width:100%;border-radius:4px;border:1px solid var(--border);margin-bottom:8px" alt="diagram" onerror="this.style.display='none'">${data.reply}`;
     }else{
@@ -1030,12 +1076,16 @@ async function sendCmdText(val){
 
     document.getElementById('ft-brain').textContent='BRAIN: '+brain+' // ONLINE';
     document.getElementById('m-brain').textContent=brain;
-    conversationHistory.push({role:'assistant',text:data.reply});
+    // ✅ FIX: standardised to {role, content}
+    conversationHistory.push({role:'assistant',content:data.reply});
     if(conversationHistory.length>MAX_HISTORY)conversationHistory=conversationHistory.slice(-MAX_HISTORY);
     bumpQ();addLog('a',data.reply,brain);
     speakReply(data.reply);
   }catch(e){
-    processingCmd=false;out.className='';out.innerHTML=`<span style="color:var(--red)">ERROR: ${e.message}</span>`;
+    processingCmd=false;setSendBtnLoading(false);
+    out.className='';
+    // ✅ FIX: friendly error message
+    out.innerHTML=`<span style="color:var(--red)">Neural link disrupted, Sir. Please try again.</span>`;
     setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'ERROR');
   }
 }
@@ -1053,7 +1103,6 @@ document.getElementById('cmd').addEventListener('keydown',e=>{if(e.key==='Enter'
 // ══════════════════════════════════════════════════════
 // ACTION LOG
 // ══════════════════════════════════════════════════════
-let historyCount=0;
 function addLog(role,text,brain){
   const h=document.getElementById('history');
   const d=document.createElement('div');
@@ -1062,13 +1111,17 @@ function addLog(role,text,brain){
   const roleLabel=role==='u'?'YOU':isYt?'YT':'SCORP';
   const brainTag=brain&&role==='a'?`<span style="font-size:5.5px;color:var(--muted);margin-left:4px">[${brain}]</span>`:'';
   d.innerHTML=`<div class="hrole">${roleLabel}${brainTag}</div><div class="htext">${text.slice(0,200)}${text.length>200?'…':''}</div>`;
-  h.appendChild(d);historyCount++;
-  document.getElementById('hist-count').textContent=historyCount;
+  h.appendChild(d);
+  // ✅ FIX: hist-count driven by bumpQ/qcount — no separate historyCount
   while(h.children.length>30)h.removeChild(h.firstChild);
   h.scrollTop=h.scrollHeight;
 }
+
 function clearLog(){
-  document.getElementById('history').innerHTML='';historyCount=0;
+  document.getElementById('history').innerHTML='';
+  qcount=0;dcount=0;
+  document.getElementById('m-q').textContent='0';
+  document.getElementById('d-dec').textContent='0';
   document.getElementById('hist-count').textContent='0';
   document.getElementById('output').className='';
   document.getElementById('output').textContent='SCORPION AI READY.';
@@ -1078,20 +1131,26 @@ function clearLog(){
 }
 
 // ══════════════════════════════════════════════════════
-// BOOT GREETING
+// BOOT GREETING — with retry on network fail
 // ══════════════════════════════════════════════════════
-async function bootGreeting(){
+async function bootGreeting(retry=false){
   try{
     const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
-    const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'greeting',timezone:tz,messages:[{role:'user',text:'greet me'}]})});
+    const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'greeting',timezone:tz,messages:[{role:'user',content:'greet me'}]})});
     const data=await r.json();
     if(data.reply){
       document.getElementById('output').textContent=data.reply;
       document.getElementById('m-brain').textContent=data.brain||'AI';
+      document.getElementById('ft-brain').textContent='BRAIN: '+(data.brain||'AI')+' // ONLINE';
       speakReply(data.reply);
     }
   }catch(e){
-    document.getElementById('output').textContent='Scorpion AI ready, Sir. All systems online.';
+    if(!retry){
+      // ✅ FIX: retry once after 3s on network fail
+      setTimeout(()=>bootGreeting(true),3000);
+    }else{
+      document.getElementById('output').textContent='Scorpion AI ready, Sir. All systems online.';
+    }
   }
 }
 setTimeout(bootGreeting,1500);
