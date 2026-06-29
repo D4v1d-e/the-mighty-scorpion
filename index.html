@@ -1066,10 +1066,28 @@ async function sendCmdText(val){
     const brain=data.brain||'AI';
     out.className='';
 
+    // ✅ FIX: previously built with innerHTML = `<img...>${data.reply}` — data.reply
+    // is LLM output that may echo raw HTML scraped from a web page (the backend's
+    // sanitizeReply() strips markdown but not literal <tags>). Inserting that via
+    // innerHTML is a stored-XSS path (indirect prompt injection -> DOM injection).
+    // Now built as real DOM nodes: the <img> is a constructed element, and the
+    // reply text goes in via .textContent, so it can never be parsed as markup.
+    out.innerHTML='';
     if(IMAGE_TRIGGERS.test(val)){
       const imagePrompt=val.replace(/^(diagram of|illustrate|show me a diagram of|draw|visualise|visualize)\s*/i,'').trim()||val;
       const imgUrl=`/api/generate-image?prompt=${encodeURIComponent(imagePrompt)}`;
-      out.innerHTML=`<img src="${imgUrl}" style="width:100%;border-radius:4px;border:1px solid var(--border);margin-bottom:8px" alt="diagram" onerror="this.style.display='none'">${data.reply}`;
+      const img=document.createElement('img');
+      img.src=imgUrl;
+      img.alt='diagram';
+      img.style.width='100%';
+      img.style.borderRadius='4px';
+      img.style.border='1px solid var(--border)';
+      img.style.marginBottom='8px';
+      img.onerror=function(){ this.style.display='none'; };
+      out.appendChild(img);
+      const replyDiv=document.createElement('div');
+      replyDiv.textContent=data.reply;
+      out.appendChild(replyDiv);
     }else{
       out.textContent=data.reply;
     }
@@ -1103,14 +1121,37 @@ document.getElementById('cmd').addEventListener('keydown',e=>{if(e.key==='Enter'
 // ══════════════════════════════════════════════════════
 // ACTION LOG
 // ══════════════════════════════════════════════════════
+// ✅ FIX: rebuilt with createElement + .textContent instead of innerHTML
+// template-string interpolation. `text` can be raw user input (typed/spoken
+// command) or an AI reply that may contain echoed HTML from scraped web
+// content — neither is safe to drop into innerHTML unescaped. brainTag is
+// now a real <span> element built programmatically rather than an HTML
+// string, so nothing in this function can ever be parsed as markup.
 function addLog(role,text,brain){
   const h=document.getElementById('history');
   const d=document.createElement('div');
   const isYt=brain==='YOUTUBE';
   d.className='hitem '+(role==='u'?'u':isYt?'yt':'a');
   const roleLabel=role==='u'?'YOU':isYt?'YT':'SCORP';
-  const brainTag=brain&&role==='a'?`<span style="font-size:5.5px;color:var(--muted);margin-left:4px">[${brain}]</span>`:'';
-  d.innerHTML=`<div class="hrole">${roleLabel}${brainTag}</div><div class="htext">${text.slice(0,200)}${text.length>200?'…':''}</div>`;
+
+  const roleDiv=document.createElement('div');
+  roleDiv.className='hrole';
+  roleDiv.textContent=roleLabel;
+  if(brain&&role==='a'){
+    const tag=document.createElement('span');
+    tag.style.fontSize='5.5px';
+    tag.style.color='var(--muted)';
+    tag.style.marginLeft='4px';
+    tag.textContent='['+brain+']';
+    roleDiv.appendChild(tag);
+  }
+
+  const textDiv=document.createElement('div');
+  textDiv.className='htext';
+  textDiv.textContent=text.length>200?text.slice(0,200)+'…':text;
+
+  d.appendChild(roleDiv);
+  d.appendChild(textDiv);
   h.appendChild(d);
   // ✅ FIX: hist-count driven by bumpQ/qcount — no separate historyCount
   while(h.children.length>30)h.removeChild(h.firstChild);
