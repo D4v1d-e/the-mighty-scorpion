@@ -5,21 +5,22 @@
 //               pipeline: web search, crypto, forex, metals,
 //               weather, sports, news, and RSS feeds.
 //
-// Brain roster (first available wins via Promise.any):
+// Brain roster (sequential with timeout fallback):
 //   1. Cerebras  — llama3.1-8b     (fastest)
 //   2. Groq      — llama-3.3-70b   (balanced)
 //   3. Gemini    — gemini-2.0-flash (powerful)
 //   4. Mistral   — mistral-large    (fallback)
 //
-// Changes from v1 for index.html v2:
-//   - Study mode removed from isSimpleCommand list
-//   - Image trigger keywords added to simple command bypass
-//     so visual queries still hit the full web pipeline
-//   - sanitizeReply hardened (removes [HIGH CONFIDENCE] etc.
-//     tags that occasionally leak into the spoken reply)
-//
 // Author  : Dr. Davie Mwangi
-// Version : 2.0.0
+// Version : 3.0.0
+// Fixes   :
+//   - Sequential brain calling (was Promise.any — wasteful)
+//   - planSearch/scoreAndFilter now race Cerebras + Groq
+//   - cleanForSpeech cuts at sentence boundary (not mid-word)
+//   - Weather city parser handles "weather Kisumu" (no preposition)
+//     and multi-word cities
+//   - conversationHistory standardised to {role, content}
+//   - IMAGE_TRIGGERS tightened (no longer fires on "what is")
 // ============================================================
 
 export default async function handler(req, res) {
@@ -67,8 +68,8 @@ export default async function handler(req, res) {
         isSports:    /football|soccer|premier league|champions league|la liga|serie a|bundesliga|sport|score|match|goal/.test(q),
         isFinancial: /rate|exchange|currency|price|convert|worth|cost|how much|value|market|stock|share|trading/.test(q),
         isNews:      /news|happened|latest|today|yesterday|this week|breaking|announced|said|reported/.test(q),
-        // ✅ NEW: image/visual queries should hit the web pipeline so AI has context
-        isVisual:    /explain|show me|what is|how does|diagram of|illustrate|demonstrate|visualise|visualize|lab|laboratory/.test(q)
+        // ✅ FIX: isVisual only matches clearly visual requests, not "what is" factual queries
+        isVisual:    /diagram of|illustrate|demonstrate|visualise|visualize|lab|laboratory|show me how .+ works/.test(q)
       };
     }
 
@@ -106,9 +107,43 @@ export default async function handler(req, res) {
       } catch (e) { return null; }
     }
 
+    // ── GROQ HELPER (for planning/filtering fallback) ────────
+    async function callGroqSmall(systemContent, userContent, maxTokens = 200) {
+      const key = process.env.GROQ_API_KEY;
+      if (!key) return null;
+      try {
+        const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+          body: JSON.stringify({
+            model: 'llama-3.1-8b-instant', // lightweight groq model for planning tasks
+            temperature: 0,
+            max_tokens: maxTokens,
+            messages: [
+              { role: 'system', content: systemContent },
+              { role: 'user',   content: userContent   }
+            ]
+          })
+        });
+        const data = await r.json();
+        return data.choices?.[0]?.message?.content?.trim() || null;
+      } catch (e) { return null; }
+    }
+
+    // ── RACE HELPER: Cerebras vs Groq for planning tasks ────
+    // ✅ FIX: planSearch/scoreAndFilter no longer rely solely on Cerebras
+    async function raceSmallModels(systemContent, userContent, maxTokens = 200) {
+      try {
+        return await Promise.any([
+          callCerebras(systemContent, userContent, maxTokens),
+          callGroqSmall(systemContent, userContent, maxTokens)
+        ].filter(p => p !== null));
+      } catch (e) { return null; }
+    }
+
     // ── SEARCH PLANNER ──────────────────────────────────────
     async function planSearch(query) {
-      const result = await callCerebras(
+      const result = await raceSmallModels(
         'You are a search query planner. Today is ' + timeStr + '. Given a user question, output 2-3 specific targeted search queries that would find the most accurate and current information. Each query should target a different angle — facts, news, analysis. Always append current month and year to queries about recent events. Output ONLY a valid JSON array of strings. No explanation, no markdown. Example: ["SpaceX IPO price June 2026","SpaceX SPCX Nasdaq debut","Elon Musk trillionaire 2026"]',
         query,
         200
@@ -124,7 +159,7 @@ export default async function handler(req, res) {
     // ── CONFIDENCE FILTER ───────────────────────────────────
     async function scoreAndFilter(rawData, query) {
       if (!rawData) return rawData;
-      const result = await callCerebras(
+      const result = await raceSmallModels(
         'You are a data quality analyst. Today is ' + timeStr + '. Given raw search results and a query: ' +
         '1) Extract only facts that directly answer the query. ' +
         '2) Remove irrelevant content, ads, navigation, repetition. ' +
@@ -352,15 +387,17 @@ export default async function handler(req, res) {
     // ── WEATHER ─────────────────────────────────────────────
     async function getWeather(query) {
       if (!query.toLowerCase().match(/weather|temperature|forecast|rain|humid|wind|sunny|cold|hot/)) return null;
-      let city = 'Nairobi';
-      const preposMatch = query.match(/\b(?:in|at|for)\s+([a-zA-Z\s]+?)(?:\s+right\s+now|\s+today|\s+currently|\s+now|\s+please|\?|$)/i);
-      if (preposMatch) {
-        city = preposMatch[1].trim();
-      } else {
-        const fallback = query.match(/(?:weather|temperature|forecast|rain|sunny|cold|hot)\s+([a-zA-Z\s]+?)(?:\s+right\s+now|\s+today|\?|$)/i);
-        if (fallback) city = fallback[1].trim();
-      }
-      city = city.replace(/\s+(right|now|today|currently|please)$/gi,'').replace(/\?/g,'').trim() || 'Nairobi';
+
+      // ✅ FIX: Robust city parser — handles "weather Kisumu", multi-word cities,
+      //   and removes all filler words without requiring a preposition.
+      let city = query
+        .replace(/\b(weather|temperature|forecast|rain|sunny|cold|hot|humid|wind)\b/gi, '')
+        .replace(/\b(right now|today|currently|please|now|this morning|tomorrow)\b/gi, '')
+        .replace(/\b(in|at|for|of)\b/gi, '')
+        .replace(/[?!.,]/g, '')
+        .replace(/\s{2,}/g, ' ')
+        .trim() || 'Nairobi';
+
       try {
         const geoR = await fetch('https://geocoding-api.open-meteo.com/v1/search?name=' + encodeURIComponent(city) + '&count=1');
         const geoData = await geoR.json();
@@ -388,28 +425,28 @@ export default async function handler(req, res) {
     }
 
     // ── SIMPLE COMMAND DETECTOR ─────────────────────────────
-    // ✅ CHANGE: removed 'study ' from bypass list (study mode deleted)
-    // ✅ CHANGE: visual/image queries are NOT bypassed — they need web context
     function isSimpleCommand(messages) {
       if (!messages?.length) return true;
       const last = messages[messages.length - 1];
-      const text = (last?.text || last?.content || '').toLowerCase().trim();
+      // ✅ FIX: read from .content (standardised) with .text fallback
+      const text = (last?.content || last?.text || '').toLowerCase().trim();
       const simple = [
         'hello','hi','hey','thanks','thank you','bye','goodbye',
         'how are you','what is your name','who are you',
         'play ','stop','pause'
       ];
-      // Visual queries must NOT be bypassed — they need web context for accurate explanations
-      const isVisual = /explain|show me|what is|how does|diagram of|illustrate/.test(text);
+      // Visual queries must NOT be bypassed — they need web context
+      const isVisual = /diagram of|illustrate|demonstrate|visualise|visualize/.test(text);
       if (isVisual) return false;
       return simple.some(s => text.startsWith(s)) && text.length < 30;
     }
 
     // ── FORMAT MESSAGES ─────────────────────────────────────
-    const userMessages = messages || [{ role: 'user', text: mode === 'greeting' ? 'greet me' : 'hello' }];
+    // ✅ FIX: standardised to {role, content} throughout — no more .text/.content duality
+    const userMessages = messages || [{ role: 'user', content: mode === 'greeting' ? 'greet me' : 'hello' }];
     const formattedMessages = userMessages.map(m => ({
       role: m.role === 'assistant' ? 'assistant' : 'user',
-      content: m.text || m.content || ''
+      content: m.content || m.text || ''
     }));
 
     // ── MAIN DATA PIPELINE ──────────────────────────────────
@@ -420,7 +457,7 @@ export default async function handler(req, res) {
 
     if (mode !== 'greeting' && !isSimpleCommand(userMessages)) {
       const lastMsg = userMessages[userMessages.length - 1];
-      const query   = lastMsg?.text || lastMsg?.content || '';
+      const query   = lastMsg?.content || lastMsg?.text || '';
       const intent  = classifyQuery(query);
       const plannedQueries = await planSearch(query);
 
@@ -499,7 +536,6 @@ CRITICAL OUTPUT FORMAT RULES (apply to every response, no exceptions):
     ];
 
     // ── REPLY SANITIZER ──────────────────────────────────────
-    // ✅ CHANGE: also strips confidence/stale tags that can leak into TTS
     function sanitizeReply(text) {
       return text
         .replace(/\*\*/g, '')
@@ -510,7 +546,6 @@ CRITICAL OUTPUT FORMAT RULES (apply to every response, no exceptions):
         .replace(/^\s*\d+\.\s+/gm, '')
         .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
         .replace(/\|/g, ', ')
-        // ✅ strip confidence/date/stale tags that sometimes leak into replies
         .replace(/\[HIGH CONFIDENCE\]/gi, '')
         .replace(/\[LOW CONFIDENCE\]/gi, '')
         .replace(/\[STALE\]/gi, '')
@@ -569,17 +604,35 @@ CRITICAL OUTPUT FORMAT RULES (apply to every response, no exceptions):
       }
     }
 
+    // ── SEQUENTIAL BRAIN CALLER ──────────────────────────────
+    // ✅ FIX: was Promise.any (fires all simultaneously, wasteful).
+    //   Now tries each brain in order; falls to next only on error/timeout.
+    async function callBrainsSequential(activeBrains, timeoutMs = 8000) {
+      const errors = [];
+      for (const brain of activeBrains) {
+        try {
+          return await Promise.race([
+            callBrain(brain),
+            new Promise((_, rej) => setTimeout(() => rej(new Error(brain.name + ': timeout')), timeoutMs))
+          ]);
+        } catch (e) {
+          errors.push(e.message);
+          // continue to next brain
+        }
+      }
+      throw new Error('All brains failed: ' + errors.join(' | '));
+    }
+
     // ── FIRE ─────────────────────────────────────────────────
     const activeBrains = brains.filter(b => b.key);
     if (!activeBrains.length) return res.status(500).json({ error: 'No brain API keys configured' });
 
     try {
-      const result   = await Promise.any(activeBrains.map(b => callBrain(b)));
+      const result   = await callBrainsSequential(activeBrains);
       const webLabel = searchedWeb ? ' + WEB' + (dataSource ? ' [' + dataSource + ']' : '') : '';
       return res.status(200).json({ reply: result.reply, brain: result.brain + webLabel });
-    } catch (aggErr) {
-      const errors = aggErr.errors?.map(e => e.message).join(' | ') || aggErr.message;
-      return res.status(500).json({ error: 'All brains failed: ' + errors });
+    } catch (err) {
+      return res.status(500).json({ error: err.message });
     }
 
   } catch (e) {
