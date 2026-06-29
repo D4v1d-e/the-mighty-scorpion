@@ -18,8 +18,16 @@
 //   - sanitizeReply hardened (removes [HIGH CONFIDENCE] etc.
 //     tags that occasionally leak into the spoken reply)
 //
+// Changes in v3.0 (brain-first song resolution):
+//   - Added mode === 'resolve_song' handler so the chat brain
+//     (with full web-search context) resolves the EXACT song
+//     title/artist BEFORE the YouTube search ever runs. This
+//     fixes the bug where "play the first Bob Marley song"
+//     played the wrong track because /api/youtube did a
+//     literal keyword search with no factual reasoning.
+//
 // Author  : Dr. Davie Mwangi
-// Version : 2.0.0
+// Version : 3.0.0
 // ============================================================
 
 export default async function handler(req, res) {
@@ -32,7 +40,7 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
-    const { messages, mode, timezone } = req.body;
+    const { messages, mode, timezone, query } = req.body;
 
     // ── TIME CONTEXT ────────────────────────────────────────
     const now = new Date();
@@ -56,33 +64,6 @@ export default async function handler(req, res) {
     const currentYear  = now.getFullYear();
     const currentMonth = now.toLocaleString('en-US', { month: 'long' });
 
-    // ── QUERY CLASSIFIER ────────────────────────────────────
-    function classifyQuery(query) {
-      const q = query.toLowerCase();
-      return {
-        isCrypto:    /bitcoin|btc|ethereum|eth|solana|sol|bnb|dogecoin|doge|xrp|cardano|ada|crypto|coin/.test(q),
-        isForex:     /forex|currency|exchange rate|usd|eur|gbp|kes|jpy|cad|aud|zar|ngn|ugx|tzs|convert|shilling|dollar|euro|pound/.test(q),
-        isMetals:    /gold|silver|xau|xag|platinum|palladium|metal/.test(q),
-        isWeather:   /weather|temperature|forecast|rain|humid|wind|sunny|cold|hot/.test(q),
-        isSports:    /football|soccer|premier league|champions league|la liga|serie a|bundesliga|sport|score|match|goal/.test(q),
-        isFinancial: /rate|exchange|currency|price|convert|worth|cost|how much|value|market|stock|share|trading/.test(q),
-        isNews:      /news|happened|latest|today|yesterday|this week|breaking|announced|said|reported/.test(q),
-        // ✅ NEW: image/visual queries should hit the web pipeline so AI has context
-        isVisual:    /explain|show me|what is|how does|diagram of|illustrate|demonstrate|visualise|visualize|lab|laboratory/.test(q)
-      };
-    }
-
-    // ── SMART QUERY ENHANCER ────────────────────────────────
-    function enhanceQuery(query) {
-      const q = query.toLowerCase();
-      let enhanced = query;
-      if      (q.includes('yesterday'))                                                          enhanced = query + ' ' + yesterdayStr;
-      else if (q.includes('this morning') || q.includes('today'))                               enhanced = query + ' ' + todayStr;
-      else if (q.includes('this week'))                                                          enhanced = query + ' ' + currentMonth + ' ' + currentYear;
-      else if (/latest|recent|now|current|just|happened/.test(q))                              enhanced = query + ' ' + currentMonth + ' ' + currentYear;
-      return enhanced;
-    }
-
     // ── CEREBRAS HELPER ─────────────────────────────────────
     async function callCerebras(systemContent, userContent, maxTokens = 200) {
       const key = process.env.CEREBRAS_API_KEY;
@@ -104,48 +85,6 @@ export default async function handler(req, res) {
         const data = await r.json();
         return data.choices?.[0]?.message?.content?.trim() || null;
       } catch (e) { return null; }
-    }
-
-    // ── SEARCH PLANNER ──────────────────────────────────────
-    async function planSearch(query) {
-      const result = await callCerebras(
-        'You are a search query planner. Today is ' + timeStr + '. Given a user question, output 2-3 specific targeted search queries that would find the most accurate and current information. Each query should target a different angle — facts, news, analysis. Always append current month and year to queries about recent events. Output ONLY a valid JSON array of strings. No explanation, no markdown. Example: ["SpaceX IPO price June 2026","SpaceX SPCX Nasdaq debut","Elon Musk trillionaire 2026"]',
-        query,
-        200
-      );
-      if (!result) return [enhanceQuery(query)];
-      try {
-        const cleaned = result.replace(/```json|```/g, '').trim();
-        const queries = JSON.parse(cleaned);
-        return Array.isArray(queries) && queries.length > 0 ? queries : [enhanceQuery(query)];
-      } catch (e) { return [enhanceQuery(query)]; }
-    }
-
-    // ── CONFIDENCE FILTER ───────────────────────────────────
-    async function scoreAndFilter(rawData, query) {
-      if (!rawData) return rawData;
-      const result = await callCerebras(
-        'You are a data quality analyst. Today is ' + timeStr + '. Given raw search results and a query: ' +
-        '1) Extract only facts that directly answer the query. ' +
-        '2) Remove irrelevant content, ads, navigation, repetition. ' +
-        '3) Tag each key fact as [HIGH CONFIDENCE] if multiple sources agree and it is recent, or [LOW CONFIDENCE] if single source or older than 7 days. ' +
-        '4) For financial figures note the source and date. ' +
-        '5) Flag the date of each fact as [DATE: YYYY-MM-DD]. If no date found, tag [DATE: UNKNOWN] and mark LOW CONFIDENCE. ' +
-        '6) REJECT any news fact whose source article is older than 48 hours — mark it [STALE] and deprioritise it. ' +
-        '7) Preserve exact numbers — never round or alter figures. ' +
-        '8) Output clean structured facts only. If nothing is relevant output exactly: NO RELEVANT DATA FOUND',
-        'QUERY: ' + query + '\n\nRAW DATA:\n' + rawData.slice(0, 10000),
-        2000
-      );
-      if (!result || result === 'NO RELEVANT DATA FOUND') return rawData;
-      return result;
-    }
-
-    // ── RECENCY VALIDATOR ───────────────────────────────────
-    function hasRecentDate(text) {
-      const cutoff = new Date(Date.now() - 3 * 86400000);
-      const dateMatches = text.match(/\d{4}-\d{2}-\d{2}/g) || [];
-      return dateMatches.some(d => new Date(d) >= cutoff);
     }
 
     // ── URL CONTENT FETCHER ─────────────────────────────────
@@ -189,7 +128,7 @@ export default async function handler(req, res) {
         });
         const data = await r.json();
         let results = '';
-        if (data.answerBox)     results += 'DIRECT ANSWER: ' + (data.answerBox.answer || data.answerBox.snippet || data.answerBox.title || '') + '\n\n';
+        if (data.answerBox)      results += 'DIRECT ANSWER: ' + (data.answerBox.answer || data.answerBox.snippet || data.answerBox.title || '') + '\n\n';
         if (data.knowledgeGraph) results += 'KNOWLEDGE: ' + (data.knowledgeGraph.title || '') + ' — ' + (data.knowledgeGraph.description || '') + '\n\n';
         if (data.organic?.length) {
           results += 'SEARCH SNIPPETS:\n';
@@ -299,6 +238,137 @@ export default async function handler(req, res) {
       } catch (e) { return null; }
     }
 
+    // ── SONG RESOLUTION MODE (brain-first before YouTube) ───
+    // This runs BEFORE any YouTube search. It takes the user's
+    // raw play request, decides whether it needs factual lookup
+    // (e.g. "first song by X", "song from movie Y", "X's newest
+    // single"), pulls live search context if so, then asks the
+    // brain to output ONE precise "Song Title - Artist" string.
+    // That clean string — not the raw phrase — is what gets
+    // searched on YouTube, so the exact requested track plays.
+    if (mode === 'resolve_song') {
+      const rawQuery = (query || '').trim();
+      if (!rawQuery) return res.status(200).json({ searchQuery: '', original: '' });
+
+      const needsResearch = /\b(first|debut|earliest|original|best|most famous|biggest|number one|#1|grammy|award|from the movie|from the film|soundtrack|theme song|latest|newest|new single|new song)\b/i.test(rawQuery);
+
+      let searchContext = '';
+      if (needsResearch) {
+        try {
+          const [serperData, tavilyData] = await Promise.all([
+            serperSearch(rawQuery, false),
+            tavilySearch(rawQuery)
+          ]);
+          searchContext = [serperData, tavilyData].filter(Boolean).join('\n\n---\n\n');
+        } catch (e) { /* proceed without search context */ }
+      }
+
+      const resolverPrompt = `You are a precise music lookup assistant. Today is ${timeStr}.
+Your ONLY job: identify the exact, correct song title and artist the user wants played on YouTube.
+
+Rules:
+- If the request already names a specific song and/or artist clearly, output it cleaned up, exactly as intended.
+- If the request needs factual knowledge (e.g. "first song by X", "song from movie Y", "X's biggest hit", "newest single by X"), use the SEARCH CONTEXT below to find the precise, correct, official song title and artist.
+- Never refuse. If uncertain, give your best factual judgement.
+- Output ONLY this exact format, nothing else — no quotes, no explanation, no markdown:
+SONG TITLE - ARTIST NAME
+
+${searchContext ? 'SEARCH CONTEXT:\n' + searchContext.slice(0, 4000) : 'No search context available — use your own knowledge.'}`;
+
+      let resolved = await callCerebras(resolverPrompt, rawQuery, 60);
+
+      if (!resolved && process.env.GROQ_API_KEY) {
+        try {
+          const gr = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + process.env.GROQ_API_KEY },
+            body: JSON.stringify({
+              model: 'llama-3.3-70b-versatile',
+              temperature: 0,
+              max_tokens: 60,
+              messages: [
+                { role: 'system', content: resolverPrompt },
+                { role: 'user', content: rawQuery }
+              ]
+            })
+          });
+          const gData = await gr.json();
+          resolved = gData.choices?.[0]?.message?.content?.trim() || null;
+        } catch (e) { /* fall through to raw query */ }
+      }
+
+      const finalQuery = resolved ? resolved.replace(/^["']+|["']+$/g, '').trim() : rawQuery;
+      return res.status(200).json({ searchQuery: finalQuery, original: rawQuery, usedResearch: needsResearch });
+    }
+
+    // ── QUERY CLASSIFIER ────────────────────────────────────
+    function classifyQuery(query) {
+      const q = query.toLowerCase();
+      return {
+        isCrypto:    /bitcoin|btc|ethereum|eth|solana|sol|bnb|dogecoin|doge|xrp|cardano|ada|crypto|coin/.test(q),
+        isForex:     /forex|currency|exchange rate|usd|eur|gbp|kes|jpy|cad|aud|zar|ngn|ugx|tzs|convert|shilling|dollar|euro|pound/.test(q),
+        isMetals:    /gold|silver|xau|xag|platinum|palladium|metal/.test(q),
+        isWeather:   /weather|temperature|forecast|rain|humid|wind|sunny|cold|hot/.test(q),
+        isSports:    /football|soccer|premier league|champions league|la liga|serie a|bundesliga|sport|score|match|goal/.test(q),
+        isFinancial: /rate|exchange|currency|price|convert|worth|cost|how much|value|market|stock|share|trading/.test(q),
+        isNews:      /news|happened|latest|today|yesterday|this week|breaking|announced|said|reported/.test(q),
+        isVisual:    /explain|show me|what is|how does|diagram of|illustrate|demonstrate|visualise|visualize|lab|laboratory/.test(q)
+      };
+    }
+
+    // ── SMART QUERY ENHANCER ────────────────────────────────
+    function enhanceQuery(query) {
+      const q = query.toLowerCase();
+      let enhanced = query;
+      if      (q.includes('yesterday'))                                                          enhanced = query + ' ' + yesterdayStr;
+      else if (q.includes('this morning') || q.includes('today'))                               enhanced = query + ' ' + todayStr;
+      else if (q.includes('this week'))                                                          enhanced = query + ' ' + currentMonth + ' ' + currentYear;
+      else if (/latest|recent|now|current|just|happened/.test(q))                              enhanced = query + ' ' + currentMonth + ' ' + currentYear;
+      return enhanced;
+    }
+
+    // ── SEARCH PLANNER ──────────────────────────────────────
+    async function planSearch(query) {
+      const result = await callCerebras(
+        'You are a search query planner. Today is ' + timeStr + '. Given a user question, output 2-3 specific targeted search queries that would find the most accurate and current information. Each query should target a different angle — facts, news, analysis. Always append current month and year to queries about recent events. Output ONLY a valid JSON array of strings. No explanation, no markdown. Example: ["SpaceX IPO price June 2026","SpaceX SPCX Nasdaq debut","Elon Musk trillionaire 2026"]',
+        query,
+        200
+      );
+      if (!result) return [enhanceQuery(query)];
+      try {
+        const cleaned = result.replace(/```json|```/g, '').trim();
+        const queries = JSON.parse(cleaned);
+        return Array.isArray(queries) && queries.length > 0 ? queries : [enhanceQuery(query)];
+      } catch (e) { return [enhanceQuery(query)]; }
+    }
+
+    // ── CONFIDENCE FILTER ───────────────────────────────────
+    async function scoreAndFilter(rawData, query) {
+      if (!rawData) return rawData;
+      const result = await callCerebras(
+        'You are a data quality analyst. Today is ' + timeStr + '. Given raw search results and a query: ' +
+        '1) Extract only facts that directly answer the query. ' +
+        '2) Remove irrelevant content, ads, navigation, repetition. ' +
+        '3) Tag each key fact as [HIGH CONFIDENCE] if multiple sources agree and it is recent, or [LOW CONFIDENCE] if single source or older than 7 days. ' +
+        '4) For financial figures note the source and date. ' +
+        '5) Flag the date of each fact as [DATE: YYYY-MM-DD]. If no date found, tag [DATE: UNKNOWN] and mark LOW CONFIDENCE. ' +
+        '6) REJECT any news fact whose source article is older than 48 hours — mark it [STALE] and deprioritise it. ' +
+        '7) Preserve exact numbers — never round or alter figures. ' +
+        '8) Output clean structured facts only. If nothing is relevant output exactly: NO RELEVANT DATA FOUND',
+        'QUERY: ' + query + '\n\nRAW DATA:\n' + rawData.slice(0, 10000),
+        2000
+      );
+      if (!result || result === 'NO RELEVANT DATA FOUND') return rawData;
+      return result;
+    }
+
+    // ── RECENCY VALIDATOR ───────────────────────────────────
+    function hasRecentDate(text) {
+      const cutoff = new Date(Date.now() - 3 * 86400000);
+      const dateMatches = text.match(/\d{4}-\d{2}-\d{2}/g) || [];
+      return dateMatches.some(d => new Date(d) >= cutoff);
+    }
+
     // ── CRYPTO ──────────────────────────────────────────────
     async function getCrypto(query) {
       const q = query.toLowerCase();
@@ -388,8 +458,6 @@ export default async function handler(req, res) {
     }
 
     // ── SIMPLE COMMAND DETECTOR ─────────────────────────────
-    // ✅ CHANGE: removed 'study ' from bypass list (study mode deleted)
-    // ✅ CHANGE: visual/image queries are NOT bypassed — they need web context
     function isSimpleCommand(messages) {
       if (!messages?.length) return true;
       const last = messages[messages.length - 1];
@@ -492,14 +560,13 @@ CRITICAL OUTPUT FORMAT RULES (apply to every response, no exceptions):
 
     // ── BRAIN ROSTER ─────────────────────────────────────────
     const brains = [
-      { name:'CEREBRAS', key:process.env.CEREBRAS_API_KEY, url:'https://api.cerebras.ai/v1/chat/completions',    model:'llama3.1-8b',          headers:k=>({'Content-Type':'application/json','Authorization':'Bearer '+k}) },
-      { name:'GROQ',     key:process.env.GROQ_API_KEY,     url:'https://api.groq.com/openai/v1/chat/completions', model:'llama-3.3-70b-versatile',headers:k=>({'Content-Type':'application/json','Authorization':'Bearer '+k}) },
+      { name:'CEREBRAS', key:process.env.CEREBRAS_API_KEY, url:'https://api.cerebras.ai/v1/chat/completions',    model:'llama3.1-8b',           headers:k=>({'Content-Type':'application/json','Authorization':'Bearer '+k}) },
+      { name:'GROQ',     key:process.env.GROQ_API_KEY,     url:'https://api.groq.com/openai/v1/chat/completions', model:'llama-3.3-70b-versatile', headers:k=>({'Content-Type':'application/json','Authorization':'Bearer '+k}) },
       { name:'GEMINI',   key:process.env.GEMINI_API_KEY,   url:null,                                              model:'gemini-2.0-flash' },
-      { name:'MISTRAL',  key:process.env.MISTRAL_API_KEY,  url:'https://api.mistral.ai/v1/chat/completions',      model:'mistral-large-latest',  headers:k=>({'Content-Type':'application/json','Authorization':'Bearer '+k}) }
+      { name:'MISTRAL',  key:process.env.MISTRAL_API_KEY,  url:'https://api.mistral.ai/v1/chat/completions',      model:'mistral-large-latest',   headers:k=>({'Content-Type':'application/json','Authorization':'Bearer '+k}) }
     ];
 
     // ── REPLY SANITIZER ──────────────────────────────────────
-    // ✅ CHANGE: also strips confidence/stale tags that can leak into TTS
     function sanitizeReply(text) {
       return text
         .replace(/\*\*/g, '')
@@ -510,7 +577,6 @@ CRITICAL OUTPUT FORMAT RULES (apply to every response, no exceptions):
         .replace(/^\s*\d+\.\s+/gm, '')
         .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
         .replace(/\|/g, ', ')
-        // ✅ strip confidence/date/stale tags that sometimes leak into replies
         .replace(/\[HIGH CONFIDENCE\]/gi, '')
         .replace(/\[LOW CONFIDENCE\]/gi, '')
         .replace(/\[STALE\]/gi, '')
