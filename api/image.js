@@ -1,22 +1,28 @@
 // ============================================================
-// IMAGE GENERATION API HANDLER v3.0
+// IMAGE GENERATION API HANDLER v4.0
 // ============================================================
 // Brain roster (tries each in order until one works):
-//   1. HuggingFace FLUX.1-schnell — best quality, free key
-//   2. HuggingFace FLUX.1-dev     — alternative FLUX model
-//   3. HuggingFace SDXL           — Stable Diffusion XL
-//   4. Gemini image generation    — if key available
-//   5. Lexica.art                 — free image search, no key
-//   6. Pollinations.ai Flux       — free, no key
-//   7. Pollinations.ai default    — free, no key
+//   1. Pollinations.ai Flux  — free, fast, reliable (NO key needed)
+//   2. Pollinations.ai default — free fallback
+//   3. HuggingFace FLUX.1-schnell — best quality (if HF_API_KEY set)
+//   4. HuggingFace FLUX.1-dev     — alternative FLUX model
+//   5. HuggingFace SDXL           — Stable Diffusion XL
+//   6. Gemini image generation    — if GEMINI_API_KEY available
+//   7. Lexica.art                 — free image search, no key
 //   8. SVG fallback               — always works, no network
 //
+// Fix v4.0:
+//   - Pollinations moved to positions 1-2 (was 6-7).
+//     HF free tier gets 503s constantly; Pollinations is
+//     reliable and fast. Old order meant 4 timeouts × 25s
+//     = up to 100s before Pollinations got a chance.
+//
 // Environment Variables:
-//   HF_API_KEY     — HuggingFace token (free at huggingface.co)
+//   HF_API_KEY     — HuggingFace token (optional, free at huggingface.co)
 //   GEMINI_API_KEY — optional fallback
 //
 // Author  : Dr. Davie Mwangi
-// Version : 3.0.0
+// Version : 4.0.0
 // ============================================================
 
 const HF_TIMEOUT_MS = 25000;
@@ -84,7 +90,44 @@ export default async function handler(req, res) {
   const hfKey  = process.env.HF_API_KEY;
   const gemKey = process.env.GEMINI_API_KEY;
 
-  // ── 1. HUGGINGFACE FLUX.1-schnell ────────────────────────
+  // ── 1. POLLINATIONS FLUX (free, fast, no key) ─────────────
+  // ✅ FIX: Moved from position 6 to position 1.
+  //   Pollinations is reliable and instant; no reason to burn
+  //   25s HF timeouts before reaching it.
+  try {
+    console.log('Trying Pollinations Flux…');
+    const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(
+      prompt + ', educational, professional, detailed, high quality, clean background, labeled diagram'
+    )}?model=flux&width=640&height=480&nologo=true&seed=${Date.now()}`;
+    const imgRes = await fetchWithTimeout(url, {}, 15000);
+    if (imgRes.ok) {
+      const buffer = await imgRes.arrayBuffer();
+      if (buffer.byteLength > 1000) {
+        res.setHeader('Content-Type', 'image/jpeg');
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        return res.status(200).send(Buffer.from(buffer));
+      }
+    }
+  } catch (e) { console.warn('Pollinations Flux failed:', e.message); }
+
+  // ── 2. POLLINATIONS DEFAULT ───────────────────────────────
+  try {
+    console.log('Trying Pollinations default…');
+    const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(
+      prompt + ', educational diagram, professional'
+    )}?width=640&height=480&nologo=true`;
+    const imgRes = await fetchWithTimeout(url, {}, 15000);
+    if (imgRes.ok) {
+      const buffer = await imgRes.arrayBuffer();
+      if (buffer.byteLength > 1000) {
+        res.setHeader('Content-Type', 'image/jpeg');
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        return res.status(200).send(Buffer.from(buffer));
+      }
+    }
+  } catch (e) { console.warn('Pollinations default failed:', e.message); }
+
+  // ── 3. HUGGINGFACE FLUX.1-schnell ────────────────────────
   if (hfKey) {
     try {
       console.log('Trying HF FLUX.1-schnell…');
@@ -96,7 +139,7 @@ export default async function handler(req, res) {
       return res.status(200).send(buffer);
     } catch (e) { console.warn('FLUX.1-schnell failed:', e.message); }
 
-    // ── 2. HUGGINGFACE FLUX.1-dev ──────────────────────────
+    // ── 4. HUGGINGFACE FLUX.1-dev ──────────────────────────
     try {
       console.log('Trying HF FLUX.1-dev…');
       const { buffer, contentType } = await huggingFaceImage(
@@ -107,7 +150,7 @@ export default async function handler(req, res) {
       return res.status(200).send(buffer);
     } catch (e) { console.warn('FLUX.1-dev failed:', e.message); }
 
-    // ── 3. HUGGINGFACE SDXL ────────────────────────────────
+    // ── 5. HUGGINGFACE SDXL ────────────────────────────────
     try {
       console.log('Trying HF SDXL…');
       const { buffer, contentType } = await huggingFaceImage(
@@ -119,7 +162,7 @@ export default async function handler(req, res) {
     } catch (e) { console.warn('SDXL failed:', e.message); }
   }
 
-  // ── 4. GEMINI IMAGE ───────────────────────────────────────
+  // ── 6. GEMINI IMAGE ───────────────────────────────────────
   if (gemKey) {
     try {
       console.log('Trying Gemini image…');
@@ -148,7 +191,7 @@ export default async function handler(req, res) {
     } catch (e) { console.warn('Gemini image failed:', e.message); }
   }
 
-  // ── 5. LEXICA.ART ─────────────────────────────────────────
+  // ── 7. LEXICA.ART ─────────────────────────────────────────
   try {
     console.log('Trying Lexica.art…');
     const searchRes = await fetchWithTimeout(
@@ -170,40 +213,6 @@ export default async function handler(req, res) {
       }
     }
   } catch (e) { console.warn('Lexica failed:', e.message); }
-
-  // ── 6. POLLINATIONS FLUX ──────────────────────────────────
-  try {
-    console.log('Trying Pollinations Flux…');
-    const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(
-      prompt + ', educational, professional, detailed, high quality, clean background, labeled diagram'
-    )}?model=flux&width=640&height=480&nologo=true&seed=${Date.now()}`;
-    const imgRes = await fetchWithTimeout(url, {}, 15000);
-    if (imgRes.ok) {
-      const buffer = await imgRes.arrayBuffer();
-      if (buffer.byteLength > 1000) {
-        res.setHeader('Content-Type', 'image/jpeg');
-        res.setHeader('Cache-Control', 'public, max-age=86400');
-        return res.status(200).send(Buffer.from(buffer));
-      }
-    }
-  } catch (e) { console.warn('Pollinations Flux failed:', e.message); }
-
-  // ── 7. POLLINATIONS DEFAULT ───────────────────────────────
-  try {
-    console.log('Trying Pollinations default…');
-    const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(
-      prompt + ', educational diagram, professional'
-    )}?width=640&height=480&nologo=true`;
-    const imgRes = await fetchWithTimeout(url, {}, 15000);
-    if (imgRes.ok) {
-      const buffer = await imgRes.arrayBuffer();
-      if (buffer.byteLength > 1000) {
-        res.setHeader('Content-Type', 'image/jpeg');
-        res.setHeader('Cache-Control', 'public, max-age=86400');
-        return res.status(200).send(Buffer.from(buffer));
-      }
-    }
-  } catch (e) { console.warn('Pollinations default failed:', e.message); }
 
   // ── 8. SVG FALLBACK (always works) ───────────────────────
   console.warn('All image sources failed — serving SVG fallback');
@@ -233,7 +242,7 @@ export default async function handler(req, res) {
     <path d="M600 40 L580 40 L580 60" fill="none" stroke="#00ff66" stroke-width="1" opacity="0.5"/>
     <path d="M40 440 L60 440 L60 420" fill="none" stroke="#00ff66" stroke-width="1" opacity="0.5"/>
     <path d="M600 440 L580 440 L580 420" fill="none" stroke="#00ff66" stroke-width="1" opacity="0.5"/>
-    <text x="320" y="465" text-anchor="middle" font-family="monospace" font-size="8" fill="#1a4a2a">ADD HF_API_KEY FOR FLUX.1 IMAGE GENERATION // huggingface.co</text>
+    <text x="320" y="465" text-anchor="middle" font-family="monospace" font-size="8" fill="#1a4a2a">POLLINATIONS // huggingface.co // GEMINI — ALL SOURCES TRIED</text>
   </svg>`;
 
   res.setHeader('Content-Type', 'image/svg+xml');
