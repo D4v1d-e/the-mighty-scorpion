@@ -60,19 +60,9 @@ main{flex:1;overflow:hidden;display:flex;flex-direction:column;gap:6px;padding:6
 @keyframes plasmaShift{0%{background:radial-gradient(circle at 40% 38%,#aaffcc 0%,#00ff66 22%,rgba(0,200,80,.6) 50%,transparent 72%)}100%{background:radial-gradient(circle at 60% 55%,#ccffdd 0%,#33ff88 18%,rgba(0,180,70,.5) 48%,transparent 70%)}}
 #scorp-svg{position:absolute;z-index:5;width:130px;height:130px;filter:drop-shadow(0 0 12px rgba(0,255,102,.9)) drop-shadow(0 0 28px rgba(0,255,102,.5));animation:scorpFloat 4s ease-in-out infinite;transition:opacity .4s}
 @keyframes scorpFloat{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-7px) scale(1.03)}}
-
-/* ── ORB IMAGE OVERLAY ── */
-#orb-img-overlay{
-  position:absolute;inset:0;border-radius:50%;z-index:6;
-  display:flex;align-items:center;justify-content:center;
-  pointer-events:none;opacity:0;transition:opacity .5s;overflow:hidden;
-}
-#orb-img-overlay img{
-  width:100%;height:100%;object-fit:cover;border-radius:50%;
-  border:2px solid rgba(0,255,102,.3);
-}
-#orb-img-overlay.show{opacity:1;}
-
+#orb-img-overlay{position:absolute;inset:0;border-radius:50%;z-index:6;display:flex;align-items:center;justify-content:center;pointer-events:none;opacity:0;transition:opacity .5s;overflow:hidden}
+#orb-img-overlay img{width:100%;height:100%;object-fit:cover;border-radius:50%;border:2px solid rgba(0,255,102,.3)}
+#orb-img-overlay.show{opacity:1}
 #orb-stage.listening #scorp-svg{filter:drop-shadow(0 0 18px rgba(0,255,102,1)) drop-shadow(0 0 40px rgba(0,255,102,.7))}
 #orb-stage.thinking #scorp-svg{filter:drop-shadow(0 0 18px rgba(255,170,0,.9)) drop-shadow(0 0 40px rgba(255,170,0,.6))}
 #orb-stage.speaking #scorp-svg{filter:drop-shadow(0 0 18px rgba(179,102,255,.9)) drop-shadow(0 0 40px rgba(179,102,255,.6))}
@@ -160,15 +150,77 @@ footer{border-top:1px solid var(--border);padding:5px 0;display:flex;justify-con
 .ftxt{font-size:7px;letter-spacing:.18em;color:var(--muted);font-family:var(--mono)}
 
 /* ── CONTINUE PROMPT BANNER ── */
-#continue-banner{
-  display:none;position:fixed;bottom:60px;left:50%;transform:translateX(-50%);
-  z-index:9999;background:rgba(0,13,5,.95);border:1px solid var(--amber);
-  border-radius:4px;padding:10px 20px;text-align:center;
-  font-family:var(--display);font-size:8px;letter-spacing:.2em;color:var(--amber);
-  box-shadow:0 0 20px rgba(255,170,0,.3);
+#continue-banner{display:none;position:fixed;bottom:60px;left:50%;transform:translateX(-50%);z-index:9999;background:rgba(0,13,5,.95);border:1px solid var(--amber);border-radius:4px;padding:10px 20px;text-align:center;font-family:var(--display);font-size:8px;letter-spacing:.2em;color:var(--amber);box-shadow:0 0 20px rgba(255,170,0,.3)}
+#continue-banner.show{display:block}
+#continue-countdown{color:var(--G);font-size:10px;margin-top:4px}
+
+/* ══════════════════════════════════════════════
+   SONG CLARIFICATION MODAL  (NEW in v4.0)
+   ══════════════════════════════════════════════ */
+#clarify-modal{
+  display:none;position:fixed;inset:0;z-index:10000;
+  background:rgba(0,0,0,.82);backdrop-filter:blur(4px);
+  align-items:center;justify-content:center;
 }
-#continue-banner.show{display:block;}
-#continue-countdown{color:var(--G);font-size:10px;margin-top:4px;}
+#clarify-modal.show{display:flex;}
+#clarify-box{
+  background:var(--panel);border:1px solid var(--G);border-radius:6px;
+  padding:24px 28px;max-width:480px;width:90%;
+  box-shadow:0 0 40px rgba(0,255,102,.25);position:relative;
+}
+#clarify-box::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:2px;
+  background:linear-gradient(90deg,transparent,var(--G),transparent);
+}
+#clarify-label{
+  font-family:var(--display);font-size:7px;font-weight:700;
+  letter-spacing:.3em;color:var(--Gdim);margin-bottom:12px;
+  display:flex;align-items:center;gap:6px;
+}
+#clarify-label::before{
+  content:'';width:5px;height:5px;border-radius:50%;
+  background:var(--amber);box-shadow:0 0 8px var(--amber);
+}
+#clarify-question{
+  font-size:15px;color:var(--G);font-family:var(--body);
+  margin-bottom:16px;line-height:1.6;
+  text-shadow:0 0 10px rgba(0,255,102,.3);
+}
+#clarify-options{display:flex;flex-direction:column;gap:8px;margin-bottom:16px}
+.clarify-opt{
+  background:transparent;border:1px solid var(--border);border-radius:4px;
+  color:var(--text);font-family:var(--body);font-size:13px;
+  padding:9px 14px;cursor:pointer;text-align:left;
+  transition:border-color .2s,background .2s;
+  display:flex;align-items:center;gap:10px;
+}
+.clarify-opt:hover,.clarify-opt:focus{
+  border-color:var(--G);background:rgba(0,255,102,.07);outline:none;
+}
+.clarify-opt-num{
+  font-family:var(--display);font-size:7px;font-weight:700;
+  letter-spacing:.2em;color:var(--Gdim);min-width:18px;
+}
+#clarify-input-row{display:flex;gap:8px;margin-top:4px}
+#clarify-input{
+  flex:1;background:#010f07;border:1px solid var(--border);border-radius:3px;
+  color:var(--text);font-family:var(--body);font-size:13px;padding:7px 10px;
+  outline:none;caret-color:var(--G);
+}
+#clarify-input:focus{border-color:rgba(0,255,102,.35)}
+#clarify-input::placeholder{color:var(--muted);font-size:12px}
+#clarify-send{
+  background:transparent;border:1px solid rgba(0,255,102,.3);border-radius:3px;
+  color:var(--G);font-family:var(--display);font-size:6.5px;font-weight:700;
+  letter-spacing:.2em;padding:7px 12px;cursor:pointer;white-space:nowrap;
+}
+#clarify-send:hover{background:rgba(0,255,102,.1)}
+#clarify-cancel{
+  display:block;width:100%;margin-top:12px;background:none;border:none;
+  cursor:pointer;font-family:var(--mono);font-size:8px;
+  color:var(--muted);letter-spacing:.12em;
+}
+#clarify-cancel:hover{color:var(--red)}
 
 @media(max-width:1100px){.bottom-tri{grid-template-columns:240px 1fr 210px}}
 @media(max-width:900px){
@@ -193,6 +245,20 @@ footer{border-top:1px solid var(--border);padding:5px 0;display:flex;justify-con
   <span id="continue-countdown">AUTO-CONTINUING IN 3…</span>
 </div>
 
+<!-- ══ SONG CLARIFICATION MODAL (NEW) ══ -->
+<div id="clarify-modal">
+  <div id="clarify-box">
+    <div id="clarify-label">TRACK IDENTIFICATION — CLARIFICATION NEEDED</div>
+    <div id="clarify-question">Which song did you mean, Sir?</div>
+    <div id="clarify-options"></div>
+    <div id="clarify-input-row">
+      <input type="text" id="clarify-input" placeholder="Or type your answer here…">
+      <button id="clarify-send" onclick="submitClarification()">GO ▶</button>
+    </div>
+    <button id="clarify-cancel" onclick="dismissClarify()">[ CANCEL ]</button>
+  </div>
+</div>
+
 <div id="app">
 <header>
   <div class="logo">
@@ -211,7 +277,7 @@ footer{border-top:1px solid var(--border);padding:5px 0;display:flex;justify-con
     </svg>
     <div>
       <div class="logo-main">THE MIGHTY SCORPION</div>
-      <div class="logo-sub">NEURAL CORE v3100.0 // JARVIS INTELLIGENCE MATRIX</div>
+      <div class="logo-sub">NEURAL CORE v4.0.0 // JARVIS INTELLIGENCE MATRIX</div>
     </div>
   </div>
   <div class="hdr-right">
@@ -262,7 +328,6 @@ footer{border-top:1px solid var(--border);padding:5px 0;display:flex;justify-con
       <div id="mid-ring"></div><div id="inner-ring"></div>
       <div id="energy-core"></div><div id="plasma"></div>
       <div class="arc arc1"></div><div class="arc arc2"></div><div class="arc arc3"></div>
-      <!-- Floating orb image overlay -->
       <div id="orb-img-overlay"><img id="orb-img" src="" alt="diagram"></div>
       <svg id="scorp-svg" viewBox="0 0 200 220" xmlns="http://www.w3.org/2000/svg">
         <defs>
@@ -482,7 +547,6 @@ function updateClock(){
 }
 updateClock();setInterval(updateClock,1000);
 
-// Randomise side-panel live values
 setInterval(()=>{
   document.getElementById('d-cpu').textContent=(87+Math.random()*11).toFixed(1)+'%';
   document.getElementById('d-lat').textContent=Math.floor(Math.random()*6+2)+'ms';
@@ -507,6 +571,7 @@ const STATUS_PHRASES={
   youtube:['Scanning YouTube for your track, Sir.','Searching the media archive.','Locking onto audio stream.'],
   image:['Generating diagram, Sir.','Rendering visual now.','Compiling the illustration.'],
   resolving:['Let me confirm the exact track, Sir.','Verifying the precise song before I play it.','One moment, checking the details.','Cross-checking the correct title now.'],
+  clarifying:['I need a moment of clarification, Sir.','Just verifying what you mean.','Let me make sure I get the right one.'],
   continue:['Shall I continue, Sir?']
 };
 function rndPhrase(key){const arr=STATUS_PHRASES[key]||STATUS_PHRASES.thinking;return arr[Math.floor(Math.random()*arr.length)];}
@@ -520,6 +585,10 @@ const MAX_HISTORY=20;
 
 // Interruption state
 let _interrupted=false,_interruptedText='',_continueTimer=null;
+
+// Clarification state
+let _clarifyOriginalQuery='';
+let _clarifyOptions=[];
 
 // ══ SINGLE AUDIO CHANNEL ══
 let _currentAudio=null;
@@ -597,11 +666,7 @@ async function showOrbImage(prompt){
     speakStatus('image');
     const url=`/api/generate-image?prompt=${encodeURIComponent(prompt)}`;
     img.src=url;
-    img.onload=()=>{
-      overlay.classList.add('show');
-      scorp.style.opacity='0';
-      _orbImgShown=true;
-    };
+    img.onload=()=>{overlay.classList.add('show');scorp.style.opacity='0';_orbImgShown=true;};
     img.onerror=()=>{clearOrbImage();};
   }catch(e){clearOrbImage();}
 }
@@ -609,18 +674,15 @@ async function showOrbImage(prompt){
 function clearOrbImage(){
   const overlay=document.getElementById('orb-img-overlay');
   const scorp=document.getElementById('scorp-svg');
-  overlay.classList.remove('show');
-  scorp.style.opacity='1';
-  document.getElementById('orb-img').src='';
-  _orbImgShown=false;
+  overlay.classList.remove('show');scorp.style.opacity='1';
+  document.getElementById('orb-img').src='';_orbImgShown=false;
 }
 
 // ══════════════════════════════════════════════════════
-// INTERRUPTION / CONTINUE BANNER
+// CONTINUE BANNER
 // ══════════════════════════════════════════════════════
 function showContinueBanner(pendingText){
-  _interrupted=true;
-  _interruptedText=pendingText;
+  _interrupted=true;_interruptedText=pendingText;
   const banner=document.getElementById('continue-banner');
   const countdown=document.getElementById('continue-countdown');
   banner.classList.add('show');
@@ -628,30 +690,113 @@ function showContinueBanner(pendingText){
   countdown.textContent='AUTO-CONTINUING IN '+secs+'…';
   _continueTimer=setInterval(()=>{
     secs--;
-    if(secs<=0){
-      clearInterval(_continueTimer);
-      hideContinueBanner(true);
-    }else{
-      countdown.textContent='AUTO-CONTINUING IN '+secs+'…';
-    }
+    if(secs<=0){clearInterval(_continueTimer);hideContinueBanner(true);}
+    else{countdown.textContent='AUTO-CONTINUING IN '+secs+'…';}
   },1000);
 }
-
 function hideContinueBanner(autoResume){
   clearInterval(_continueTimer);
   document.getElementById('continue-banner').classList.remove('show');
-  if(autoResume&&_interruptedText){
-    speakReply(_interruptedText);
-  }
-  _interrupted=false;
-  _interruptedText='';
+  if(autoResume&&_interruptedText)speakReply(_interruptedText);
+  _interrupted=false;_interruptedText='';
 }
-
 function clearContinueBanner(){
   clearInterval(_continueTimer);
   document.getElementById('continue-banner').classList.remove('show');
-  _interrupted=false;
-  _interruptedText='';
+  _interrupted=false;_interruptedText='';
+}
+
+// ══════════════════════════════════════════════════════
+// SONG CLARIFICATION MODAL  (NEW v4.0)
+// ══════════════════════════════════════════════════════
+function showClarifyModal(question, options, originalQuery){
+  _clarifyOriginalQuery = originalQuery;
+  _clarifyOptions = options;
+
+  document.getElementById('clarify-question').textContent = question;
+
+  const container = document.getElementById('clarify-options');
+  container.innerHTML = '';
+  options.forEach((opt, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'clarify-opt';
+    btn.innerHTML = `<span class="clarify-opt-num">0${i+1}</span><span>${opt}</span>`;
+    btn.onclick = () => pickClarifyOption(opt);
+    container.appendChild(btn);
+  });
+
+  document.getElementById('clarify-input').value = '';
+  document.getElementById('clarify-modal').classList.add('show');
+  setTimeout(()=>document.getElementById('clarify-input').focus(), 150);
+
+  // Speak the question aloud
+  speakReply(question);
+}
+
+function hideClarifyModal(){
+  document.getElementById('clarify-modal').classList.remove('show');
+}
+
+function dismissClarify(){
+  hideClarifyModal();
+  processingCmd = false;
+  setOrbState(alwaysOn?'listening':'idle', alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');
+  document.getElementById('output').textContent = 'Track search cancelled, Sir.';
+}
+
+function pickClarifyOption(optText){
+  hideClarifyModal();
+  // If it's the "something else" fallback option, ask user to type
+  if(/something else|describe|i'll|other/i.test(optText)){
+    document.getElementById('output').textContent = 'Please type what you mean, Sir.';
+    document.getElementById('cmd').focus();
+    processingCmd = false;
+    return;
+  }
+  // Treat the chosen option as the final resolved query directly
+  addLog('u', optText);
+  handleYouTube(optText, true);
+}
+
+function submitClarification(){
+  const answer = document.getElementById('clarify-input').value.trim();
+  if(!answer) return;
+  hideClarifyModal();
+  resolveClarification(answer);
+}
+
+// Handle voice answer to clarification
+document.getElementById('clarify-input').addEventListener('keydown', e=>{
+  if(e.key==='Enter') submitClarification();
+});
+
+async function resolveClarification(answer){
+  processingCmd = true;
+  setOrbState('thinking', 'RESOLVING YOUR ANSWER...');
+  document.getElementById('output').textContent = 'Confirming track…';
+
+  try{
+    const r = await fetch('/api/chat', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        mode:'resolve_song',
+        query: _clarifyOriginalQuery,
+        clarificationAnswer: answer,
+        originalQuery: _clarifyOriginalQuery
+      })
+    });
+    const data = await r.json();
+    processingCmd = false;
+
+    const finalQuery = data.searchQuery || answer;
+    addLog('a', 'Identified: ' + finalQuery, 'BRAIN');
+    handleYouTube(finalQuery, true);
+  }catch(e){
+    processingCmd = false;
+    // Fallback: just search with the raw answer
+    handleYouTube(answer, false);
+  }
 }
 
 // ══════════════════════════════════════════════════════
@@ -675,7 +820,6 @@ function orbTapped(){
   }
 }
 
-// ── MIC DELAY TRACKER — prevents self-interruption ──
 let _speechEndTimer=null;
 const MIC_DELAY_MS=900;
 
@@ -702,26 +846,38 @@ function initAndStartListening(){
         const it=event.results[i][0].transcript;
         document.getElementById('d-conf').textContent=Math.floor((event.results[i][0].confidence||.85)*100)+'%';
         if(state==='speaking'&&it.length>3){
-          const savedText=_currentAudio?_interruptedText||'':'' ;
+          const savedText=_currentAudio?_interruptedText||'':'';
           stopAllSpeech();
           playInterruptSound();
           setOrbState('listening','INTERRUPTED — LISTENING...');
           setTimeout(()=>{
-            speakReply('Shall I continue Sir?').then(()=>{
-              showContinueBanner(savedText);
-            });
+            speakReply('Shall I continue Sir?').then(()=>{showContinueBanner(savedText);});
           },300);
         }
       }
     }
     if(ft.trim()&&!processingCmd){
+      // If clarify modal is showing, treat voice as answer
+      if(document.getElementById('clarify-modal').classList.contains('show')){
+        const answer=ft.trim();
+        // Try to match a numbered option first
+        const numMatch=answer.match(/^(one|two|three|1|2|3|first|second|third)/i);
+        if(numMatch){
+          const idx={one:0,1:0,first:0,two:1,2:1,second:1,three:2,3:2,third:2}[numMatch[1].toLowerCase()];
+          if(_clarifyOptions[idx]){
+            hideClarifyModal();
+            pickClarifyOption(_clarifyOptions[idx]);
+            return;
+          }
+        }
+        hideClarifyModal();
+        resolveClarification(answer);
+        return;
+      }
       if(_interrupted){
         const ans=ft.trim().toLowerCase();
-        if(/\b(yes|yeah|continue|go on|please|sure|do it|affirmative)\b/.test(ans)){
-          hideContinueBanner(true);
-        }else if(/\b(no|stop|cancel|never mind|nope|don't)\b/.test(ans)){
-          hideContinueBanner(false);
-        }
+        if(/\b(yes|yeah|continue|go on|please|sure|do it|affirmative)\b/.test(ans)){hideContinueBanner(true);}
+        else if(/\b(no|stop|cancel|never mind|nope|don't)\b/.test(ans)){hideContinueBanner(false);}
         return;
       }
       const cmd=ft.trim();
@@ -740,10 +896,7 @@ function initAndStartListening(){
 
   window._micGate=function(speaking){
     micOpen=!speaking;
-    if(!speaking){
-      clearTimeout(_speechEndTimer);
-      _speechEndTimer=setTimeout(()=>{micOpen=true;},MIC_DELAY_MS);
-    }
+    if(!speaking){clearTimeout(_speechEndTimer);_speechEndTimer=setTimeout(()=>{micOpen=true;},MIC_DELAY_MS);}
   };
 
   setOrbState('listening','ALWAYS ON — SPEAK ANYTIME');
@@ -753,7 +906,7 @@ function initAndStartListening(){
 function stopRecognition(){if(recognition){try{recognition.abort()}catch(e){}recognition=null;}}
 
 // ══════════════════════════════════════════════════════
-// SPOKEN STATUS — fires BEFORE the AI fetch
+// STATUS SPEECH
 // ══════════════════════════════════════════════════════
 async function speakStatus(key){
   const phrase=rndPhrase(key);
@@ -766,14 +919,12 @@ async function speakStatus(key){
 function routeCommand(cmd){
   const c=cmd.toLowerCase().trim();
 
-  // ── PLAY — brain-first song resolution before YouTube search ──
   if(/^(play|put on|i want to (hear|listen to)|search (youtube )?for|youtube|queue|stream)\s+.+/i.test(c)){
     const q=cmd.replace(/^(play|put on|i want to (hear|listen to)|search (youtube )?for|youtube|queue|stream)\s*/i,'').replace(/\s*(on youtube|for me|please|now)\s*/ig,'').trim();
     resolveAndPlay(q);return;
   }
   if(/\b(weather|temperature|forecast|raining|rain|sunny|humidity|wind speed)\b/i.test(c)){
-    speakStatus('weather');
-    handleWeather(cmd);return;
+    speakStatus('weather');handleWeather(cmd);return;
   }
   if(/\b(next|skip|next song|next track|skip this)\b/i.test(c)){ytNext();return;}
   if(/\b(previous|prev|go back|last song|back)\b/i.test(c)){ytPrev();return;}
@@ -790,42 +941,66 @@ function routeCommand(cmd){
     return;
   }
   if(/\b(sing|hum|rap|compose a song|write a song)\b/i.test(c)){
-    speakStatus('thinking');
-    handleSing(cmd);return;
+    speakStatus('thinking');handleSing(cmd);return;
   }
-
-  // 🖼️ Image trigger keywords
   if(IMAGE_TRIGGERS.test(c)){
     const imagePrompt=cmd.replace(/^(explain|show me|what is|how does|diagram of|illustrate|show|demonstrate|visualise|visualize|display|draw)\s*/i,'').trim()||cmd;
     showOrbImage(imagePrompt);
   }
-
   speakStatus('thinking');
   setOrbState('thinking','HEARD: '+cmd.toUpperCase().slice(0,45));
   sendCmdText(cmd);
 }
 
 // ══════════════════════════════════════════════════════
-// RESOLVE AND PLAY — brain-first track identification
+// RESOLVE AND PLAY — v4.0: brain interprets, clarifies if needed
 // ══════════════════════════════════════════════════════
 async function resolveAndPlay(rawQuery){
   if(!rawQuery||!rawQuery.trim()){document.getElementById('output').textContent='What would you like me to play, Sir?';return;}
   processingCmd=true;
   speakStatus('resolving');
-  setOrbState('thinking','CONFIRMING EXACT TRACK...');
-  document.getElementById('output').textContent='Confirming track: '+rawQuery;
+  setOrbState('thinking','ANALYSING TRACK REQUEST...');
+  document.getElementById('output').textContent='Interpreting: "' + rawQuery + '"…';
   addLog('u','play '+rawQuery);
-  let finalQuery=rawQuery;
+
   try{
-    const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'resolve_song',query:rawQuery})});
+    const r=await fetch('/api/chat',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({mode:'resolve_song', query:rawQuery})
+    });
     const data=await r.json();
-    if(data&&data.searchQuery)finalQuery=data.searchQuery;
-  }catch(e){/* silent fallback to raw query */}
-  processingCmd=false;
-  if(finalQuery.toLowerCase()!==rawQuery.toLowerCase()){
-    addLog('a','Identified track: '+finalQuery,'BRAIN');
+
+    // ── CLEAR: brain knows exactly what to play ──
+    if(data.status==='clear'){
+      processingCmd=false;
+      const finalQuery=data.searchQuery||rawQuery;
+      if(finalQuery.toLowerCase()!==rawQuery.toLowerCase()){
+        addLog('a','Identified: '+finalQuery,'BRAIN');
+      }
+      handleYouTube(finalQuery, true);
+      return;
+    }
+
+    // ── UNCLEAR: brain needs clarification ──
+    if(data.status==='unclear'){
+      processingCmd=false;
+      speakStatus('clarifying');
+      setOrbState(alwaysOn?'listening':'idle', alwaysOn?'AWAITING YOUR CHOICE':'AWAITING RESPONSE');
+      document.getElementById('output').textContent = data.question;
+      addLog('a', data.question, 'BRAIN');
+      showClarifyModal(data.question, data.options || [], rawQuery);
+      return;
+    }
+
+    // Fallback: use raw query
+    processingCmd=false;
+    handleYouTube(rawQuery, true);
+
+  }catch(e){
+    processingCmd=false;
+    handleYouTube(rawQuery, false);
   }
-  handleYouTube(finalQuery,true); // pass skipLog=true since we already logged above
 }
 
 // ══════════════════════════════════════════════════════
@@ -855,7 +1030,6 @@ window.onYouTubeIframeAPIReady=function(){
   });
 };
 
-// skipLog=true when called from resolveAndPlay which already logged
 async function handleYouTube(query,skipLog){
   if(!query||!query.trim()){document.getElementById('output').textContent='What would you like me to play?';return;}
   processingCmd=true;stopAllSpeech();
@@ -940,7 +1114,7 @@ async function handleWeather(cmd){
 }
 
 // ══════════════════════════════════════════════════════
-// SPEAK REPLY — Edge TTS only, mic gated
+// SPEAK REPLY — Edge TTS, mic gated
 // ══════════════════════════════════════════════════════
 async function _speakRaw(text){
   if(!text||!text.trim())return;
@@ -956,7 +1130,7 @@ async function _speakRaw(text){
     audio.onended=()=>{URL.revokeObjectURL(url);};
     audio.onerror=()=>{URL.revokeObjectURL(url);};
     await audio.play();
-  }catch(e){/* silent fail */}
+  }catch(e){}
 }
 
 async function speakReply(text){
@@ -966,7 +1140,6 @@ async function speakReply(text){
   if(!clean)return Promise.resolve();
   setOrbState('speaking','SPEAKING — JUST TALK TO INTERRUPT');
   if(window._micGate)window._micGate(true);
-
   return new Promise((resolve)=>{
     fetch('/api/speaker',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:clean})})
       .then(r=>{if(!r.ok)throw new Error('Speaker API '+r.status);return r.blob();})
@@ -1015,7 +1188,7 @@ function handleSing(cmd){
 }
 
 // ══════════════════════════════════════════════════════
-// AI CHAT — with inline image generation if triggered
+// AI CHAT
 // ══════════════════════════════════════════════════════
 async function sendCmdText(val){
   processingCmd=true;
@@ -1031,7 +1204,6 @@ async function sendCmdText(val){
     if(data.error){out.className='';out.innerHTML=`<span style="color:var(--red)">${data.error}</span>`;setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'ERROR');return;}
     const brain=data.brain||'AI';
     out.className='';
-
     if(IMAGE_TRIGGERS.test(val)){
       const imagePrompt=val.replace(/^(explain|show me|what is|how does|diagram of|illustrate|show|demonstrate)\s*/i,'').trim()||val;
       const imgUrl=`/api/generate-image?prompt=${encodeURIComponent(imagePrompt)}`;
@@ -1039,7 +1211,6 @@ async function sendCmdText(val){
     }else{
       out.textContent=data.reply;
     }
-
     document.getElementById('ft-brain').textContent='BRAIN: '+brain+' // ONLINE';
     document.getElementById('m-brain').textContent=brain;
     conversationHistory.push({role:'assistant',text:data.reply});
