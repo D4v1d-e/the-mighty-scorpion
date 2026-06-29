@@ -16,7 +16,7 @@
 // for pre-fetch spoken feedback.
 //
 // Author      : Dr. Davie Mwangi
-// Version     : 2.0.0
+// Version     : 2.1.0
 // ============================================================
 
 import { EdgeTTS } from 'edge-tts-universal';
@@ -45,7 +45,7 @@ const VOICE_PROFILES = {
 
 // ── STATUS PHRASES (used by index.html before AI fetch) ─────
 export const STATUS_PHRASES = {
-  thinking:  [
+  thinking: [
     'Accessing the neural matrix, Sir.',
     'Processing your query now.',
     'Calculating the optimal response.',
@@ -72,6 +72,12 @@ export const STATUS_PHRASES = {
     'Generating diagram, Sir.',
     'Rendering visual now.',
     'Compiling the illustration.'
+  ],
+  resolving: [
+    'Let me confirm the exact track, Sir.',
+    'Verifying the precise song before I play it.',
+    'One moment, checking the details.',
+    'Cross-checking the correct title now.'
   ],
   continue: [
     'Shall I continue, Sir?'
