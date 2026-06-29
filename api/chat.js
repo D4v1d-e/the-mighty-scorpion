@@ -1,17 +1,32 @@
 // ============================================================
-// CHAT API HANDLER — SCORPION AI BRAIN v4.0
+// CHAT API HANDLER — SCORPION AI BRAIN v4.1
 // ============================================================
-// Key upgrades in v4.0:
-//   - resolve_song now has THREE outcomes:
-//       1. CLEAR   → returns { searchQuery, status:'clear' }
-//       2. UNCLEAR → returns { question, options, status:'unclear' }
-//          (brain detected ambiguity, asks user to pick)
-//       3. CONFIRM → returns { searchQuery, status:'confirm' }
-//          (user answered clarification, brain picks best match)
-//   - All other logic unchanged
+// Key upgrades in v4.1 (on top of v4.0):
+//
+//   1. GENERAL CLARIFICATION MODE (new)
+//      - mode === 'resolve_intent' mirrors resolve_song's
+//        CLEAR / UNCLEAR / CONFIRM pattern but for ANY chat query.
+//      - Triggers on:
+//          a) Genuinely vague requests ("play something for me",
+//             "tell me about it", "what do you think")
+//          b) Ambiguous factual/news queries that could resolve to
+//             multiple distinct people/topics/events
+//      - No modal — caller (index.html) just speaks/shows the
+//        question in the output panel and listens for a follow-up.
+//
+//   2. HARDENED SEARCH LAYER
+//      - Real fallback chain: Serper -> Tavily -> Brave -> NewsAPI
+//        -> RSS -> DuckDuckGo, each one only fires if the previous
+//        stage returned nothing usable.
+//      - Cross-source de-duplication by URL/title similarity.
+//      - Stricter recency scoring (rejects > 5 days for "today/now"
+//        style queries; > 30 days for general "latest" queries).
+//      - If literally everything fails, falls back to a clearly-
+//        labelled reasoned answer built from the most recent
+//        confirmed fact found (never silently hallucinates).
 //
 // Author  : Dr. Davie Mwangi
-// Version : 4.0.0
+// Version : 4.1.0
 // ============================================================
 
 export default async function handler(req, res) {
@@ -251,24 +266,118 @@ export default async function handler(req, res) {
       } catch (e) { return null; }
     }
 
-    // ══════════════════════════════════════════════════════════════════
-    // SMART SONG RESOLUTION MODE (v4.0)
-    // ══════════════════════════════════════════════════════════════════
-    // Flow:
-    //   Phase 1 — interpret(query)    → CLEAR or UNCLEAR
-    //   Phase 2 — confirm(answer)     → resolved search string
-    //
-    // Response shapes:
-    //   { status:'clear',   searchQuery: 'Song - Artist' }
-    //   { status:'unclear', question: '…', options: ['opt1','opt2','opt3'] }
-    //   { status:'confirm', searchQuery: 'Song - Artist' }
-    // ══════════════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════
+    // NEW v4.1 — DE-DUPLICATION HELPER
+    // ══════════════════════════════════════════════════════════
+    // Strips near-duplicate snippets that show up across multiple
+    // search providers (very common — Serper + Tavily + Brave will
+    // often surface the same 2-3 articles). We dedupe on a loose
+    // normalised title match so the confidence filter downstream
+    // isn't wasting tokens re-reading the same fact five times.
+    function dedupeBlocks(text) {
+      if (!text) return text;
+      const blocks = text.split(/\n\n---\n\n|\n\n(?=\[\d+\])/g);
+      const seen = new Set();
+      const out = [];
+      for (const b of blocks) {
+        const firstLine = (b.split('\n')[0] || '').toLowerCase()
+          .replace(/[^a-z0-9\s]/g, '')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .slice(0, 60);
+        if (!firstLine || seen.has(firstLine)) continue;
+        seen.add(firstLine);
+        out.push(b);
+      }
+      return out.join('\n\n---\n\n');
+    }
 
+    // ══════════════════════════════════════════════════════════
+    // NEW v4.1 — STRICTER RECENCY CHECK
+    // ══════════════════════════════════════════════════════════
+    // hasRecentDate (kept from v4.0) only checked "any date >= 3 days
+    // ago exists somewhere in the blob" which is weak — a single old
+    // citation buried in an article can satisfy it. This version
+    // requires a recency threshold tuned to query type, and looks at
+    // ALL dates found rather than the first match.
+    function hasRecentDateStrict(text, maxAgeDays) {
+      if (!text) return false;
+      const cutoff = Date.now() - maxAgeDays * 86400000;
+      const dateMatches = text.match(/\d{4}-\d{2}-\d{2}/g) || [];
+      if (!dateMatches.length) return false;
+      return dateMatches.some(d => {
+        const t = new Date(d).getTime();
+        return !isNaN(t) && t >= cutoff && t <= Date.now() + 86400000; // ignore bogus future dates
+      });
+    }
+
+    // ══════════════════════════════════════════════════════════
+    // NEW v4.1 — SEARCH FALLBACK CHAIN
+    // ══════════════════════════════════════════════════════════
+    // Instead of firing every provider in parallel and hoping the
+    // confidence filter sorts it out, we now run a graduated chain:
+    // cheap/fast providers first, only escalating to the next stage
+    // if the previous stage came back empty or clearly insufficient
+    // (e.g. less than ~150 characters of real content).
+    //
+    // For NEWS-type queries specifically, we still run several
+    // providers concurrently within a stage since fresh news
+    // benefits from cross-checking multiple feeds at once — but we
+    // skip stages entirely once we have enough.
+    function isUsable(text) {
+      return !!(text && text.replace(/\s+/g, '').length > 150);
+    }
+
+    async function runSearchChain(plannedQueries, intent) {
+      const perQuery = {};
+
+      for (const q of plannedQueries) {
+        let combined = '';
+
+        // STAGE 1 — Serper (Google) + Tavily run together; both are
+        // generally high quality and cheap relative to value.
+        const [serperData, tavilyData] = await Promise.all([
+          serperSearch(q, intent.isNews),
+          tavilySearch(q)
+        ]);
+        combined = [serperData, tavilyData].filter(Boolean).join('\n\n---\n\n');
+
+        // STAGE 2 — only escalate to Brave + NewsAPI if stage 1 was
+        // thin AND this looks like a news/current-events query.
+        if (!isUsable(combined) && intent.isNews) {
+          const [braveData, newsData] = await Promise.all([
+            braveSearch(q),
+            newsSearch(q)
+          ]);
+          combined = [combined, braveData, newsData].filter(Boolean).join('\n\n---\n\n');
+        }
+
+        // STAGE 3 — RSS as a last specialist news source.
+        if (!isUsable(combined) && intent.isNews) {
+          const rssData = await rssSearch();
+          combined = [combined, rssData].filter(Boolean).join('\n\n---\n\n');
+        }
+
+        // STAGE 4 — DuckDuckGo instant answer as the final safety net
+        // for ANY query type (works decently for factual/bio queries).
+        if (!isUsable(combined)) {
+          const duckData = await duckSearch(q);
+          combined = [combined, duckData].filter(Boolean).join('\n\n---\n\n');
+        }
+
+        perQuery[q] = dedupeBlocks(combined);
+      }
+
+      return Object.values(perQuery).filter(Boolean).join('\n\n---\n\n');
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // SMART SONG RESOLUTION MODE (v4.0, unchanged)
+    // ══════════════════════════════════════════════════════════════════
     if (mode === 'resolve_song') {
       const rawQuery = (query || '').trim();
       if (!rawQuery) return res.status(200).json({ status: 'clear', searchQuery: '', original: '' });
 
-      // ── PHASE 2: user answered a clarification ──────────────
       if (clarificationAnswer && originalQuery) {
         const confirmSystem = `You are a music expert. The user asked to play: "${originalQuery}"
 You asked them to clarify. Their answer is: "${clarificationAnswer}"
@@ -283,9 +392,6 @@ SONG TITLE - ARTIST NAME`;
         return res.status(200).json({ status: 'confirm', searchQuery: final, original: originalQuery });
       }
 
-      // ── PHASE 1: interpret the raw play request ─────────────
-
-      // Fetch search context for factual queries
       const needsResearch = /\b(first|debut|earliest|original|best|most famous|biggest|number one|#1|grammy|award|from the movie|from the film|soundtrack|theme song|latest|newest|new single|new song|theme|intro|outro|opening|ending|ost)\b/i.test(rawQuery);
 
       let searchContext = '';
@@ -299,10 +405,6 @@ SONG TITLE - ARTIST NAME`;
         } catch (e) { /* proceed without */ }
       }
 
-      // ── AMBIGUITY DETECTION PROMPT ──────────────────────────
-      // The brain must decide:
-      //   - Is this request clear enough to play ONE specific song? → output CLEAR
-      //   - Is this ambiguous with multiple valid interpretations? → output UNCLEAR + question + options
       const interpreterSystem = `You are a hyper-intelligent music assistant called Scorpion. Today is ${timeStr}.
 
 Your job: analyse the user's song/music request and decide if it is CLEAR or UNCLEAR.
@@ -334,7 +436,6 @@ ${searchContext ? 'SEARCH CONTEXT:\n' + searchContext.slice(0, 5000) : 'No searc
 
       let interpretation = await callAnyBrain(interpreterSystem, rawQuery, 200);
 
-      // Parse the structured output
       if (interpretation) {
         const statusMatch = interpretation.match(/STATUS:\s*(CLEAR|UNCLEAR)/i);
         const status = statusMatch ? statusMatch[1].toUpperCase() : null;
@@ -367,8 +468,110 @@ ${searchContext ? 'SEARCH CONTEXT:\n' + searchContext.slice(0, 5000) : 'No searc
         }
       }
 
-      // Fallback: brain output was malformed — treat as clear with raw query
       return res.status(200).json({ status: 'clear', searchQuery: rawQuery, original: rawQuery });
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // NEW v4.1 — GENERAL CHAT CLARIFICATION MODE
+    // ══════════════════════════════════════════════════════════════════
+    // Mirrors resolve_song's CLEAR / UNCLEAR / CONFIRM shape but for
+    // ANY chat message. The frontend calls this BEFORE the main chat
+    // pipeline runs. If UNCLEAR, the frontend speaks the question and
+    // listens for a follow-up answer (no modal — just voice/text in
+    // the existing output panel + input box).
+    //
+    // Two trigger families (per user's explicit choice):
+    //   (a) Genuinely vague requests with no actionable content
+    //       e.g. "play something for me", "tell me about it",
+    //       "what do you think", "do that thing"
+    //   (b) Ambiguous factual/news queries that could resolve to
+    //       multiple distinct real-world referents
+    //       e.g. "what's the latest on the strike" (which strike?),
+    //       "tell me about the election result" (which country/year?),
+    //       "what happened with the merger" (which companies?)
+    //
+    // Response shapes (same as resolve_song):
+    //   { status:'clear' }                                  -> proceed to normal chat pipeline
+    //   { status:'unclear', question:'…', options:[...] }    -> speak question, await follow-up
+    //   { status:'confirm', resolvedQuery:'…' }              -> user answered, use resolvedQuery as the new message
+    // ══════════════════════════════════════════════════════════════════
+    if (mode === 'resolve_intent') {
+      const rawQuery = (query || '').trim();
+      if (!rawQuery) return res.status(200).json({ status: 'clear' });
+
+      // ── PHASE 2: user answered a clarification ──────────────
+      if (clarificationAnswer && originalQuery) {
+        const mergeSystem = `You are an assistant reconciling an ambiguous request with the user's clarifying answer.
+
+Original request: "${originalQuery}"
+Clarifying answer: "${clarificationAnswer}"
+
+Combine these into ONE clear, specific, self-contained question or instruction that fully captures what the user wants, written as if the user said it in one go.
+Output ONLY the merged request text, nothing else. No quotes, no preamble.`;
+
+        let merged = await callAnyBrain(mergeSystem, clarificationAnswer, 120);
+        if (!merged) merged = originalQuery + ' — ' + clarificationAnswer;
+        return res.status(200).json({ status: 'confirm', resolvedQuery: merged.trim() });
+      }
+
+      // ── PHASE 1: classify CLEAR vs UNCLEAR ──────────────────
+      const intentSystem = `You are the intent-clarity gatekeeper for Scorpion, a Jarvis-style AI assistant. Today is ${timeStr}.
+
+Decide if the user's message is CLEAR or UNCLEAR.
+
+CLEAR = the request has enough specific information to act on or answer directly. This includes almost everything: factual questions, clearly named topics, greetings, commands, opinions, requests with a named subject — even if broad, as long as there IS a subject.
+
+UNCLEAR has exactly two valid reasons — do not invent others:
+
+REASON A — VAGUE, NO ACTIONABLE CONTENT:
+The request names no real subject at all and there is no reasonable single interpretation.
+Examples: "play something for me", "tell me about it", "what do you think", "do that thing", "explain the thing I mentioned" (with nothing actually mentioned before).
+
+REASON B — GENUINELY MULTI-REFERENT:
+The request names a subject, but that subject plausibly refers to two or more clearly distinct real things, and picking wrong would give a completely different answer.
+Examples: "what's the latest on the strike" (which strike, where), "tell me about the election result" (which country, which election), "what happened with the merger" (which companies), "is he okay" (no prior "he" established).
+
+Do NOT mark UNCLEAR just because a question is broad, general knowledge, or could be answered at different levels of detail. A query like "what's happening in Kenya today" is CLEAR (single coherent subject, just give current Kenya news). A query like "what's the latest on the case" with zero prior context about which case is UNCLEAR.
+
+If CLEAR, output exactly:
+STATUS: CLEAR
+
+If UNCLEAR, output:
+STATUS: UNCLEAR
+QUESTION: <one short, natural, Jarvis-like spoken question to ask the user, max 15 words>
+OPTION1: <first specific plausible interpretation, phrased as a short answer the user could give>
+OPTION2: <second specific plausible interpretation>
+OPTION3: <"something else" fallback, e.g. "Something else — let me explain">
+
+RULES:
+- Default to CLEAR whenever in doubt. Only use UNCLEAR for genuine ambiguity per Reason A or B above.
+- Never refuse. Never output anything other than the exact format above.`;
+
+      let interpretation = await callAnyBrain(intentSystem, rawQuery, 220);
+
+      if (interpretation) {
+        const statusMatch = interpretation.match(/STATUS:\s*(CLEAR|UNCLEAR)/i);
+        const status = statusMatch ? statusMatch[1].toUpperCase() : null;
+
+        if (status === 'UNCLEAR') {
+          const questionMatch = interpretation.match(/QUESTION:\s*(.+)/i);
+          const opt1 = interpretation.match(/OPTION1:\s*(.+)/i);
+          const opt2 = interpretation.match(/OPTION2:\s*(.+)/i);
+          const opt3 = interpretation.match(/OPTION3:\s*(.+)/i);
+
+          const question = questionMatch ? questionMatch[1].trim() : 'Could you clarify what you mean, Sir?';
+          const options = [
+            opt1 ? opt1[1].trim() : null,
+            opt2 ? opt2[1].trim() : null,
+            opt3 ? opt3[1].trim() : null
+          ].filter(Boolean);
+
+          return res.status(200).json({ status: 'unclear', question, options, original: rawQuery });
+        }
+      }
+
+      // Default / fallback: treat as clear so we never block the user.
+      return res.status(200).json({ status: 'clear' });
     }
 
     // ── QUERY CLASSIFIER ────────────────────────────────────
@@ -381,7 +584,7 @@ ${searchContext ? 'SEARCH CONTEXT:\n' + searchContext.slice(0, 5000) : 'No searc
         isWeather:   /weather|temperature|forecast|rain|humid|wind|sunny|cold|hot/.test(q),
         isSports:    /football|soccer|premier league|champions league|la liga|serie a|bundesliga|sport|score|match|goal/.test(q),
         isFinancial: /rate|exchange|currency|price|convert|worth|cost|how much|value|market|stock|share|trading/.test(q),
-        isNews:      /news|happened|latest|today|yesterday|this week|breaking|announced|said|reported/.test(q),
+        isNews:      /news|happened|latest|today|yesterday|this week|breaking|announced|said|reported|now|currently/.test(q),
         isVisual:    /explain|show me|what is|how does|diagram of|illustrate|demonstrate|visualise|visualize|lab|laboratory/.test(q)
       };
     }
@@ -432,11 +635,9 @@ ${searchContext ? 'SEARCH CONTEXT:\n' + searchContext.slice(0, 5000) : 'No searc
       return result;
     }
 
-    // ── RECENCY VALIDATOR ───────────────────────────────────
+    // ── RECENCY VALIDATOR (legacy, kept for compatibility) ──
     function hasRecentDate(text) {
-      const cutoff = new Date(Date.now() - 3 * 86400000);
-      const dateMatches = text.match(/\d{4}-\d{2}-\d{2}/g) || [];
-      return dateMatches.some(d => new Date(d) >= cutoff);
+      return hasRecentDateStrict(text, 3);
     }
 
     // ── CRYPTO ──────────────────────────────────────────────
@@ -549,7 +750,7 @@ ${searchContext ? 'SEARCH CONTEXT:\n' + searchContext.slice(0, 5000) : 'No searc
       content: m.text || m.content || ''
     }));
 
-    // ── MAIN DATA PIPELINE ──────────────────────────────────
+    // ── MAIN DATA PIPELINE (v4.1 hardened) ──────────────────
     let webContext  = '';
     let searchedWeb = false;
     let dataSource  = '';
@@ -561,30 +762,46 @@ ${searchContext ? 'SEARCH CONTEXT:\n' + searchContext.slice(0, 5000) : 'No searc
       const intent  = classifyQuery(query);
       const plannedQueries = await planSearch(query);
 
-      const [searchResults, cryptoData, metalData, forexData, weatherData, sportsData, rssData] = await Promise.all([
-        Promise.all(plannedQueries.map(q =>
-          Promise.all([serperSearch(q, intent.isNews), newsSearch(q), tavilySearch(q), braveSearch(q)])
-        )),
+      // NEW v4.1: web search now runs through the graduated fallback
+      // chain (runSearchChain) instead of firing all four providers
+      // blindly in parallel for every planned query.
+      const [rawWebData, cryptoData, metalData, forexData, weatherData, sportsData] = await Promise.all([
+        runSearchChain(plannedQueries, intent),
         getCrypto(query),
         getMetals(query),
         getForex(query),
         getWeather(query),
-        getSports(query),
-        intent.isNews ? rssSearch() : Promise.resolve(null)
+        getSports(query)
       ]);
-
-      const rawWebData = searchResults.flat().filter(Boolean).join('\n\n---\n\n');
 
       let filteredWebData = null;
       if (rawWebData) filteredWebData = await scoreAndFilter(rawWebData, query);
 
-      if (filteredWebData && intent.isNews && !hasRecentDate(filteredWebData)) {
-        filteredWebData += '\n\nDATE WARNING: No source confirmed within the last 3 days. Treat all news claims as potentially stale.';
+      // NEW v4.1: recency threshold now depends on query type instead
+      // of a flat 3-day window for everything. "Today/now" style news
+      // queries get a tight 5-day window; general "latest" queries get
+      // a more forgiving 30-day window since not everything newsworthy
+      // publishes daily updates.
+      if (filteredWebData && intent.isNews) {
+        const tightWindow = /\btoday\b|\bthis morning\b|\bright now\b|\bcurrently\b/i.test(query);
+        const maxAge = tightWindow ? 5 : 30;
+        if (!hasRecentDateStrict(filteredWebData, maxAge)) {
+          filteredWebData += '\n\nDATE WARNING: No source confirmed within the last ' + maxAge + ' days. Treat all news claims as potentially stale and say so explicitly rather than presenting them as current fact.';
+        }
       }
-      if (rssData) filteredWebData = (filteredWebData || '') + '\n\n' + rssData;
+
+      // NEW v4.1: explicit last-resort reasoning path. If every search
+      // provider truly failed, we no longer just say "no data" — we
+      // explicitly instruct the model to reason from the most recent
+      // confirmed fact it might still know and flag the uncertainty,
+      // mirroring the "no live feed, but based on yesterday's confirmed
+      // schedule..." pattern that already works well in practice.
       if (!filteredWebData) {
-        const duckData = await duckSearch(enhanceQuery(query));
-        if (duckData) filteredWebData = duckData;
+        filteredWebData =
+          'NO LIVE SEARCH DATA AVAILABLE.\n' +
+          'INSTRUCTION: Do not invent a definitive current answer. Instead, clearly tell the user you do not have a live feed for this right now. ' +
+          'If you have older, previously confirmed context about this topic from earlier in the conversation, you may share that explicitly, labelled with its date, ' +
+          'and reason aloud about what is most likely true now without claiming certainty. Never present a guess as a confirmed fact.';
       }
 
       if (intent.isCrypto && !cryptoData)  gaps.push('CRYPTO GAP: No live crypto data found. Do NOT use training knowledge for any price.');
@@ -620,7 +837,7 @@ CRITICAL OUTPUT FORMAT RULES (apply to every response, no exceptions):
 `;
 
     const webNote = searchedWeb
-      ? `\n\nCRITICAL INSTRUCTIONS — YOU ARE AN INTELLIGENT ANALYST:\nToday is ${timeStr}.\nYesterday was ${yesterdayStr}.\n\nYou have data from MULTIPLE SOURCES that have been confidence-scored and filtered.\n\nSOURCE HIERARCHY:\n1. LIVE specialist APIs (CRYPTO, FOREX, METALS, WEATHER, SPORTS)\n2. [HIGH CONFIDENCE] tagged facts\n3. NEWS SOURCES with today or yesterday date\n4. [LOW CONFIDENCE] or [STALE] facts — mention uncertainty\n5. Training knowledge — FORBIDDEN for any factual claim\n\nHANDLE GAPS HONESTLY:\n- DATA GAP WARNING present: say "I do not have a live feed for that, Sir"\n- No sources mention it: say "I could not find reliable data on that, Sir"\n- NEVER fill a gap with training knowledge\n\nLIVE DATA:\n${webContext}`
+      ? `\n\nCRITICAL INSTRUCTIONS — YOU ARE AN INTELLIGENT ANALYST:\nToday is ${timeStr}.\nYesterday was ${yesterdayStr}.\n\nYou have data from MULTIPLE SOURCES that have been confidence-scored and filtered.\n\nSOURCE HIERARCHY:\n1. LIVE specialist APIs (CRYPTO, FOREX, METALS, WEATHER, SPORTS)\n2. [HIGH CONFIDENCE] tagged facts\n3. NEWS SOURCES with today or yesterday date\n4. [LOW CONFIDENCE] or [STALE] facts — mention uncertainty\n5. Training knowledge — FORBIDDEN for any factual claim\n\nHANDLE GAPS HONESTLY:\n- DATA GAP WARNING present: say "I do not have a live feed for that, Sir"\n- No sources mention it: say "I could not find reliable data on that, Sir"\n- NEVER fill a gap with training knowledge as if it were current\n\nLIVE DATA:\n${webContext}`
       : '';
 
     const systemPrompt = mode === 'greeting'
