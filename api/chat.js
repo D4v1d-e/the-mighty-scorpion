@@ -1,33 +1,17 @@
 // ============================================================
-// CHAT API HANDLER — SCORPION AI BRAIN
+// CHAT API HANDLER — SCORPION AI BRAIN v4.0
 // ============================================================
-// Description : Multi-brain AI chat handler with live data
-//               pipeline: web search, crypto, forex, metals,
-//               weather, sports, news, and RSS feeds.
-//
-// Brain roster (first available wins via Promise.any):
-//   1. Cerebras  — llama3.1-8b     (fastest)
-//   2. Groq      — llama-3.3-70b   (balanced)
-//   3. Gemini    — gemini-2.0-flash (powerful)
-//   4. Mistral   — mistral-large    (fallback)
-//
-// Changes from v1 for index.html v2:
-//   - Study mode removed from isSimpleCommand list
-//   - Image trigger keywords added to simple command bypass
-//     so visual queries still hit the full web pipeline
-//   - sanitizeReply hardened (removes [HIGH CONFIDENCE] etc.
-//     tags that occasionally leak into the spoken reply)
-//
-// Changes in v3.0 (brain-first song resolution):
-//   - Added mode === 'resolve_song' handler so the chat brain
-//     (with full web-search context) resolves the EXACT song
-//     title/artist BEFORE the YouTube search ever runs. This
-//     fixes the bug where "play the first Bob Marley song"
-//     played the wrong track because /api/youtube did a
-//     literal keyword search with no factual reasoning.
+// Key upgrades in v4.0:
+//   - resolve_song now has THREE outcomes:
+//       1. CLEAR   → returns { searchQuery, status:'clear' }
+//       2. UNCLEAR → returns { question, options, status:'unclear' }
+//          (brain detected ambiguity, asks user to pick)
+//       3. CONFIRM → returns { searchQuery, status:'confirm' }
+//          (user answered clarification, brain picks best match)
+//   - All other logic unchanged
 //
 // Author  : Dr. Davie Mwangi
-// Version : 3.0.0
+// Version : 4.0.0
 // ============================================================
 
 export default async function handler(req, res) {
@@ -40,7 +24,7 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
-    const { messages, mode, timezone, query } = req.body;
+    const { messages, mode, timezone, query, clarificationAnswer, originalQuery } = req.body;
 
     // ── TIME CONTEXT ────────────────────────────────────────
     const now = new Date();
@@ -85,6 +69,35 @@ export default async function handler(req, res) {
         const data = await r.json();
         return data.choices?.[0]?.message?.content?.trim() || null;
       } catch (e) { return null; }
+    }
+
+    // ── GROQ HELPER ─────────────────────────────────────────
+    async function callGroq(systemContent, userContent, maxTokens = 300) {
+      const key = process.env.GROQ_API_KEY;
+      if (!key) return null;
+      try {
+        const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+          body: JSON.stringify({
+            model: 'llama-3.3-70b-versatile',
+            temperature: 0,
+            max_tokens: maxTokens,
+            messages: [
+              { role: 'system', content: systemContent },
+              { role: 'user',   content: userContent   }
+            ]
+          })
+        });
+        const data = await r.json();
+        return data.choices?.[0]?.message?.content?.trim() || null;
+      } catch (e) { return null; }
+    }
+
+    async function callAnyBrain(system, user, maxTokens = 300) {
+      return (await callCerebras(system, user, maxTokens)) ||
+             (await callGroq(system, user, maxTokens)) ||
+             null;
     }
 
     // ── URL CONTENT FETCHER ─────────────────────────────────
@@ -238,67 +251,124 @@ export default async function handler(req, res) {
       } catch (e) { return null; }
     }
 
-    // ── SONG RESOLUTION MODE (brain-first before YouTube) ───
-    // This runs BEFORE any YouTube search. It takes the user's
-    // raw play request, decides whether it needs factual lookup
-    // (e.g. "first song by X", "song from movie Y", "X's newest
-    // single"), pulls live search context if so, then asks the
-    // brain to output ONE precise "Song Title - Artist" string.
-    // That clean string — not the raw phrase — is what gets
-    // searched on YouTube, so the exact requested track plays.
+    // ══════════════════════════════════════════════════════════════════
+    // SMART SONG RESOLUTION MODE (v4.0)
+    // ══════════════════════════════════════════════════════════════════
+    // Flow:
+    //   Phase 1 — interpret(query)    → CLEAR or UNCLEAR
+    //   Phase 2 — confirm(answer)     → resolved search string
+    //
+    // Response shapes:
+    //   { status:'clear',   searchQuery: 'Song - Artist' }
+    //   { status:'unclear', question: '…', options: ['opt1','opt2','opt3'] }
+    //   { status:'confirm', searchQuery: 'Song - Artist' }
+    // ══════════════════════════════════════════════════════════════════
+
     if (mode === 'resolve_song') {
       const rawQuery = (query || '').trim();
-      if (!rawQuery) return res.status(200).json({ searchQuery: '', original: '' });
+      if (!rawQuery) return res.status(200).json({ status: 'clear', searchQuery: '', original: '' });
 
-      const needsResearch = /\b(first|debut|earliest|original|best|most famous|biggest|number one|#1|grammy|award|from the movie|from the film|soundtrack|theme song|latest|newest|new single|new song)\b/i.test(rawQuery);
+      // ── PHASE 2: user answered a clarification ──────────────
+      if (clarificationAnswer && originalQuery) {
+        const confirmSystem = `You are a music expert. The user asked to play: "${originalQuery}"
+You asked them to clarify. Their answer is: "${clarificationAnswer}"
+
+Based on their answer, output the exact song title and artist to search on YouTube.
+Output ONLY this format, nothing else:
+SONG TITLE - ARTIST NAME`;
+
+        let confirmed = await callAnyBrain(confirmSystem, clarificationAnswer, 80);
+        if (!confirmed) confirmed = rawQuery;
+        const final = confirmed.replace(/^["']+|["']+$/g, '').trim();
+        return res.status(200).json({ status: 'confirm', searchQuery: final, original: originalQuery });
+      }
+
+      // ── PHASE 1: interpret the raw play request ─────────────
+
+      // Fetch search context for factual queries
+      const needsResearch = /\b(first|debut|earliest|original|best|most famous|biggest|number one|#1|grammy|award|from the movie|from the film|soundtrack|theme song|latest|newest|new single|new song|theme|intro|outro|opening|ending|ost)\b/i.test(rawQuery);
 
       let searchContext = '';
       if (needsResearch) {
         try {
           const [serperData, tavilyData] = await Promise.all([
-            serperSearch(rawQuery, false),
-            tavilySearch(rawQuery)
+            serperSearch(rawQuery + ' song', false),
+            tavilySearch(rawQuery + ' song title artist')
           ]);
           searchContext = [serperData, tavilyData].filter(Boolean).join('\n\n---\n\n');
-        } catch (e) { /* proceed without search context */ }
+        } catch (e) { /* proceed without */ }
       }
 
-      const resolverPrompt = `You are a precise music lookup assistant. Today is ${timeStr}.
-Your ONLY job: identify the exact, correct song title and artist the user wants played on YouTube.
+      // ── AMBIGUITY DETECTION PROMPT ──────────────────────────
+      // The brain must decide:
+      //   - Is this request clear enough to play ONE specific song? → output CLEAR
+      //   - Is this ambiguous with multiple valid interpretations? → output UNCLEAR + question + options
+      const interpreterSystem = `You are a hyper-intelligent music assistant called Scorpion. Today is ${timeStr}.
 
-Rules:
-- If the request already names a specific song and/or artist clearly, output it cleaned up, exactly as intended.
-- If the request needs factual knowledge (e.g. "first song by X", "song from movie Y", "X's biggest hit", "newest single by X"), use the SEARCH CONTEXT below to find the precise, correct, official song title and artist.
-- Never refuse. If uncertain, give your best factual judgement.
-- Output ONLY this exact format, nothing else — no quotes, no explanation, no markdown:
-SONG TITLE - ARTIST NAME
+Your job: analyse the user's song/music request and decide if it is CLEAR or UNCLEAR.
 
-${searchContext ? 'SEARCH CONTEXT:\n' + searchContext.slice(0, 4000) : 'No search context available — use your own knowledge.'}`;
+CLEAR = you know EXACTLY which one song/track they want. Output:
+STATUS: CLEAR
+SONG: <exact song title - artist>
 
-      let resolved = await callCerebras(resolverPrompt, rawQuery, 60);
+UNCLEAR = the request could mean multiple different songs, artists, or genres. For example:
+- "play scorpion" could mean Drake's Scorpion album, or a song literally called Scorpion
+- "play something sad" has no specific answer
+- "play that Bob Marley one" is too vague
+- "play the love song" could be many artists
+In this case, output:
+STATUS: UNCLEAR
+QUESTION: <one short spoken question to ask the user — keep it natural and Jarvis-like>
+OPTION1: <first specific option with song title and artist>
+OPTION2: <second specific option with song title and artist>
+OPTION3: <third specific option or "something else / I'll describe it">
 
-      if (!resolved && process.env.GROQ_API_KEY) {
-        try {
-          const gr = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + process.env.GROQ_API_KEY },
-            body: JSON.stringify({
-              model: 'llama-3.3-70b-versatile',
-              temperature: 0,
-              max_tokens: 60,
-              messages: [
-                { role: 'system', content: resolverPrompt },
-                { role: 'user', content: rawQuery }
-              ]
-            })
+RULES:
+- Only mark UNCLEAR if genuinely ambiguous. A clear named song + artist = CLEAR always.
+- The QUESTION must be spoken aloud naturally, max 15 words.
+- Each OPTION must be a real, playable song (or the "something else" fallback).
+- Use SEARCH CONTEXT below to inform your options.
+- Never refuse. Never output anything other than the exact format above.
+
+${searchContext ? 'SEARCH CONTEXT:\n' + searchContext.slice(0, 5000) : 'No search context. Use your own knowledge.'}`;
+
+      let interpretation = await callAnyBrain(interpreterSystem, rawQuery, 200);
+
+      // Parse the structured output
+      if (interpretation) {
+        const statusMatch = interpretation.match(/STATUS:\s*(CLEAR|UNCLEAR)/i);
+        const status = statusMatch ? statusMatch[1].toUpperCase() : null;
+
+        if (status === 'CLEAR') {
+          const songMatch = interpretation.match(/SONG:\s*(.+)/i);
+          const searchQuery = songMatch ? songMatch[1].trim().replace(/^["']+|["']+$/g, '') : rawQuery;
+          return res.status(200).json({ status: 'clear', searchQuery, original: rawQuery });
+        }
+
+        if (status === 'UNCLEAR') {
+          const questionMatch = interpretation.match(/QUESTION:\s*(.+)/i);
+          const opt1 = interpretation.match(/OPTION1:\s*(.+)/i);
+          const opt2 = interpretation.match(/OPTION2:\s*(.+)/i);
+          const opt3 = interpretation.match(/OPTION3:\s*(.+)/i);
+
+          const question = questionMatch ? questionMatch[1].trim() : 'Which song did you mean, Sir?';
+          const options = [
+            opt1 ? opt1[1].trim() : null,
+            opt2 ? opt2[1].trim() : null,
+            opt3 ? opt3[1].trim() : null
+          ].filter(Boolean);
+
+          return res.status(200).json({
+            status: 'unclear',
+            question,
+            options,
+            original: rawQuery
           });
-          const gData = await gr.json();
-          resolved = gData.choices?.[0]?.message?.content?.trim() || null;
-        } catch (e) { /* fall through to raw query */ }
+        }
       }
 
-      const finalQuery = resolved ? resolved.replace(/^["']+|["']+$/g, '').trim() : rawQuery;
-      return res.status(200).json({ searchQuery: finalQuery, original: rawQuery, usedResearch: needsResearch });
+      // Fallback: brain output was malformed — treat as clear with raw query
+      return res.status(200).json({ status: 'clear', searchQuery: rawQuery, original: rawQuery });
     }
 
     // ── QUERY CLASSIFIER ────────────────────────────────────
@@ -467,7 +537,6 @@ ${searchContext ? 'SEARCH CONTEXT:\n' + searchContext.slice(0, 4000) : 'No searc
         'how are you','what is your name','who are you',
         'play ','stop','pause'
       ];
-      // Visual queries must NOT be bypassed — they need web context for accurate explanations
       const isVisual = /explain|show me|what is|how does|diagram of|illustrate/.test(text);
       if (isVisual) return false;
       return simple.some(s => text.startsWith(s)) && text.length < 30;
