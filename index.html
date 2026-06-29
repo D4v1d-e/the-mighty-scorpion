@@ -66,9 +66,11 @@ main{flex:1;overflow:hidden;display:flex;flex-direction:column;gap:6px;padding:6
 #orb-stage.listening #scorp-svg{filter:drop-shadow(0 0 18px rgba(0,255,102,1)) drop-shadow(0 0 40px rgba(0,255,102,.7))}
 #orb-stage.thinking #scorp-svg{filter:drop-shadow(0 0 18px rgba(255,170,0,.9)) drop-shadow(0 0 40px rgba(255,170,0,.6))}
 #orb-stage.speaking #scorp-svg{filter:drop-shadow(0 0 18px rgba(179,102,255,.9)) drop-shadow(0 0 40px rgba(179,102,255,.6))}
+#orb-stage.clarifying #scorp-svg{filter:drop-shadow(0 0 18px rgba(255,170,0,1)) drop-shadow(0 0 44px rgba(255,170,0,.8))}
 #orb-stage.thinking #plasma{box-shadow:0 0 60px rgba(255,170,0,.9),inset 0 0 40px rgba(255,170,0,.4);background:radial-gradient(circle at 50% 50%,#ffe066,#ffaa00 30%,rgba(200,100,0,.5) 55%,transparent 72%)}
 #orb-stage.speaking #plasma{box-shadow:0 0 60px rgba(179,102,255,.9),inset 0 0 40px rgba(179,102,255,.4);background:radial-gradient(circle at 50% 50%,#d4aaff,#b366ff 30%,rgba(100,30,200,.5) 55%,transparent 72%)}
 #orb-stage.listening #plasma{box-shadow:0 0 60px rgba(0,255,102,1),inset 0 0 40px rgba(0,255,102,.5)}
+#orb-stage.clarifying #plasma{box-shadow:0 0 60px rgba(255,170,0,1),inset 0 0 40px rgba(255,170,0,.5);background:radial-gradient(circle at 50% 50%,#ffe680,#ffaa00 30%,rgba(220,120,0,.55) 55%,transparent 72%)}
 .arc{position:absolute;border-radius:50%;border:1px solid transparent;animation:arcSpin var(--as,6s) linear infinite var(--adir,normal);pointer-events:none}
 .arc::before{content:'';position:absolute;width:8px;height:8px;border-radius:50%;background:var(--G);box-shadow:0 0 10px var(--G),0 0 20px var(--G);top:-4px;left:50%;transform:translateX(-50%)}
 .arc1{inset:28px;--as:4.5s}.arc2{inset:16px;--as:7s;--adir:reverse}.arc2::before{top:auto;bottom:-4px}.arc3{inset:50px;--as:3.2s}.arc3::before{left:auto;right:-4px;top:50%;transform:translateY(-50%)}
@@ -120,9 +122,21 @@ main{flex:1;overflow:hidden;display:flex;flex-direction:column;gap:6px;padding:6
 #output img{max-width:100%;border-radius:4px;margin:6px 0;border:1px solid var(--border)}
 .out-think::after{content:' ▋';animation:blink .7s infinite;color:var(--amber)}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+#output.clarify-active{color:var(--amber)}
+.clarify-options-inline{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+.clarify-opt-inline{
+  background:transparent;border:1px solid var(--border);border-radius:3px;
+  color:var(--text);font-family:var(--body);font-size:13px;
+  padding:7px 12px;cursor:pointer;text-align:left;
+  transition:border-color .2s,background .2s;
+  display:flex;align-items:center;gap:8px;
+}
+.clarify-opt-inline:hover{border-color:var(--amber);background:rgba(255,170,0,.07)}
+.clarify-opt-inline .opt-num{font-family:var(--display);font-size:6.5px;font-weight:700;letter-spacing:.15em;color:var(--amber);min-width:16px}
 .irow{display:flex;gap:6px;align-items:center;margin-top:6px;flex-shrink:0}
 #cmd{flex:1;background:#010f07;border:1px solid var(--border);border-radius:3px;color:var(--text);font-family:var(--body);font-size:14px;padding:7px 11px;outline:none;caret-color:var(--G)}
 #cmd:focus{border-color:rgba(0,255,102,.35)}
+#cmd.awaiting-clarify{border-color:var(--amber)}
 #cmd::placeholder{color:var(--muted)}
 #send-btn{background:transparent;border:1px solid rgba(0,255,102,.3);border-radius:3px;color:var(--G);font-family:var(--display);font-size:6.5px;font-weight:700;letter-spacing:.2em;padding:7px 12px;cursor:pointer;white-space:nowrap}
 #send-btn:hover{background:rgba(0,255,102,.1)}
@@ -133,9 +147,9 @@ main{flex:1;overflow:hidden;display:flex;flex-direction:column;gap:6px;padding:6
 .hist-count{font-family:var(--display);font-size:6px;font-weight:700;color:var(--G);border:1px solid var(--border);border-radius:2px;padding:2px 6px}
 #history{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:4px;padding:6px 8px;min-height:0;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
 .hitem{display:flex;gap:7px;padding:5px 8px;background:var(--deep);border-left:2px solid;border-radius:0 3px 3px 0;font-size:12px;line-height:1.5;font-family:var(--body)}
-.hitem.u{border-color:var(--muted)}.hitem.a{border-color:var(--G)}.hitem.yt{border-color:var(--red)}
+.hitem.u{border-color:var(--muted)}.hitem.a{border-color:var(--G)}.hitem.yt{border-color:var(--red)}.hitem.q{border-color:var(--amber)}
 .hrole{font-family:var(--display);font-size:5.5px;font-weight:700;letter-spacing:.18em;min-width:26px;padding-top:2px}
-.hitem.u .hrole{color:var(--muted)}.hitem.a .hrole{color:var(--G)}.hitem.yt .hrole{color:var(--red)}
+.hitem.u .hrole{color:var(--muted)}.hitem.a .hrole{color:var(--G)}.hitem.yt .hrole{color:var(--red)}.hitem.q .hrole{color:var(--amber)}
 .htext{color:var(--text);flex:1}
 .hist-footer{display:flex;justify-content:flex-end;padding:5px 8px;border-top:1px solid var(--border);flex-shrink:0}
 #clear-btn{background:none;border:none;cursor:pointer;font-family:var(--mono);font-size:8px;color:var(--muted)}
@@ -155,7 +169,9 @@ footer{border-top:1px solid var(--border);padding:5px 0;display:flex;justify-con
 #continue-countdown{color:var(--G);font-size:10px;margin-top:4px}
 
 /* ══════════════════════════════════════════════
-   SONG CLARIFICATION MODAL  (NEW in v4.0)
+   SONG CLARIFICATION MODAL  (song requests only —
+   general chat clarification uses the output panel
+   instead, no modal, per design choice)
    ══════════════════════════════════════════════ */
 #clarify-modal{
   display:none;position:fixed;inset:0;z-index:10000;
@@ -245,7 +261,7 @@ footer{border-top:1px solid var(--border);padding:5px 0;display:flex;justify-con
   <span id="continue-countdown">AUTO-CONTINUING IN 3…</span>
 </div>
 
-<!-- ══ SONG CLARIFICATION MODAL (NEW) ══ -->
+<!-- SONG CLARIFICATION MODAL (song requests only) -->
 <div id="clarify-modal">
   <div id="clarify-box">
     <div id="clarify-label">TRACK IDENTIFICATION — CLARIFICATION NEEDED</div>
@@ -277,7 +293,7 @@ footer{border-top:1px solid var(--border);padding:5px 0;display:flex;justify-con
     </svg>
     <div>
       <div class="logo-main">THE MIGHTY SCORPION</div>
-      <div class="logo-sub">NEURAL CORE v4.0.0 // JARVIS INTELLIGENCE MATRIX</div>
+      <div class="logo-sub">NEURAL CORE v4.1.0 // JARVIS INTELLIGENCE MATRIX</div>
     </div>
   </div>
   <div class="hdr-right">
@@ -586,9 +602,25 @@ const MAX_HISTORY=20;
 // Interruption state
 let _interrupted=false,_interruptedText='',_continueTimer=null;
 
-// Clarification state
+// Song clarification state (modal-based)
 let _clarifyOriginalQuery='';
 let _clarifyOptions=[];
+
+// ══════════════════════════════════════════════════════
+// NEW v4.1 — GENERAL CHAT CLARIFICATION STATE (no modal)
+// ══════════════════════════════════════════════════════
+// When the brain flags an ordinary chat message as UNCLEAR, we do
+// NOT open the song-style modal. Instead we:
+//   1. Speak + show the clarifying question in the existing #output
+//      panel (same place normal replies show up)
+//   2. Render the option list inline under the question (clickable)
+//   3. Switch the orb into a distinct "clarifying" visual state
+//   4. Put #cmd into "awaiting-clarify" mode so the NEXT thing the
+//      user types or says (mic or input box) is treated as the
+//      answer, not a fresh command
+let _awaitingIntentClarify=false;
+let _intentOriginalQuery='';
+let _intentOptions=[];
 
 // ══ SINGLE AUDIO CHANNEL ══
 let _currentAudio=null;
@@ -619,17 +651,21 @@ function setOrbState(newState,statusText){
   document.getElementById('orb-stage').className=newState;
   document.getElementById('orb-status').innerText=statusText;
   document.getElementById('m-st').textContent=newState.toUpperCase();
-  document.getElementById('d-mic').textContent=newState==='listening'?'ACTIVE':newState==='speaking'?'PLAYBACK':'STANDBY';
-  document.getElementById('d-aware').textContent=newState==='thinking'?'ANALYSING':newState==='speaking'?'OUTPUTTING':'ACTIVE';
-  document.querySelectorAll('.vb').forEach(b=>b.classList.toggle('on',newState==='listening'||newState==='speaking'));
+  document.getElementById('d-mic').textContent=newState==='listening'?'ACTIVE':newState==='speaking'?'PLAYBACK':newState==='clarifying'?'AWAITING ANSWER':'STANDBY';
+  document.getElementById('d-aware').textContent=newState==='thinking'?'ANALYSING':newState==='speaking'?'OUTPUTTING':newState==='clarifying'?'CLARIFYING':'ACTIVE';
+  document.querySelectorAll('.vb').forEach(b=>b.classList.toggle('on',newState==='listening'||newState==='speaking'||newState==='clarifying'));
   const ms=document.getElementById('matrix-status');
   ms.textContent={
     idle:'SYSTEM STATUS: OPTIMAL // CONSCIOUSNESS MATRIX STABLE',
     listening:'NEURAL RECEPTORS ACTIVE // AWAITING VOICE INPUT',
     thinking:'QUANTUM PROCESSING // CALCULATING OPTIMAL RESPONSE',
     speaking:'VOCAL SYNTHESIS ACTIVE // NEURAL OUTPUT STREAM',
+    clarifying:'AMBIGUITY DETECTED // AWAITING USER CLARIFICATION',
   }[newState]||'';
 }
+
+function idleState(){return alwaysOn?'listening':'idle';}
+function idleLabel(){return alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE ALWAYS-ON MODE';}
 
 function unlockAudio(){
   if(audioUnlocked)return;
@@ -707,7 +743,7 @@ function clearContinueBanner(){
 }
 
 // ══════════════════════════════════════════════════════
-// SONG CLARIFICATION MODAL  (NEW v4.0)
+// SONG CLARIFICATION MODAL  (song requests only, unchanged)
 // ══════════════════════════════════════════════════════
 function showClarifyModal(question, options, originalQuery){
   _clarifyOriginalQuery = originalQuery;
@@ -729,7 +765,6 @@ function showClarifyModal(question, options, originalQuery){
   document.getElementById('clarify-modal').classList.add('show');
   setTimeout(()=>document.getElementById('clarify-input').focus(), 150);
 
-  // Speak the question aloud
   speakReply(question);
 }
 
@@ -740,20 +775,18 @@ function hideClarifyModal(){
 function dismissClarify(){
   hideClarifyModal();
   processingCmd = false;
-  setOrbState(alwaysOn?'listening':'idle', alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');
+  setOrbState(idleState(), idleLabel());
   document.getElementById('output').textContent = 'Track search cancelled, Sir.';
 }
 
 function pickClarifyOption(optText){
   hideClarifyModal();
-  // If it's the "something else" fallback option, ask user to type
   if(/something else|describe|i'll|other/i.test(optText)){
     document.getElementById('output').textContent = 'Please type what you mean, Sir.';
     document.getElementById('cmd').focus();
     processingCmd = false;
     return;
   }
-  // Treat the chosen option as the final resolved query directly
   addLog('u', optText);
   handleYouTube(optText, true);
 }
@@ -765,7 +798,6 @@ function submitClarification(){
   resolveClarification(answer);
 }
 
-// Handle voice answer to clarification
 document.getElementById('clarify-input').addEventListener('keydown', e=>{
   if(e.key==='Enter') submitClarification();
 });
@@ -794,8 +826,103 @@ async function resolveClarification(answer){
     handleYouTube(finalQuery, true);
   }catch(e){
     processingCmd = false;
-    // Fallback: just search with the raw answer
     handleYouTube(answer, false);
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+// NEW v4.1 — GENERAL CHAT CLARIFICATION (no modal, inline UI)
+// ══════════════════════════════════════════════════════════
+// Renders the clarifying question + clickable options directly
+// inside #output, the same panel normal replies use. Voice and
+// typed answers are both routed back through resolveIntentAnswer.
+function showIntentClarifyInline(question, options, originalQuery){
+  _awaitingIntentClarify = true;
+  _intentOriginalQuery   = originalQuery;
+  _intentOptions         = options || [];
+
+  const out = document.getElementById('output');
+  out.className = 'clarify-active';
+  out.innerHTML = '';
+
+  const qDiv = document.createElement('div');
+  qDiv.textContent = question;
+  out.appendChild(qDiv);
+
+  if(_intentOptions.length){
+    const optWrap = document.createElement('div');
+    optWrap.className = 'clarify-options-inline';
+    _intentOptions.forEach((opt,i)=>{
+      const b = document.createElement('button');
+      b.className = 'clarify-opt-inline';
+      b.innerHTML = `<span class="opt-num">0${i+1}</span><span>${opt}</span>`;
+      b.onclick = ()=>{ pickIntentOption(opt); };
+      optWrap.appendChild(b);
+    });
+    out.appendChild(optWrap);
+  }
+
+  document.getElementById('cmd').classList.add('awaiting-clarify');
+  document.getElementById('cmd').placeholder = 'Type your answer, or just speak it, Sir…';
+  setOrbState('clarifying', 'AWAITING CLARIFICATION...');
+  addLog('q', question, 'CLARIFY');
+
+  speakReply(question);
+}
+
+function clearIntentClarifyUI(){
+  _awaitingIntentClarify = false;
+  _intentOriginalQuery = '';
+  _intentOptions = [];
+  document.getElementById('cmd').classList.remove('awaiting-clarify');
+  document.getElementById('cmd').placeholder = "Speak or type — 'play X', 'weather in X', 'explain X'…";
+  document.getElementById('output').className = '';
+}
+
+// User picked one of the inline option buttons directly.
+function pickIntentOption(optText){
+  clearIntentClarifyUI();
+  if(/something else/i.test(optText)){
+    document.getElementById('output').textContent = 'Go ahead and tell me exactly what you mean, Sir.';
+    document.getElementById('cmd').focus();
+    setOrbState(idleState(), idleLabel());
+    return;
+  }
+  addLog('u', optText);
+  // The chosen option text already reads as a complete answer —
+  // merge it server-side with the original for a clean final query.
+  resolveIntentAnswer(optText);
+}
+
+// User typed or spoke a free-text answer to the clarifying question.
+async function resolveIntentAnswer(answer){
+  const originalQuery = _intentOriginalQuery;
+  clearIntentClarifyUI();
+  processingCmd = true;
+  setOrbState('thinking', 'MERGING YOUR ANSWER...');
+  document.getElementById('output').textContent = 'One moment, Sir…';
+
+  try{
+    const r = await fetch('/api/chat', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        mode: 'resolve_intent',
+        query: originalQuery,
+        clarificationAnswer: answer,
+        originalQuery: originalQuery
+      })
+    });
+    const data = await r.json();
+    processingCmd = false;
+
+    const finalQuery = data.resolvedQuery || (originalQuery + ' — ' + answer);
+    // Feed the merged, now-unambiguous query into the normal pipeline.
+    sendCmdText(finalQuery);
+  }catch(e){
+    processingCmd = false;
+    // Fall back to just sending the raw merge so we never get stuck.
+    sendCmdText(originalQuery + ' — ' + answer);
   }
 }
 
@@ -857,10 +984,10 @@ function initAndStartListening(){
       }
     }
     if(ft.trim()&&!processingCmd){
-      // If clarify modal is showing, treat voice as answer
+
+      // ── Song clarification modal showing: voice = answer ──
       if(document.getElementById('clarify-modal').classList.contains('show')){
         const answer=ft.trim();
-        // Try to match a numbered option first
         const numMatch=answer.match(/^(one|two|three|1|2|3|first|second|third)/i);
         if(numMatch){
           const idx={one:0,1:0,first:0,two:1,2:1,second:1,three:2,3:2,third:2}[numMatch[1].toLowerCase()];
@@ -874,6 +1001,22 @@ function initAndStartListening(){
         resolveClarification(answer);
         return;
       }
+
+      // ── NEW v4.1: general chat clarification awaiting voice answer ──
+      if(_awaitingIntentClarify){
+        const answer=ft.trim();
+        const numMatch=answer.match(/^(one|two|three|1|2|3|first|second|third)\b/i);
+        if(numMatch){
+          const idx={one:0,1:0,first:0,two:1,2:1,second:1,three:2,3:2,third:2}[numMatch[1].toLowerCase()];
+          if(_intentOptions[idx]){
+            pickIntentOption(_intentOptions[idx]);
+            return;
+          }
+        }
+        resolveIntentAnswer(answer);
+        return;
+      }
+
       if(_interrupted){
         const ans=ft.trim().toLowerCase();
         if(/\b(yes|yeah|continue|go on|please|sure|do it|affirmative)\b/.test(ans)){hideContinueBanner(true);}
@@ -919,8 +1062,21 @@ async function speakStatus(key){
 function routeCommand(cmd){
   const c=cmd.toLowerCase().trim();
 
+  // If we are waiting on an answer to an in-panel clarification,
+  // typed/voiced text from the input box goes straight to the
+  // clarification resolver instead of being re-routed as a new
+  // command.
+  if(_awaitingIntentClarify){
+    resolveIntentAnswer(cmd);
+    return;
+  }
+
   if(/^(play|put on|i want to (hear|listen to)|search (youtube )?for|youtube|queue|stream)\s+.+/i.test(c)){
     const q=cmd.replace(/^(play|put on|i want to (hear|listen to)|search (youtube )?for|youtube|queue|stream)\s*/i,'').replace(/\s*(on youtube|for me|please|now)\s*/ig,'').trim();
+    // NOTE: song-specific ambiguity ("play scorpion", "play something for
+    // me" with no further detail) is still handled inside resolveAndPlay
+    // -> mode:'resolve_song' on the server, which already has its own
+    // CLEAR/UNCLEAR logic tuned for music. We do not double-clarify here.
     resolveAndPlay(q);return;
   }
   if(/\b(weather|temperature|forecast|raining|rain|sunny|humidity|wind speed)\b/i.test(c)){
@@ -937,7 +1093,7 @@ function routeCommand(cmd){
   if(/\b(close (youtube|player|music)|stop (youtube|video|music|playing))\b/i.test(c)){ytClose();return;}
   if(/^(stop|quiet|silence|shut up|enough|stop talking|be quiet)$/i.test(c)){
     stopAllSpeech();
-    setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');
+    setOrbState(idleState(),idleLabel());
     return;
   }
   if(/\b(sing|hum|rap|compose a song|write a song)\b/i.test(c)){
@@ -947,9 +1103,50 @@ function routeCommand(cmd){
     const imagePrompt=cmd.replace(/^(explain|show me|what is|how does|diagram of|illustrate|show|demonstrate|visualise|visualize|display|draw)\s*/i,'').trim()||cmd;
     showOrbImage(imagePrompt);
   }
-  speakStatus('thinking');
-  setOrbState('thinking','HEARD: '+cmd.toUpperCase().slice(0,45));
-  sendCmdText(cmd);
+
+  // ══════════════════════════════════════════════════════
+  // NEW v4.1 — GENERAL INTENT CLARITY CHECK
+  // ══════════════════════════════════════════════════════
+  // Everything that falls through to general chat now passes
+  // through a lightweight CLEAR/UNCLEAR check first. Only when
+  // CLEAR does it proceed into the normal sendCmdText pipeline.
+  checkIntentThenSend(cmd);
+}
+
+async function checkIntentThenSend(cmd){
+  processingCmd = true;
+  setOrbState('thinking','CHECKING YOUR REQUEST...');
+  try{
+    const r = await fetch('/api/chat', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ mode:'resolve_intent', query: cmd })
+    });
+    const data = await r.json();
+    processingCmd = false;
+
+    if(data.status === 'unclear'){
+      showIntentClarifyInline(
+        data.question || 'Could you clarify what you mean, Sir?',
+        data.options || [],
+        cmd
+      );
+      return;
+    }
+
+    // CLEAR (or any unexpected/error shape) -> proceed normally.
+    speakStatus('thinking');
+    setOrbState('thinking','HEARD: '+cmd.toUpperCase().slice(0,45));
+    sendCmdText(cmd);
+
+  }catch(e){
+    // If the clarity check itself fails for any reason, never block
+    // the user — just proceed straight to the normal pipeline.
+    processingCmd = false;
+    speakStatus('thinking');
+    setOrbState('thinking','HEARD: '+cmd.toUpperCase().slice(0,45));
+    sendCmdText(cmd);
+  }
 }
 
 // ══════════════════════════════════════════════════════
@@ -971,7 +1168,6 @@ async function resolveAndPlay(rawQuery){
     });
     const data=await r.json();
 
-    // ── CLEAR: brain knows exactly what to play ──
     if(data.status==='clear'){
       processingCmd=false;
       const finalQuery=data.searchQuery||rawQuery;
@@ -982,18 +1178,16 @@ async function resolveAndPlay(rawQuery){
       return;
     }
 
-    // ── UNCLEAR: brain needs clarification ──
     if(data.status==='unclear'){
       processingCmd=false;
       speakStatus('clarifying');
-      setOrbState(alwaysOn?'listening':'idle', alwaysOn?'AWAITING YOUR CHOICE':'AWAITING RESPONSE');
+      setOrbState(idleState(), alwaysOn?'AWAITING YOUR CHOICE':'AWAITING RESPONSE');
       document.getElementById('output').textContent = data.question;
       addLog('a', data.question, 'BRAIN');
       showClarifyModal(data.question, data.options || [], rawQuery);
       return;
     }
 
-    // Fallback: use raw query
     processingCmd=false;
     handleYouTube(rawQuery, true);
 
@@ -1039,9 +1233,9 @@ async function handleYouTube(query,skipLog){
   try{
     const r=await fetch('/api/youtube',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query})});
     const data=await r.json();processingCmd=false;
-    if(data.error||!data.results||!data.results.length){document.getElementById('output').textContent='Could not find: '+query;setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');return;}
+    if(data.error||!data.results||!data.results.length){document.getElementById('output').textContent='Could not find: '+query;setOrbState(idleState(),idleLabel());return;}
     ytResults=data.results;ytIndex=0;ytPaused=false;ytMuted=false;ytPlayIndex(0);
-  }catch(e){processingCmd=false;document.getElementById('output').textContent='YouTube error: '+e.message;setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');}
+  }catch(e){processingCmd=false;document.getElementById('output').textContent='YouTube error: '+e.message;setOrbState(idleState(),idleLabel());}
 }
 
 function ytPlayIndex(i){
@@ -1062,7 +1256,7 @@ function ytPlayIndex(i){
   document.getElementById('output').textContent='Now playing: '+item.title+'\n'+item.channel;
   addLog('a','Now playing: '+item.title,'YOUTUBE');
   bumpQ();
-  setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');
+  setOrbState(idleState(),idleLabel());
   document.getElementById('ft-brain').textContent='BRAIN: YOUTUBE // STREAMING';
 }
 
@@ -1098,7 +1292,7 @@ async function handleWeather(cmd){
   try{
     const geoRes=await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1`);
     const geoData=await geoRes.json();
-    if(!geoData.results||!geoData.results.length){processingCmd=false;document.getElementById('output').textContent='Location not found: '+city;setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');return;}
+    if(!geoData.results||!geoData.results.length){processingCmd=false;document.getElementById('output').textContent='Location not found: '+city;setOrbState(idleState(),idleLabel());return;}
     const loc=geoData.results[0];
     const wRes=await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${loc.latitude}&longitude=${loc.longitude}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code,apparent_temperature&timezone=auto`);
     const wData=await wRes.json();const cur=wData.current;
@@ -1108,9 +1302,9 @@ async function handleWeather(cmd){
     processingCmd=false;
     document.getElementById('output').textContent=reply;
     addLog('a',reply,'WEATHER');bumpQ();
-    setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');
+    setOrbState(idleState(),idleLabel());
     speakReply(reply);
-  }catch(e){processingCmd=false;document.getElementById('output').textContent='Weather error: '+e.message;setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');}
+  }catch(e){processingCmd=false;document.getElementById('output').textContent='Weather error: '+e.message;setOrbState(idleState(),idleLabel());}
 }
 
 // ══════════════════════════════════════════════════════
@@ -1138,6 +1332,7 @@ async function speakReply(text){
   if(!text||!text.trim())return Promise.resolve();
   const clean=cleanForSpeech(text);
   if(!clean)return Promise.resolve();
+  const wasClarifying=(state==='clarifying');
   setOrbState('speaking','SPEAKING — JUST TALK TO INTERRUPT');
   if(window._micGate)window._micGate(true);
   return new Promise((resolve)=>{
@@ -1151,20 +1346,32 @@ async function speakReply(text){
         audio.onended=()=>{
           URL.revokeObjectURL(url);_currentAudio=null;
           if(window._micGate)window._micGate(false);
-          if(state==='speaking')setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE ALWAYS-ON MODE');
+          if(state==='speaking'){
+            // If we were speaking a clarification question, return to the
+            // 'clarifying' state (not idle/listening) so the orb visually
+            // shows we're still waiting on the user's answer.
+            if(wasClarifying&&_awaitingIntentClarify) setOrbState('clarifying','AWAITING CLARIFICATION...');
+            else setOrbState(idleState(), idleLabel());
+          }
           resolve();
         };
         audio.onerror=()=>{
           URL.revokeObjectURL(url);_currentAudio=null;
           if(window._micGate)window._micGate(false);
-          if(state==='speaking')setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE ALWAYS-ON MODE');
+          if(state==='speaking'){
+            if(wasClarifying&&_awaitingIntentClarify) setOrbState('clarifying','AWAITING CLARIFICATION...');
+            else setOrbState(idleState(), idleLabel());
+          }
           resolve();
         };
         audio.play().catch(()=>{if(window._micGate)window._micGate(false);resolve();});
       })
       .catch(()=>{
         if(window._micGate)window._micGate(false);
-        if(state==='speaking')setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE ALWAYS-ON MODE');
+        if(state==='speaking'){
+          if(wasClarifying&&_awaitingIntentClarify) setOrbState('clarifying','AWAITING CLARIFICATION...');
+          else setOrbState(idleState(), idleLabel());
+        }
         resolve();
       });
   });
@@ -1179,12 +1386,12 @@ function handleSing(cmd){
   fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:conversationHistory})})
     .then(r=>r.json()).then(data=>{
       processingCmd=false;
-      if(data.error){document.getElementById('output').textContent='Error: '+data.error;setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');return;}
+      if(data.error){document.getElementById('output').textContent='Error: '+data.error;setOrbState(idleState(),idleLabel());return;}
       document.getElementById('output').textContent=data.reply;
       conversationHistory.push({role:'assistant',text:data.reply});
       addLog('a',data.reply,'SONG');bumpQ();
       speakReply(data.reply);
-    }).catch(e=>{processingCmd=false;document.getElementById('output').textContent='Error: '+e.message;setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE');});
+    }).catch(e=>{processingCmd=false;document.getElementById('output').textContent='Error: '+e.message;setOrbState(idleState(),idleLabel());});
 }
 
 // ══════════════════════════════════════════════════════
@@ -1201,7 +1408,7 @@ async function sendCmdText(val){
     const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
     const response=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:conversationHistory,timezone:tz})});
     const data=await response.json();processingCmd=false;
-    if(data.error){out.className='';out.innerHTML=`<span style="color:var(--red)">${data.error}</span>`;setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'ERROR');return;}
+    if(data.error){out.className='';out.innerHTML=`<span style="color:var(--red)">${data.error}</span>`;setOrbState(idleState(),'ERROR');return;}
     const brain=data.brain||'AI';
     out.className='';
     if(IMAGE_TRIGGERS.test(val)){
@@ -1219,7 +1426,7 @@ async function sendCmdText(val){
     speakReply(data.reply);
   }catch(e){
     processingCmd=false;out.className='';out.innerHTML=`<span style="color:var(--red)">ERROR: ${e.message}</span>`;
-    setOrbState(alwaysOn?'listening':'idle',alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'ERROR');
+    setOrbState(idleState(),'ERROR');
   }
 }
 
@@ -1241,8 +1448,9 @@ function addLog(role,text,brain){
   const h=document.getElementById('history');
   const d=document.createElement('div');
   const isYt=brain==='YOUTUBE';
-  d.className='hitem '+(role==='u'?'u':isYt?'yt':'a');
-  const roleLabel=role==='u'?'YOU':isYt?'YT':'SCORP';
+  const isClarify=brain==='CLARIFY';
+  d.className='hitem '+(role==='u'?'u':isYt?'yt':isClarify?'q':'a');
+  const roleLabel=role==='u'?'YOU':isYt?'YT':isClarify?'ASK':'SCORP';
   const brainTag=brain&&role==='a'?`<span style="font-size:5.5px;color:var(--muted);margin-left:4px">[${brain}]</span>`:'';
   d.innerHTML=`<div class="hrole">${roleLabel}${brainTag}</div><div class="htext">${text.slice(0,200)}${text.length>200?'…':''}</div>`;
   h.appendChild(d);historyCount++;
@@ -1258,6 +1466,7 @@ function clearLog(){
   document.getElementById('panel-label').textContent='SCORPION RESPONSE CORE';
   conversationHistory=[];
   clearOrbImage();
+  clearIntentClarifyUI();
 }
 
 // ══════════════════════════════════════════════════════
