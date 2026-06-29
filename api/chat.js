@@ -12,7 +12,7 @@
 //   4. Mistral   — mistral-large    (fallback)
 //
 // Author  : Dr. Davie Mwangi
-// Version : 3.0.0
+// Version : 3.1.0
 // Fixes   :
 //   - Sequential brain calling (was Promise.any — wasteful)
 //   - planSearch/scoreAndFilter now race Cerebras + Groq
@@ -21,6 +21,14 @@
 //     and multi-word cities
 //   - conversationHistory standardised to {role, content}
 //   - IMAGE_TRIGGERS tightened (no longer fires on "what is")
+//   - v3.1: Fixed raceSmallModels — Promise.any resolves on the first
+//     SETTLED promise, not the first TRUTHY one. callCerebras/callGroqSmall
+//     never reject (they catch internally and resolve to null on a missing
+//     key or network error), so a misconfigured/failing provider would
+//     instantly "win" the race with null and starve the other provider's
+//     real result. Replaced with a firstTruthy() helper that waits for the
+//     first non-null resolution and only falls back to null once every
+//     candidate has settled.
 // ============================================================
 
 export default async function handler(req, res) {
@@ -131,13 +139,45 @@ export default async function handler(req, res) {
     }
 
     // ── RACE HELPER: Cerebras vs Groq for planning tasks ────
-    // ✅ FIX: planSearch/scoreAndFilter no longer rely solely on Cerebras
+    // ✅ FIX v3.1: firstTruthy() replaces Promise.any.
+    //   Promise.any resolves on the first SETTLED promise — including a
+    //   fulfilled promise whose value is null. Since callCerebras/
+    //   callGroqSmall catch their own errors and resolve to null (missing
+    //   key, rate limit, network failure, etc.) rather than rejecting,
+    //   Promise.any had no way to tell "provider failed fast" apart from
+    //   "provider succeeded fast". A misconfigured or struggling provider
+    //   would win the race with null almost every time, defeating the
+    //   entire point of racing two providers for resilience.
+    //
+    //   firstTruthy() instead resolves as soon as ANY candidate produces a
+    //   non-null value (preserving the speed benefit), and only resolves to
+    //   null once EVERY candidate has settled without producing one
+    //   (preserving the resilience benefit).
+    function firstTruthy(promises) {
+      return new Promise((resolve) => {
+        let remaining = promises.length;
+        let resolved = false;
+        if (remaining === 0) { resolve(null); return; }
+        promises.forEach((p) => {
+          Promise.resolve(p)
+            .then((val) => {
+              if (!resolved && val) { resolved = true; resolve(val); }
+            })
+            .catch(() => { /* individual helpers already swallow their own errors */ })
+            .finally(() => {
+              remaining--;
+              if (remaining === 0 && !resolved) resolve(null);
+            });
+        });
+      });
+    }
+
     async function raceSmallModels(systemContent, userContent, maxTokens = 200) {
       try {
-        return await Promise.any([
+        return await firstTruthy([
           callCerebras(systemContent, userContent, maxTokens),
           callGroqSmall(systemContent, userContent, maxTokens)
-        ].filter(p => p !== null));
+        ]);
       } catch (e) { return null; }
     }
 
