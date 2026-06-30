@@ -140,7 +140,7 @@ main{flex:1;overflow:hidden;display:flex;flex-direction:column;gap:6px;padding:6
 .clarify-opt-inline:hover{border-color:var(--amber);background:rgba(255,170,0,.07)}
 .clarify-opt-inline .opt-num{font-family:var(--display);font-size:6.5px;font-weight:700;letter-spacing:.15em;color:var(--amber);min-width:16px}
 .irow{display:flex;gap:6px;align-items:center;margin-top:6px;flex-shrink:0}
-#cmd{flex:1;background:#010f07;border:1px solid var(--border);border-radius:3px;color:var(--text);font-family:var(--body);font-size:14px;padding:7px 11px;outline:none;caret-color:var(--G)}
+#cmd{flex:1;background:#010f07;border:1px solid var(--border);border-radius:3px;color:var(--text);font-family:var(--body);font-size:14px;padding:7px 11px;outline:none;caret-color:var(--G);resize:none;max-height:90px;min-height:34px;line-height:1.4}
 #cmd:focus{border-color:rgba(0,255,102,.35)}
 #cmd.awaiting-clarify{border-color:var(--amber)}
 #cmd::placeholder{color:var(--muted)}
@@ -153,9 +153,9 @@ main{flex:1;overflow:hidden;display:flex;flex-direction:column;gap:6px;padding:6
 .hist-count{font-family:var(--display);font-size:6px;font-weight:700;color:var(--G);border:1px solid var(--border);border-radius:2px;padding:2px 6px}
 #history{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:4px;padding:6px 8px;min-height:0;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
 .hitem{display:flex;gap:7px;padding:5px 8px;background:var(--deep);border-left:2px solid;border-radius:0 3px 3px 0;font-size:12px;line-height:1.5;font-family:var(--body)}
-.hitem.u{border-color:var(--muted)}.hitem.a{border-color:var(--G)}.hitem.yt{border-color:var(--red)}.hitem.q{border-color:var(--amber)}
+.hitem.u{border-color:var(--muted)}.hitem.a{border-color:var(--G)}.hitem.yt{border-color:var(--red)}.hitem.q{border-color:var(--amber)}.hitem.g{border-color:var(--cyan)}
 .hrole{font-family:var(--display);font-size:5.5px;font-weight:700;letter-spacing:.18em;min-width:26px;padding-top:2px}
-.hitem.u .hrole{color:var(--muted)}.hitem.a .hrole{color:var(--G)}.hitem.yt .hrole{color:var(--red)}.hitem.q .hrole{color:var(--amber)}
+.hitem.u .hrole{color:var(--muted)}.hitem.a .hrole{color:var(--G)}.hitem.yt .hrole{color:var(--red)}.hitem.q .hrole{color:var(--amber)}.hitem.g .hrole{color:var(--cyan)}
 .htext{color:var(--text);flex:1}
 .hist-footer{display:flex;justify-content:flex-end;padding:5px 8px;border-top:1px solid var(--border);flex-shrink:0}
 #clear-btn{background:none;border:none;cursor:pointer;font-family:var(--mono);font-size:8px;color:var(--muted)}
@@ -215,7 +215,7 @@ footer{border-top:1px solid var(--border);padding:5px 0;display:flex;justify-con
     </svg>
     <div>
       <div class="logo-main">THE MIGHTY SCORPION</div>
-      <div class="logo-sub">NEURAL CORE v4.2.1 // JARVIS INTELLIGENCE MATRIX</div>
+      <div class="logo-sub">NEURAL CORE v4.3.0 // JARVIS INTELLIGENCE MATRIX</div>
     </div>
   </div>
   <div class="hdr-right">
@@ -384,7 +384,7 @@ footer{border-top:1px solid var(--border);padding:5px 0;display:flex;justify-con
     <div class="plabel" id="panel-label">SCORPION RESPONSE CORE</div>
     <div id="output"><span style="color:var(--muted);font-size:13px">Initialising Scorpion AI…</span></div>
     <div class="irow">
-      <input type="text" id="cmd" placeholder="Speak or type — 'play X', 'weather in X', 'explain X'…" autocomplete="off" spellcheck="false">
+      <textarea id="cmd" rows="1" placeholder="Speak or type — 'play X', 'weather in X', 'explain X', or paste text to analyse…" autocomplete="off" spellcheck="false"></textarea>
       <button id="send-btn" onclick="sendCmd()">SEND ▶</button>
     </div>
   </div>
@@ -554,15 +554,24 @@ let _clarifyOptions=[];
 // candidates (see resolveAndPlay / extract_play_query backend mode).
 let _playChoiceMap=[];
 
-// Single audio channel
+// Single audio channel + speech queue (see speakReply / chunked playback)
 let _currentAudio=null;
+let _speechQueue=[];
+let _speechQueueActive=false;
+let _speechQueueAbort=false;
 
 function stopAllSpeech(){
   if(_currentAudio){try{_currentAudio.pause();_currentAudio.src='';}catch(e){}_currentAudio=null;}
+  _speechQueue=[];
+  _speechQueueAbort=true;
+  _speechQueueActive=false;
   clearContinueBanner();
 }
 
 // ── TEXT CLEANER ──
+// NOTE (fix): no longer hard-truncates with .slice(); full replies are now
+// split into chunks and played sequentially by speakReply() instead of
+// being silently cut off after ~850 characters.
 function cleanForSpeech(text){
   return text
     .replace(/\*\*/g,'').replace(/\*/g,'').replace(/#{1,6}\s*/g,'')
@@ -575,7 +584,24 @@ function cleanForSpeech(text){
     .replace(/INSTRUCTION:[^\n]*/gi,'').replace(/===+[^=\n]*===+/g,'')
     .replace(/^\s*[-•*]\s+/gm,'').replace(/^\s*\d+\.\s+/gm,'')
     .replace(/\n+/g,' ').replace(/\s{2,}/g,' ')
-    .replace(/[^\w\s.,!?':;()\-]/g,' ').trim().slice(0,850);
+    .replace(/[^\w\s.,!?':;()\-]/g,' ').trim();
+}
+
+// Splits cleaned text into sentence-aware chunks so the speaker API
+// (and Edge TTS underneath it) never receives an overly long single
+// request, while nothing in the reply gets dropped.
+function chunkForSpeech(text,maxLen){
+  maxLen=maxLen||550;
+  if(!text)return[];
+  if(text.length<=maxLen)return[text];
+  const sentences=text.match(/[^.!?]+[.!?]+|\s*[^.!?]+$/g)||[text];
+  const chunks=[];let cur='';
+  for(const s of sentences){
+    if((cur+s).length>maxLen&&cur){chunks.push(cur.trim());cur=s;}
+    else cur+=s;
+  }
+  if(cur.trim())chunks.push(cur.trim());
+  return chunks;
 }
 
 function setOrbState(newState,statusText){
@@ -686,7 +712,7 @@ function showClarifyVoice(kind, question, options, originalQuery){
   _clarifyOriginalQuery  = originalQuery;
   _clarifyOptions        = options || [];
 
-  // FIX: record Scorpion's clarifying question into conversation memory
+  // Record Scorpion's clarifying question into conversation memory
   // so the *next* normal chat turn (and the resolver prompts) can see
   // that a clarification was asked, not just the raw answer in isolation.
   pushHistory('assistant', question);
@@ -699,14 +725,17 @@ function showClarifyVoice(kind, question, options, originalQuery){
   qDiv.textContent = question;
   out.appendChild(qDiv);
 
-  if(_clarifyOptions.length){
+  // options can be plain strings (song/intent) OR {label,searchQuery} objects (play_choice)
+  const labels = _clarifyOptions.map(o => (typeof o === 'string') ? o : o.label);
+
+  if(labels.length){
     const optWrap = document.createElement('div');
     optWrap.className = 'clarify-options-inline';
-    _clarifyOptions.forEach((opt,i)=>{
+    labels.forEach((label,i)=>{
       const b = document.createElement('button');
       b.className = 'clarify-opt-inline';
-      b.innerHTML = `<span class="opt-num">0${i+1}</span><span>${opt}</span>`;
-      b.onclick = ()=>{ pickClarifyOption(opt); };
+      b.innerHTML = `<span class="opt-num">0${i+1}</span><span>${label}</span>`;
+      b.onclick = ()=>{ pickClarifyOption(label); };
       optWrap.appendChild(b);
     });
     out.appendChild(optWrap);
@@ -729,7 +758,7 @@ function clearClarifyUI(){
   _clarifyOriginalQuery = '';
   _clarifyOptions = [];
   document.getElementById('cmd').classList.remove('awaiting-clarify');
-  document.getElementById('cmd').placeholder = "Speak or type — 'play X', 'weather in X', 'explain X'…";
+  document.getElementById('cmd').placeholder = "Speak or type — 'play X', 'weather in X', 'explain X', or paste text to analyse…";
   document.getElementById('output').className = '';
 }
 
@@ -751,7 +780,7 @@ function pickClarifyOption(optText){
     setOrbState(idleState(), idleLabel());
     return;
   }
-  // FIX: record the user's chosen answer into conversation memory
+  // Record the user's chosen answer into conversation memory
   pushHistory('user', optText);
   addLog('u', optText);
   if(kind==='play_choice'){
@@ -775,24 +804,26 @@ function submitClarifyAnswer(answer){
   const numMatch = answer.trim().match(/^(one|two|three|1|2|3|first|second|third)\b/i);
   if(numMatch){
     const idx={one:0,1:0,first:0,two:1,2:1,second:1,three:2,3:2,third:2}[numMatch[1].toLowerCase()];
-    if(opts[idx]){
+    const optAtIdx = opts[idx];
+    if(optAtIdx){
+      const label = (typeof optAtIdx === 'string') ? optAtIdx : optAtIdx.label;
       clearClarifyUI();
-      pushHistory('user', opts[idx]);
-      addLog('u', opts[idx]);
+      pushHistory('user', label);
+      addLog('u', label);
       if(kind==='play_choice'){
-        const sq=(_playChoiceMap[idx]&&_playChoiceMap[idx].searchQuery)||_resolvePlayChoiceQuery(opts[idx]);
+        const sq=(_playChoiceMap[idx]&&_playChoiceMap[idx].searchQuery)||_resolvePlayChoiceQuery(label);
         _playChoiceMap=[];
         handleMediaPlay(sq, true);
         return true;
       }
-      if(kind==='song') handleMediaPlay(opts[idx], true);
-      else resolveIntentAnswer(opts[idx], originalQuery);
+      if(kind==='song') handleMediaPlay(label, true);
+      else resolveIntentAnswer(label, originalQuery);
       return true;
     }
   }
 
   clearClarifyUI();
-  // FIX: record the user's free-form clarifying answer into conversation memory
+  // Record the user's free-form clarifying answer into conversation memory
   pushHistory('user', answer);
   addLog('u', answer);
   if(kind==='play_choice'){
@@ -993,6 +1024,17 @@ function routeCommand(cmd){
     sendCmdText(cmd);return;
   }
 
+  // Long pasted text or explicit "analyze/summarize this" requests skip
+  // ALL media/weather/etc routing below and go straight to chat, where
+  // the backend (chat.js) also skips web search for these (see isAnalyzeRequest).
+  const isLikelyAnalyze = cmd.length > 400 || /\b(analy[sz]e|summar[iz]e|review this|what does this (mean|say))\b/i.test(c);
+  if(isLikelyAnalyze){
+    speakStatus('thinking');
+    setOrbState('thinking','ANALYSING PROVIDED TEXT...');
+    sendCmdText(cmd);
+    return;
+  }
+
   if(/^(play|put on|i want to (hear|listen to)|search (youtube )?for|youtube|queue|stream)\s+.+/i.test(c)){
     const q=cmd.replace(/^(play|put on|i want to (hear|listen to)|search (youtube )?for|youtube|queue|stream)\s*/i,'').replace(/\s*(on youtube|for me|please|now)\s*/ig,'').trim();
     resolveAndPlay(q);return;
@@ -1091,8 +1133,6 @@ async function checkIntentThenSend(cmd){
 // user wants, extract_play_query (backend) decides CLEAR (play
 // immediately) or CHOICE (genuinely distinct candidates found in the
 // research — surfaced inline, same mechanism as intent-clarify).
-// There is no separate song/speech pre-check — the brain decides
-// from real fetched facts, not a guess made before searching.
 // ══════════════════════════════════════════════════════
 async function resolveAndPlay(rawQuery){
   if(!rawQuery||!rawQuery.trim()){document.getElementById('output').textContent='What would you like me to play, Sir?';return;}
@@ -1199,7 +1239,7 @@ function clearStreamingUI(){
 
 function renderStage(type, content){
   const out=document.getElementById('output');
-  
+
   if(type==='thinking'){
     clearStreamingUI();
     const line=document.createElement('div');
@@ -1208,7 +1248,7 @@ function renderStage(type, content){
     out.innerHTML='';out.appendChild(line);
     return;
   }
-  
+
   if(type==='searching'){
     const line=document.createElement('div');
     line.className='stage-line searching';
@@ -1216,7 +1256,7 @@ function renderStage(type, content){
     out.appendChild(line);
     return;
   }
-  
+
   if(type==='fetching'){
     const line=document.createElement('div');
     line.className='stage-line fetching';
@@ -1224,7 +1264,7 @@ function renderStage(type, content){
     out.appendChild(line);
     return;
   }
-  
+
   if(type==='scoring'){
     const line=document.createElement('div');
     line.className='stage-line scoring';
@@ -1232,7 +1272,7 @@ function renderStage(type, content){
     out.appendChild(line);
     return;
   }
-  
+
   if(type==='answer'){
     clearStreamingUI();
     out.textContent=content;
@@ -1246,7 +1286,7 @@ function renderStage(type, content){
     }
     return;
   }
-  
+
   if(type==='error'){
     out.innerHTML='<span style="color:var(--red)">ERROR: '+content+'</span>';
     return;
@@ -1264,7 +1304,7 @@ async function sendCmdText(val){
   out.innerHTML='<span style="color:var(--amber)">Processing…</span>';
   addLog('u',val);
   pushHistory('user', val);
-  
+
   try{
     const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
     const response=await fetch('/api/chat',{
@@ -1272,7 +1312,7 @@ async function sendCmdText(val){
       headers:{'Content-Type':'application/json','x-scorpion-key':SCORPION_SECRET},
       body:JSON.stringify({messages:conversationHistory,timezone:tz})
     });
-    
+
     if(!response.ok){
       processingCmd=false;
       out.className='';
@@ -1280,13 +1320,13 @@ async function sendCmdText(val){
       setOrbState(idleState(),'ERROR');
       return;
     }
-    
+
     const reader=response.body.getReader();
     const decoder=new TextDecoder();
     let fullReply='',brainLabel='AI';
-    
+
     setOrbState('thinking','REASONING...');
-    
+
     try{
       while(true){
         const {done,value}=await reader.read();
@@ -1334,14 +1374,14 @@ async function sendCmdText(val){
       setOrbState(idleState(),'ERROR');
       return;
     }
-    
+
     processingCmd=false;
     out.className='';
     pushHistory('assistant', fullReply);
     bumpQ();
     addLog('a',fullReply,brainLabel);
     speakReply(fullReply);
-    
+
   }catch(e){
     processingCmd=false;
     out.className='';
@@ -1355,10 +1395,26 @@ async function sendCmd(){
   const val=document.getElementById('cmd').value.trim();
   if(!val)return;
   document.getElementById('cmd').value='';
+  autoSizeCmd();
   if(_orbImgShown)clearOrbImage();
   routeCommand(val);
 }
-document.getElementById('cmd').addEventListener('keydown',e=>{if(e.key==='Enter')sendCmd();});
+
+// ── INPUT BOX: textarea so pasted multi-line text survives intact.
+// Enter sends; Shift+Enter inserts a newline (for multi-line paste/edit).
+const _cmdEl=document.getElementById('cmd');
+function autoSizeCmd(){
+  _cmdEl.style.height='auto';
+  _cmdEl.style.height=Math.min(_cmdEl.scrollHeight,90)+'px';
+}
+_cmdEl.addEventListener('input',autoSizeCmd);
+_cmdEl.addEventListener('keydown',e=>{
+  if(e.key==='Enter'&&!e.shiftKey){
+    e.preventDefault();
+    sendCmd();
+  }
+});
+_cmdEl.addEventListener('paste',()=>{setTimeout(autoSizeCmd,0);});
 
 // ══════════════════════════════════════════════════════
 // YOUTUBE ENGINE
@@ -1420,7 +1476,7 @@ function ytPlayIndex(i){
   setYtBadge('playing');
   document.getElementById('output').textContent='Now playing: '+item.title+'\n'+item.channel;
   addLog('a','Now playing: '+item.title,'YOUTUBE');
-  // FIX: record what is now playing into conversation memory, so a later
+  // Record what is now playing into conversation memory, so a later
   // chat message ("what's playing", "play the other version of that")
   // can refer back to it.
   pushHistory('assistant', 'Now playing: ' + item.title + ' by ' + item.channel);
@@ -1479,7 +1535,8 @@ async function handleWeather(cmd){
 }
 
 // ══════════════════════════════════════════════════════
-// SPEAK REPLY — Edge TTS, mic gated
+// SPEAK REPLY — Edge TTS, mic gated, chunked queue so long
+// replies are read in full instead of being cut off.
 // ══════════════════════════════════════════════════════
 async function _speakRaw(text){
   if(!text||!text.trim())return;
@@ -1498,51 +1555,46 @@ async function _speakRaw(text){
   }catch(e){}
 }
 
-async function speakReply(text){
-  stopAllSpeech();
-  if(!text||!text.trim())return Promise.resolve();
-  const clean=cleanForSpeech(text);
-  if(!clean)return Promise.resolve();
-  const wasClarifying=(state==='clarifying');
-  setOrbState('speaking','SPEAKING — JUST TALK TO INTERRUPT');
-  if(window._micGate)window._micGate(true);
+function _playOneChunk(chunkText){
   return new Promise((resolve)=>{
-    fetch('/api/speaker',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:clean})})
+    fetch('/api/speaker',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:chunkText})})
       .then(r=>{if(!r.ok)throw new Error('Speaker API '+r.status);return r.blob();})
       .then(blob=>{
         if(!blob||blob.size<100)throw new Error('Empty blob');
         const url=URL.createObjectURL(blob);
         const audio=new Audio(url);
         _currentAudio=audio;
-        audio.onended=()=>{
-          URL.revokeObjectURL(url);_currentAudio=null;
-          if(window._micGate)window._micGate(false);
-          if(state==='speaking'){
-            if(wasClarifying&&_awaitingClarify) setOrbState('clarifying','AWAITING CLARIFICATION...');
-            else setOrbState(idleState(), idleLabel());
-          }
-          resolve();
-        };
-        audio.onerror=()=>{
-          URL.revokeObjectURL(url);_currentAudio=null;
-          if(window._micGate)window._micGate(false);
-          if(state==='speaking'){
-            if(wasClarifying&&_awaitingClarify) setOrbState('clarifying','AWAITING CLARIFICATION...');
-            else setOrbState(idleState(), idleLabel());
-          }
-          resolve();
-        };
-        audio.play().catch(()=>{if(window._micGate)window._micGate(false);resolve();});
+        const cleanup=()=>{URL.revokeObjectURL(url);if(_currentAudio===audio)_currentAudio=null;resolve();};
+        audio.onended=cleanup;
+        audio.onerror=cleanup;
+        audio.play().catch(cleanup);
       })
-      .catch(()=>{
-        if(window._micGate)window._micGate(false);
-        if(state==='speaking'){
-          if(wasClarifying&&_awaitingClarify) setOrbState('clarifying','AWAITING CLARIFICATION...');
-          else setOrbState(idleState(), idleLabel());
-        }
-        resolve();
-      });
+      .catch(()=>resolve());
   });
+}
+
+async function speakReply(text){
+  stopAllSpeech();
+  _speechQueueAbort=false;
+  if(!text||!text.trim())return Promise.resolve();
+  const clean=cleanForSpeech(text);
+  if(!clean)return Promise.resolve();
+  const wasClarifying=(state==='clarifying');
+  const chunks=chunkForSpeech(clean,550);
+  setOrbState('speaking','SPEAKING — JUST TALK TO INTERRUPT');
+  if(window._micGate)window._micGate(true);
+  _speechQueueActive=true;
+  for(const chunk of chunks){
+    if(_speechQueueAbort)break;
+    await _playOneChunk(chunk);
+    if(_speechQueueAbort)break;
+  }
+  _speechQueueActive=false;
+  if(window._micGate)window._micGate(false);
+  if(!_speechQueueAbort && state==='speaking'){
+    if(wasClarifying&&_awaitingClarify) setOrbState('clarifying','AWAITING CLARIFICATION...');
+    else setOrbState(idleState(), idleLabel());
+  }
 }
 
 // ══════════════════════════════════════════════════════
@@ -1571,8 +1623,9 @@ function addLog(role,text,brain){
   const d=document.createElement('div');
   const isYt=brain==='YOUTUBE';
   const isClarify=brain==='CLARIFY';
-  d.className='hitem '+(role==='u'?'u':isYt?'yt':isClarify?'q':'a');
-  const roleLabel=role==='u'?'YOU':isYt?'YT':isClarify?'ASK':'SCORP';
+  const isGreeting=brain==='GREETING';
+  d.className='hitem '+(role==='u'?'u':isYt?'yt':isClarify?'q':isGreeting?'g':'a');
+  const roleLabel=role==='u'?'YOU':isYt?'YT':isClarify?'ASK':isGreeting?'HELLO':'SCORP';
   const brainTag=brain&&role==='a'?`<span style="font-size:5.5px;color:var(--muted);margin-left:4px">[${brain}]</span>`:'';
   d.innerHTML=`<div class="hrole">${roleLabel}${brainTag}</div><div class="htext">${text.slice(0,200)}${text.length>200?'…':''}</div>`;
   h.appendChild(d);historyCount++;
@@ -1594,6 +1647,10 @@ function clearLog(){
 
 // ══════════════════════════════════════════════════════
 // BOOT GREETING
+// FIX: the greeting is now pushed into conversationHistory and the
+// Action Log, so when the greeting asks a question, your next answer
+// is resolved against it instead of the brain having no memory of
+// having asked anything.
 // ══════════════════════════════════════════════════════
 async function bootGreeting(){
   try{
@@ -1603,13 +1660,20 @@ async function bootGreeting(){
     if(data.reply){
       document.getElementById('output').textContent=data.reply;
       document.getElementById('m-brain').textContent=data.brain||'AI';
+      pushHistory('assistant', data.reply);
+      addLog('a', data.reply, data.brain||'GREETING');
+      bumpQ();
       speakReply(data.reply);
     }
   }catch(e){
-    document.getElementById('output').textContent='Scorpion AI ready, Sir. All systems online.';
+    const fallback='Scorpion AI ready, Sir. All systems online.';
+    document.getElementById('output').textContent=fallback;
+    pushHistory('assistant', fallback);
+    addLog('a', fallback, 'FALLBACK');
   }
 }
 setTimeout(bootGreeting,1500);
+
 </script>
 </body>
 </html>
