@@ -120,6 +120,12 @@ main{flex:1;overflow:hidden;display:flex;flex-direction:column;gap:6px;padding:6
 #output::-webkit-scrollbar{width:3px}
 #output::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
 #output img{max-width:100%;border-radius:4px;margin:6px 0;border:1px solid var(--border)}
+.stage-line{font-size:11px;margin-bottom:4px;transition:opacity .3s;font-family:var(--mono)}
+.stage-line.thinking{color:var(--amber);opacity:.7;font-style:italic}
+.stage-line.searching{color:var(--cyan);opacity:.7}
+.stage-line.fetching{color:var(--G);opacity:.6;font-size:10px}
+.stage-line.scoring{color:var(--amber);opacity:.6;font-size:10px}
+.answer-timestamp{color:var(--muted);font-size:9px;font-family:var(--mono);margin-top:8px;opacity:.8}
 .out-think::after{content:' ▋';animation:blink .7s infinite;color:var(--amber)}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
 #output.clarify-active{color:var(--amber)}
@@ -169,9 +175,7 @@ footer{border-top:1px solid var(--border);padding:5px 0;display:flex;justify-con
 #continue-countdown{color:var(--G);font-size:10px;margin-top:4px}
 
 /* ══════════════════════════════════════════════
-   SONG CLARIFICATION MODAL  (song requests only —
-   general chat clarification uses the output panel
-   instead, no modal, per design choice)
+   SONG CLARIFICATION MODAL  (song requests only)
    ══════════════════════════════════════════════ */
 #clarify-modal{
   display:none;position:fixed;inset:0;z-index:10000;
@@ -293,7 +297,7 @@ footer{border-top:1px solid var(--border);padding:5px 0;display:flex;justify-con
     </svg>
     <div>
       <div class="logo-main">THE MIGHTY SCORPION</div>
-      <div class="logo-sub">NEURAL CORE v4.1.0 // JARVIS INTELLIGENCE MATRIX</div>
+      <div class="logo-sub">NEURAL CORE v4.1.1 // JARVIS INTELLIGENCE MATRIX</div>
     </div>
   </div>
   <div class="hdr-right">
@@ -487,6 +491,11 @@ footer{border-top:1px solid var(--border);padding:5px 0;display:flex;justify-con
 <script src="https://www.youtube.com/iframe_api"></script>
 <script>
 // ══════════════════════════════════════════════════════
+// SECRET TOKEN AUTH — CHANGE THIS BEFORE DEPLOYMENT
+// ══════════════════════════════════════════════════════
+const SCORPION_SECRET = 'YOUR_SECRET_HERE_CHANGE_ME';
+
+// ══════════════════════════════════════════════════════
 // MATRIX BACKGROUND
 // ══════════════════════════════════════════════════════
 (function(){
@@ -606,23 +615,12 @@ let _interrupted=false,_interruptedText='',_continueTimer=null;
 let _clarifyOriginalQuery='';
 let _clarifyOptions=[];
 
-// ══════════════════════════════════════════════════════
-// NEW v4.1 — GENERAL CHAT CLARIFICATION STATE (no modal)
-// ══════════════════════════════════════════════════════
-// When the brain flags an ordinary chat message as UNCLEAR, we do
-// NOT open the song-style modal. Instead we:
-//   1. Speak + show the clarifying question in the existing #output
-//      panel (same place normal replies show up)
-//   2. Render the option list inline under the question (clickable)
-//   3. Switch the orb into a distinct "clarifying" visual state
-//   4. Put #cmd into "awaiting-clarify" mode so the NEXT thing the
-//      user types or says (mic or input box) is treated as the
-//      answer, not a fresh command
+// General chat clarification state (inline, no modal)
 let _awaitingIntentClarify=false;
 let _intentOriginalQuery='';
 let _intentOptions=[];
 
-// ══ SINGLE AUDIO CHANNEL ══
+// Single audio channel
 let _currentAudio=null;
 
 function stopAllSpeech(){
@@ -630,7 +628,7 @@ function stopAllSpeech(){
   clearContinueBanner();
 }
 
-// ══ TEXT CLEANER ══
+// ── TEXT CLEANER ──
 function cleanForSpeech(text){
   return text
     .replace(/\*\*/g,'').replace(/\*/g,'').replace(/#{1,6}\s*/g,'')
@@ -743,7 +741,7 @@ function clearContinueBanner(){
 }
 
 // ══════════════════════════════════════════════════════
-// SONG CLARIFICATION MODAL  (song requests only, unchanged)
+// SONG CLARIFICATION MODAL
 // ══════════════════════════════════════════════════════
 function showClarifyModal(question, options, originalQuery){
   _clarifyOriginalQuery = originalQuery;
@@ -810,7 +808,7 @@ async function resolveClarification(answer){
   try{
     const r = await fetch('/api/chat', {
       method:'POST',
-      headers:{'Content-Type':'application/json'},
+      headers:{'Content-Type':'application/json','x-scorpion-key':SCORPION_SECRET},
       body: JSON.stringify({
         mode:'resolve_song',
         query: _clarifyOriginalQuery,
@@ -831,11 +829,8 @@ async function resolveClarification(answer){
 }
 
 // ══════════════════════════════════════════════════════════
-// NEW v4.1 — GENERAL CHAT CLARIFICATION (no modal, inline UI)
+// GENERAL CHAT CLARIFICATION (inline, no modal)
 // ══════════════════════════════════════════════════════════
-// Renders the clarifying question + clickable options directly
-// inside #output, the same panel normal replies use. Voice and
-// typed answers are both routed back through resolveIntentAnswer.
 function showIntentClarifyInline(question, options, originalQuery){
   _awaitingIntentClarify = true;
   _intentOriginalQuery   = originalQuery;
@@ -879,7 +874,6 @@ function clearIntentClarifyUI(){
   document.getElementById('output').className = '';
 }
 
-// User picked one of the inline option buttons directly.
 function pickIntentOption(optText){
   clearIntentClarifyUI();
   if(/something else/i.test(optText)){
@@ -889,12 +883,9 @@ function pickIntentOption(optText){
     return;
   }
   addLog('u', optText);
-  // The chosen option text already reads as a complete answer —
-  // merge it server-side with the original for a clean final query.
   resolveIntentAnswer(optText);
 }
 
-// User typed or spoke a free-text answer to the clarifying question.
 async function resolveIntentAnswer(answer){
   const originalQuery = _intentOriginalQuery;
   clearIntentClarifyUI();
@@ -905,7 +896,7 @@ async function resolveIntentAnswer(answer){
   try{
     const r = await fetch('/api/chat', {
       method:'POST',
-      headers:{'Content-Type':'application/json'},
+      headers:{'Content-Type':'application/json','x-scorpion-key':SCORPION_SECRET},
       body: JSON.stringify({
         mode: 'resolve_intent',
         query: originalQuery,
@@ -917,11 +908,9 @@ async function resolveIntentAnswer(answer){
     processingCmd = false;
 
     const finalQuery = data.resolvedQuery || (originalQuery + ' — ' + answer);
-    // Feed the merged, now-unambiguous query into the normal pipeline.
     sendCmdText(finalQuery);
   }catch(e){
     processingCmd = false;
-    // Fall back to just sending the raw merge so we never get stuck.
     sendCmdText(originalQuery + ' — ' + answer);
   }
 }
@@ -1002,7 +991,7 @@ function initAndStartListening(){
         return;
       }
 
-      // ── NEW v4.1: general chat clarification awaiting voice answer ──
+      // ── General chat clarification awaiting voice answer ──
       if(_awaitingIntentClarify){
         const answer=ft.trim();
         const numMatch=answer.match(/^(one|two|three|1|2|3|first|second|third)\b/i);
@@ -1062,21 +1051,19 @@ async function speakStatus(key){
 function routeCommand(cmd){
   const c=cmd.toLowerCase().trim();
 
-  // If we are waiting on an answer to an in-panel clarification,
-  // typed/voiced text from the input box goes straight to the
-  // clarification resolver instead of being re-routed as a new
-  // command.
+  // If awaiting intent clarification answer
   if(_awaitingIntentClarify){
     resolveIntentAnswer(cmd);
     return;
   }
 
+  // Memory wipe command
+  if(/\b(forget everything|clear your memory|wipe your memory)\b/i.test(c)){
+    sendCmdText(cmd);return;
+  }
+
   if(/^(play|put on|i want to (hear|listen to)|search (youtube )?for|youtube|queue|stream)\s+.+/i.test(c)){
     const q=cmd.replace(/^(play|put on|i want to (hear|listen to)|search (youtube )?for|youtube|queue|stream)\s*/i,'').replace(/\s*(on youtube|for me|please|now)\s*/ig,'').trim();
-    // NOTE: song-specific ambiguity ("play scorpion", "play something for
-    // me" with no further detail) is still handled inside resolveAndPlay
-    // -> mode:'resolve_song' on the server, which already has its own
-    // CLEAR/UNCLEAR logic tuned for music. We do not double-clarify here.
     resolveAndPlay(q);return;
   }
   if(/\b(weather|temperature|forecast|raining|rain|sunny|humidity|wind speed)\b/i.test(c)){
@@ -1104,12 +1091,7 @@ function routeCommand(cmd){
     showOrbImage(imagePrompt);
   }
 
-  // ══════════════════════════════════════════════════════
-  // NEW v4.1 — GENERAL INTENT CLARITY CHECK
-  // ══════════════════════════════════════════════════════
-  // Everything that falls through to general chat now passes
-  // through a lightweight CLEAR/UNCLEAR check first. Only when
-  // CLEAR does it proceed into the normal sendCmdText pipeline.
+  // General intent clarity check
   checkIntentThenSend(cmd);
 }
 
@@ -1119,7 +1101,7 @@ async function checkIntentThenSend(cmd){
   try{
     const r = await fetch('/api/chat', {
       method:'POST',
-      headers:{'Content-Type':'application/json'},
+      headers:{'Content-Type':'application/json','x-scorpion-key':SCORPION_SECRET},
       body: JSON.stringify({ mode:'resolve_intent', query: cmd })
     });
     const data = await r.json();
@@ -1134,14 +1116,13 @@ async function checkIntentThenSend(cmd){
       return;
     }
 
-    // CLEAR (or any unexpected/error shape) -> proceed normally.
+    // CLEAR — proceed normally
     speakStatus('thinking');
     setOrbState('thinking','HEARD: '+cmd.toUpperCase().slice(0,45));
     sendCmdText(cmd);
 
   }catch(e){
-    // If the clarity check itself fails for any reason, never block
-    // the user — just proceed straight to the normal pipeline.
+    // Fallback on error
     processingCmd = false;
     speakStatus('thinking');
     setOrbState('thinking','HEARD: '+cmd.toUpperCase().slice(0,45));
@@ -1150,7 +1131,7 @@ async function checkIntentThenSend(cmd){
 }
 
 // ══════════════════════════════════════════════════════
-// RESOLVE AND PLAY — v4.0: brain interprets, clarifies if needed
+// RESOLVE AND PLAY
 // ══════════════════════════════════════════════════════
 async function resolveAndPlay(rawQuery){
   if(!rawQuery||!rawQuery.trim()){document.getElementById('output').textContent='What would you like me to play, Sir?';return;}
@@ -1163,7 +1144,7 @@ async function resolveAndPlay(rawQuery){
   try{
     const r=await fetch('/api/chat',{
       method:'POST',
-      headers:{'Content-Type':'application/json'},
+      headers:{'Content-Type':'application/json','x-scorpion-key':SCORPION_SECRET},
       body:JSON.stringify({mode:'resolve_song', query:rawQuery})
     });
     const data=await r.json();
@@ -1196,6 +1177,179 @@ async function resolveAndPlay(rawQuery){
     handleYouTube(rawQuery, false);
   }
 }
+
+// ══════════════════════════════════════════════════════
+// STREAMING PIPELINE FOR SSE
+// ══════════════════════════════════════════════════════
+function clearStreamingUI(){
+  const stageLines=document.querySelectorAll('.stage-line');
+  stageLines.forEach(el=>el.remove());
+}
+
+function renderStage(type, content){
+  const out=document.getElementById('output');
+  
+  if(type==='thinking'){
+    clearStreamingUI();
+    const line=document.createElement('div');
+    line.className='stage-line thinking';
+    line.textContent=content+' ▋';
+    out.innerHTML='';out.appendChild(line);
+    return;
+  }
+  
+  if(type==='searching'){
+    const line=document.createElement('div');
+    line.className='stage-line searching';
+    line.textContent=content;
+    out.appendChild(line);
+    return;
+  }
+  
+  if(type==='fetching'){
+    const line=document.createElement('div');
+    line.className='stage-line fetching';
+    line.textContent=content;
+    out.appendChild(line);
+    return;
+  }
+  
+  if(type==='scoring'){
+    const line=document.createElement('div');
+    line.className='stage-line scoring';
+    line.textContent=content;
+    out.appendChild(line);
+    return;
+  }
+  
+  if(type==='answer'){
+    clearStreamingUI();
+    out.textContent=content;
+    // Extract and display timestamp if present
+    const timestampMatch=content.match(/Fetched at:\s*([^\n]+)/);
+    if(timestampMatch){
+      const ts=document.createElement('div');
+      ts.className='answer-timestamp';
+      ts.textContent='Fetch time: '+timestampMatch[1];
+      out.appendChild(ts);
+    }
+    return;
+  }
+  
+  if(type==='error'){
+    out.innerHTML='<span style="color:var(--red)">ERROR: '+content+'</span>';
+    return;
+  }
+}
+
+// ══════════════════════════════════════════════════════
+// MAIN CHAT — SSE STREAMING
+// ══════════════════════════════════════════════════════
+async function sendCmdText(val){
+  processingCmd=true;
+  document.getElementById('panel-label').textContent='SCORPION RESPONSE CORE';
+  const out=document.getElementById('output');
+  out.className='out-think';
+  out.innerHTML='<span style="color:var(--amber)">Processing…</span>';
+  addLog('u',val);
+  conversationHistory.push({role:'user',text:val});
+  if(conversationHistory.length>MAX_HISTORY)conversationHistory=conversationHistory.slice(-MAX_HISTORY);
+  
+  try{
+    const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const response=await fetch('/api/chat',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-scorpion-key':SCORPION_SECRET},
+      body:JSON.stringify({messages:conversationHistory,timezone:tz})
+    });
+    
+    if(!response.ok){
+      processingCmd=false;
+      out.className='';
+      out.innerHTML='<span style="color:var(--red)">HTTP '+response.status+'</span>';
+      setOrbState(idleState(),'ERROR');
+      return;
+    }
+    
+    const reader=response.body.getReader();
+    const decoder=new TextDecoder();
+    let fullReply='',brainLabel='AI';
+    
+    setOrbState('thinking','REASONING...');
+    
+    try{
+      while(true){
+        const {done,value}=await reader.read();
+        if(done)break;
+        const chunk=decoder.decode(value);
+        const lines=chunk.split('\n').filter(l=>l.trim());
+        for(const line of lines){
+          if(line.startsWith('data: ')){
+            try{
+              const json=JSON.parse(line.slice(6));
+              if(json.type==='thinking'){
+                renderStage('thinking',json.content);
+                setOrbState('thinking','REASONING: '+json.content.toUpperCase().slice(0,30));
+              }
+              else if(json.type==='searching'){
+                renderStage('searching',json.content);
+                setOrbState('thinking','SEARCHING: '+json.content.toUpperCase().slice(0,30));
+              }
+              else if(json.type==='fetching'){
+                renderStage('fetching',json.content);
+                setOrbState('thinking','FETCHING...');
+              }
+              else if(json.type==='scoring'){
+                renderStage('scoring',json.content);
+                setOrbState('thinking','SCORING...');
+              }
+              else if(json.type==='answer'){
+                fullReply=json.content;
+                if(json.brain)brainLabel=json.brain;
+                renderStage('answer',fullReply);
+                document.getElementById('ft-brain').textContent='BRAIN: '+brainLabel;
+                document.getElementById('m-brain').textContent=brainLabel;
+              }
+              else if(json.type==='error'){
+                renderStage('error',json.content);
+              }
+            }catch(e){}
+          }
+        }
+      }
+    }catch(streamErr){
+      processingCmd=false;
+      out.className='';
+      out.innerHTML='<span style="color:var(--red)">Signal lost Sir, retrying…</span>';
+      setOrbState(idleState(),'ERROR');
+      return;
+    }
+    
+    processingCmd=false;
+    out.className='';
+    conversationHistory.push({role:'assistant',text:fullReply});
+    if(conversationHistory.length>MAX_HISTORY)conversationHistory=conversationHistory.slice(-MAX_HISTORY);
+    bumpQ();
+    addLog('a',fullReply,brainLabel);
+    speakReply(fullReply);
+    
+  }catch(e){
+    processingCmd=false;
+    out.className='';
+    out.innerHTML='<span style="color:var(--red)">ERROR: '+e.message+'</span>';
+    setOrbState(idleState(),'ERROR');
+  }
+}
+
+async function sendCmd(){
+  unlockAudio();
+  const val=document.getElementById('cmd').value.trim();
+  if(!val)return;
+  document.getElementById('cmd').value='';
+  if(_orbImgShown)clearOrbImage();
+  routeCommand(val);
+}
+document.getElementById('cmd').addEventListener('keydown',e=>{if(e.key==='Enter')sendCmd();});
 
 // ══════════════════════════════════════════════════════
 // YOUTUBE ENGINE
@@ -1347,9 +1501,6 @@ async function speakReply(text){
           URL.revokeObjectURL(url);_currentAudio=null;
           if(window._micGate)window._micGate(false);
           if(state==='speaking'){
-            // If we were speaking a clarification question, return to the
-            // 'clarifying' state (not idle/listening) so the orb visually
-            // shows we're still waiting on the user's answer.
             if(wasClarifying&&_awaitingIntentClarify) setOrbState('clarifying','AWAITING CLARIFICATION...');
             else setOrbState(idleState(), idleLabel());
           }
@@ -1383,7 +1534,7 @@ async function speakReply(text){
 function handleSing(cmd){
   processingCmd=true;setOrbState('thinking','COMPOSING…');addLog('u',cmd);
   conversationHistory.push({role:'user',text:cmd});
-  fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:conversationHistory})})
+  fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json','x-scorpion-key':SCORPION_SECRET},body:JSON.stringify({messages:conversationHistory})})
     .then(r=>r.json()).then(data=>{
       processingCmd=false;
       if(data.error){document.getElementById('output').textContent='Error: '+data.error;setOrbState(idleState(),idleLabel());return;}
@@ -1393,52 +1544,6 @@ function handleSing(cmd){
       speakReply(data.reply);
     }).catch(e=>{processingCmd=false;document.getElementById('output').textContent='Error: '+e.message;setOrbState(idleState(),idleLabel());});
 }
-
-// ══════════════════════════════════════════════════════
-// AI CHAT
-// ══════════════════════════════════════════════════════
-async function sendCmdText(val){
-  processingCmd=true;
-  document.getElementById('panel-label').textContent='SCORPION RESPONSE CORE';
-  const out=document.getElementById('output');out.className='out-think';out.innerHTML='<span style="color:var(--amber)">Processing…</span>';
-  addLog('u',val);
-  conversationHistory.push({role:'user',text:val});
-  if(conversationHistory.length>MAX_HISTORY)conversationHistory=conversationHistory.slice(-MAX_HISTORY);
-  try{
-    const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
-    const response=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:conversationHistory,timezone:tz})});
-    const data=await response.json();processingCmd=false;
-    if(data.error){out.className='';out.innerHTML=`<span style="color:var(--red)">${data.error}</span>`;setOrbState(idleState(),'ERROR');return;}
-    const brain=data.brain||'AI';
-    out.className='';
-    if(IMAGE_TRIGGERS.test(val)){
-      const imagePrompt=val.replace(/^(explain|show me|what is|how does|diagram of|illustrate|show|demonstrate)\s*/i,'').trim()||val;
-      const imgUrl=`/api/generate-image?prompt=${encodeURIComponent(imagePrompt)}`;
-      out.innerHTML=`<img src="${imgUrl}" style="width:100%;border-radius:4px;border:1px solid var(--border);margin-bottom:8px" alt="diagram" onerror="this.style.display='none'">${data.reply}`;
-    }else{
-      out.textContent=data.reply;
-    }
-    document.getElementById('ft-brain').textContent='BRAIN: '+brain+' // ONLINE';
-    document.getElementById('m-brain').textContent=brain;
-    conversationHistory.push({role:'assistant',text:data.reply});
-    if(conversationHistory.length>MAX_HISTORY)conversationHistory=conversationHistory.slice(-MAX_HISTORY);
-    bumpQ();addLog('a',data.reply,brain);
-    speakReply(data.reply);
-  }catch(e){
-    processingCmd=false;out.className='';out.innerHTML=`<span style="color:var(--red)">ERROR: ${e.message}</span>`;
-    setOrbState(idleState(),'ERROR');
-  }
-}
-
-async function sendCmd(){
-  unlockAudio();
-  const val=document.getElementById('cmd').value.trim();
-  if(!val)return;
-  document.getElementById('cmd').value='';
-  if(_orbImgShown)clearOrbImage();
-  routeCommand(val);
-}
-document.getElementById('cmd').addEventListener('keydown',e=>{if(e.key==='Enter')sendCmd();});
 
 // ══════════════════════════════════════════════════════
 // ACTION LOG
@@ -1475,7 +1580,7 @@ function clearLog(){
 async function bootGreeting(){
   try{
     const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
-    const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'greeting',timezone:tz,messages:[{role:'user',text:'greet me'}]})});
+    const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json','x-scorpion-key':SCORPION_SECRET},body:JSON.stringify({mode:'greeting',timezone:tz,messages:[{role:'user',text:'greet me'}]})});
     const data=await r.json();
     if(data.reply){
       document.getElementById('output').textContent=data.reply;
