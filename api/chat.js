@@ -1,6 +1,21 @@
 // ============================================================
-// CHAT API HANDLER — SCORPION AI BRAIN v5.3.0
+// CHAT API HANDLER — SCORPION AI BRAIN v5.4.0
 // ============================================================
+// v5.4.0 Fixes:
+//   - YouTube search now runs for EVERY chat query, not just ones
+//     classified as isMusic. Previously a general question (e.g.
+//     "latest Obama speech in Chicago") never even checked YouTube
+//     unless it tripped the music-intent regex, so the model had no
+//     video context to offer unless you literally said "song"/"play"/
+//     etc. Now every normal chat turn gathers YouTube results in
+//     parallel with web search, and they're appended to context
+//     regardless of intent.
+//   - Added an INSTRUCTION line to the 'general' and 'news' role
+//     prompts so the model actually surfaces relevant YouTube finds
+//     ("I also found a video on this... want me to play it, Sir?")
+//     instead of silently ignoring the YOUTUBE SEARCH RESULTS block
+//     when the topic isn't classified as music.
+//
 // v5.3.0 Fixes:
 //   - CRITICAL: Added youtubeSearch() helper that queries /api/youtube
 //     during the play research phase (BEFORE generic web search when
@@ -26,7 +41,7 @@
 //     bullet prefixes are preserved instead of stripped.
 //
 // Author  : Dr. Davie Mwangi
-// Version : 5.3.0
+// Version : 5.4.0
 // ============================================================
 
 const readMemory  = async () => '';
@@ -282,6 +297,11 @@ export default async function handler(req, res) {
     // v5.3.0: queries /api/youtube directly to validate what actually
     // exists on YouTube. Used during play research phase to ensure
     // extract_play_query references real videos, not guessed ones.
+    //
+    // v5.4.0: this same helper is now also called for EVERY normal
+    // chat query (see the main Promise.all below) — not just ones
+    // classified as music — so any question can surface relevant
+    // video coverage if it exists, not just "play X" / song requests.
     async function youtubeSearch(q) {
       try {
         const r = await fetch('http://localhost:3000/api/youtube', {
@@ -509,7 +529,8 @@ INSTRUCTION:
 - ALWAYS state fetch timestamp and source freshness ([HIGH CONFIDENCE] = today/yesterday, [MEDIUM] = 1-7 days, [LOW] = older)
 - If sources contradict, explicitly say which source and analyze why (different measurement? old data? bias?)
 - Warn: "This is 30+ days old, Sir — may not reflect current status."
-- Never state unverified claims as fact.`,
+- Never state unverified claims as fact.
+- If a YOUTUBE SEARCH RESULTS block is present and a listed video is genuinely a real, relevant recording of the event/person/topic discussed (e.g. an actual speech, interview, or news clip — not a random unrelated result), mention it naturally: "I also found footage of this — [exact title] by [channel]. Would you like me to play it, Sir?" Only offer this when it's a real match; never invent or guess a title that isn't in the YOUTUBE SEARCH RESULTS block.`,
 
         crypto: `${basePersonality}
 
@@ -546,7 +567,10 @@ You are a conversationalist and explainer. You:
 - Answer questions clearly and conversationally
 - Break complex topics into digestible pieces
 - Know when to go deep and when to stay surface-level
-- Engage naturally without being robotic`
+- Engage naturally without being robotic
+
+INSTRUCTION:
+- If a YOUTUBE SEARCH RESULTS block is present and a listed video is genuinely relevant to the question (a real, on-topic match — not a coincidental keyword hit), you may mention it: "I also found a video on this, [exact title] by [channel]. Would you like me to play it, Sir?" Only do this when it adds real value to your answer — skip it for results that aren't a meaningful match, and never invent a title that isn't actually in the YOUTUBE SEARCH RESULTS block.`
       };
 
       return roles[intent.primary] || roles.general;
@@ -734,6 +758,12 @@ Output ONLY that one sentence. No preamble, no extra text.`;
 
       writeChunk('fetching', 'Fetching live data and web results...');
 
+      // v5.4.0: youtubeSearch(userQuery) now runs unconditionally for
+      // EVERY chat turn, not just when intent.isMusic. This means any
+      // question — news, general knowledge, whatever — also gets a
+      // chance to surface real, verified YouTube coverage if it exists
+      // (e.g. "latest Obama speech in Chicago" now checks YouTube even
+      // though that query never trips the music-intent regex).
       const [rawWebData, cryptoData, metalData, forexData, weatherData, sportsData, youtubeData] = await Promise.all([
         runSearchChain(plannedQueries, intent),
         getCrypto(userQuery),
@@ -741,7 +771,7 @@ Output ONLY that one sentence. No preamble, no extra text.`;
         getForex(userQuery),
         getWeather(userQuery),
         getSports(userQuery),
-        intent.isMusic ? youtubeSearch(userQuery) : Promise.resolve(null)
+        youtubeSearch(userQuery)
       ]);
 
       if (cryptoData)  writeChunk('fetching', 'Live crypto data received — ' + fetchTimestamp());
@@ -749,7 +779,7 @@ Output ONLY that one sentence. No preamble, no extra text.`;
       if (forexData)   writeChunk('fetching', 'Live forex rates received — ' + fetchTimestamp());
       if (weatherData) writeChunk('fetching', 'Live weather data received — ' + fetchTimestamp());
       if (sportsData)  writeChunk('fetching', 'Live sports data received — ' + fetchTimestamp());
-      if (youtubeData) writeChunk('fetching', 'YouTube music search complete — ' + fetchTimestamp());
+      if (youtubeData) writeChunk('fetching', 'YouTube search complete — ' + fetchTimestamp());
       if (rawWebData)  writeChunk('fetching', 'Web search complete — ' + fetchTimestamp());
 
       writeChunk('scoring', 'Analysing and scoring sources for confidence...');
