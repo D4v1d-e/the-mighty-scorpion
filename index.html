@@ -174,74 +174,6 @@ footer{border-top:1px solid var(--border);padding:5px 0;display:flex;justify-con
 #continue-banner.show{display:block}
 #continue-countdown{color:var(--G);font-size:10px;margin-top:4px}
 
-/* ══════════════════════════════════════════════
-   SONG CLARIFICATION MODAL  (song requests only)
-   ══════════════════════════════════════════════ */
-#clarify-modal{
-  display:none;position:fixed;inset:0;z-index:10000;
-  background:rgba(0,0,0,.82);backdrop-filter:blur(4px);
-  align-items:center;justify-content:center;
-}
-#clarify-modal.show{display:flex;}
-#clarify-box{
-  background:var(--panel);border:1px solid var(--G);border-radius:6px;
-  padding:24px 28px;max-width:480px;width:90%;
-  box-shadow:0 0 40px rgba(0,255,102,.25);position:relative;
-}
-#clarify-box::before{
-  content:'';position:absolute;top:0;left:0;right:0;height:2px;
-  background:linear-gradient(90deg,transparent,var(--G),transparent);
-}
-#clarify-label{
-  font-family:var(--display);font-size:7px;font-weight:700;
-  letter-spacing:.3em;color:var(--Gdim);margin-bottom:12px;
-  display:flex;align-items:center;gap:6px;
-}
-#clarify-label::before{
-  content:'';width:5px;height:5px;border-radius:50%;
-  background:var(--amber);box-shadow:0 0 8px var(--amber);
-}
-#clarify-question{
-  font-size:15px;color:var(--G);font-family:var(--body);
-  margin-bottom:16px;line-height:1.6;
-  text-shadow:0 0 10px rgba(0,255,102,.3);
-}
-#clarify-options{display:flex;flex-direction:column;gap:8px;margin-bottom:16px}
-.clarify-opt{
-  background:transparent;border:1px solid var(--border);border-radius:4px;
-  color:var(--text);font-family:var(--body);font-size:13px;
-  padding:9px 14px;cursor:pointer;text-align:left;
-  transition:border-color .2s,background .2s;
-  display:flex;align-items:center;gap:10px;
-}
-.clarify-opt:hover,.clarify-opt:focus{
-  border-color:var(--G);background:rgba(0,255,102,.07);outline:none;
-}
-.clarify-opt-num{
-  font-family:var(--display);font-size:7px;font-weight:700;
-  letter-spacing:.2em;color:var(--Gdim);min-width:18px;
-}
-#clarify-input-row{display:flex;gap:8px;margin-top:4px}
-#clarify-input{
-  flex:1;background:#010f07;border:1px solid var(--border);border-radius:3px;
-  color:var(--text);font-family:var(--body);font-size:13px;padding:7px 10px;
-  outline:none;caret-color:var(--G);
-}
-#clarify-input:focus{border-color:rgba(0,255,102,.35)}
-#clarify-input::placeholder{color:var(--muted);font-size:12px}
-#clarify-send{
-  background:transparent;border:1px solid rgba(0,255,102,.3);border-radius:3px;
-  color:var(--G);font-family:var(--display);font-size:6.5px;font-weight:700;
-  letter-spacing:.2em;padding:7px 12px;cursor:pointer;white-space:nowrap;
-}
-#clarify-send:hover{background:rgba(0,255,102,.1)}
-#clarify-cancel{
-  display:block;width:100%;margin-top:12px;background:none;border:none;
-  cursor:pointer;font-family:var(--mono);font-size:8px;
-  color:var(--muted);letter-spacing:.12em;
-}
-#clarify-cancel:hover{color:var(--red)}
-
 @media(max-width:1100px){.bottom-tri{grid-template-columns:240px 1fr 210px}}
 @media(max-width:900px){
   .hero{grid-template-columns:1fr}.side-panels{flex-direction:row;flex-wrap:wrap}
@@ -265,20 +197,6 @@ footer{border-top:1px solid var(--border);padding:5px 0;display:flex;justify-con
   <span id="continue-countdown">AUTO-CONTINUING IN 3…</span>
 </div>
 
-<!-- SONG CLARIFICATION MODAL (song requests only) -->
-<div id="clarify-modal">
-  <div id="clarify-box">
-    <div id="clarify-label">TRACK IDENTIFICATION — CLARIFICATION NEEDED</div>
-    <div id="clarify-question">Which song did you mean, Sir?</div>
-    <div id="clarify-options"></div>
-    <div id="clarify-input-row">
-      <input type="text" id="clarify-input" placeholder="Or type your answer here…">
-      <button id="clarify-send" onclick="submitClarification()">GO ▶</button>
-    </div>
-    <button id="clarify-cancel" onclick="dismissClarify()">[ CANCEL ]</button>
-  </div>
-</div>
-
 <div id="app">
 <header>
   <div class="logo">
@@ -297,7 +215,7 @@ footer{border-top:1px solid var(--border);padding:5px 0;display:flex;justify-con
     </svg>
     <div>
       <div class="logo-main">THE MIGHTY SCORPION</div>
-      <div class="logo-sub">NEURAL CORE v4.1.1 // JARVIS INTELLIGENCE MATRIX</div>
+      <div class="logo-sub">NEURAL CORE v4.2.0 // JARVIS INTELLIGENCE MATRIX</div>
     </div>
   </div>
   <div class="hdr-right">
@@ -611,14 +529,11 @@ const MAX_HISTORY=20;
 // Interruption state
 let _interrupted=false,_interruptedText='',_continueTimer=null;
 
-// Song clarification state (modal-based)
+// Voice-only clarification state (no modal — used for BOTH song and general intent clarification)
+let _awaitingClarify=false;
+let _clarifyKind=null;          // 'song' | 'intent'
 let _clarifyOriginalQuery='';
 let _clarifyOptions=[];
-
-// General chat clarification state (inline, no modal)
-let _awaitingIntentClarify=false;
-let _intentOriginalQuery='';
-let _intentOptions=[];
 
 // Single audio channel
 let _currentAudio=null;
@@ -740,67 +655,101 @@ function clearContinueBanner(){
   _interrupted=false;_interruptedText='';
 }
 
-// ══════════════════════════════════════════════════════
-// SONG CLARIFICATION MODAL
-// ══════════════════════════════════════════════════════
-function showClarifyModal(question, options, originalQuery){
-  _clarifyOriginalQuery = originalQuery;
-  _clarifyOptions = options;
+// ══════════════════════════════════════════════════════════════
+// VOICE-ONLY CLARIFICATION (no modal — Jarvis just speaks & listens)
+// Used for BOTH song-resolution ambiguity and general intent ambiguity.
+// ══════════════════════════════════════════════════════════════
+function showClarifyVoice(kind, question, options, originalQuery){
+  _awaitingClarify       = true;
+  _clarifyKind           = kind;            // 'song' | 'intent'
+  _clarifyOriginalQuery  = originalQuery;
+  _clarifyOptions        = options || [];
 
-  document.getElementById('clarify-question').textContent = question;
+  const out = document.getElementById('output');
+  out.className = 'clarify-active';
+  out.innerHTML = '';
 
-  const container = document.getElementById('clarify-options');
-  container.innerHTML = '';
-  options.forEach((opt, i) => {
-    const btn = document.createElement('button');
-    btn.className = 'clarify-opt';
-    btn.innerHTML = `<span class="clarify-opt-num">0${i+1}</span><span>${opt}</span>`;
-    btn.onclick = () => pickClarifyOption(opt);
-    container.appendChild(btn);
-  });
+  const qDiv = document.createElement('div');
+  qDiv.textContent = question;
+  out.appendChild(qDiv);
 
-  document.getElementById('clarify-input').value = '';
-  document.getElementById('clarify-modal').classList.add('show');
-  setTimeout(()=>document.getElementById('clarify-input').focus(), 150);
+  if(_clarifyOptions.length){
+    const optWrap = document.createElement('div');
+    optWrap.className = 'clarify-options-inline';
+    _clarifyOptions.forEach((opt,i)=>{
+      const b = document.createElement('button');
+      b.className = 'clarify-opt-inline';
+      b.innerHTML = `<span class="opt-num">0${i+1}</span><span>${opt}</span>`;
+      b.onclick = ()=>{ pickClarifyOption(opt); };
+      optWrap.appendChild(b);
+    });
+    out.appendChild(optWrap);
+  }
 
+  document.getElementById('cmd').classList.add('awaiting-clarify');
+  document.getElementById('cmd').placeholder = 'Just say your answer, Sir, or type it…';
+  setOrbState('clarifying', 'AWAITING CLARIFICATION...');
+  addLog('q', question, 'CLARIFY');
+
+  // Speak the question — this is the whole point: Jarvis asks out loud,
+  // mic stays open (always-on listening keeps running), and the next
+  // thing the user says is treated as the answer. No popup, no tapping.
   speakReply(question);
 }
 
-function hideClarifyModal(){
-  document.getElementById('clarify-modal').classList.remove('show');
-}
-
-function dismissClarify(){
-  hideClarifyModal();
-  processingCmd = false;
-  setOrbState(idleState(), idleLabel());
-  document.getElementById('output').textContent = 'Track search cancelled, Sir.';
+function clearClarifyUI(){
+  _awaitingClarify = false;
+  _clarifyKind = null;
+  _clarifyOriginalQuery = '';
+  _clarifyOptions = [];
+  document.getElementById('cmd').classList.remove('awaiting-clarify');
+  document.getElementById('cmd').placeholder = "Speak or type — 'play X', 'weather in X', 'explain X'…";
+  document.getElementById('output').className = '';
 }
 
 function pickClarifyOption(optText){
-  hideClarifyModal();
+  const kind = _clarifyKind;
+  const originalQuery = _clarifyOriginalQuery;
+  clearClarifyUI();
   if(/something else|describe|i'll|other/i.test(optText)){
-    document.getElementById('output').textContent = 'Please type what you mean, Sir.';
+    document.getElementById('output').textContent = 'Go ahead and tell me exactly what you mean, Sir.';
     document.getElementById('cmd').focus();
-    processingCmd = false;
+    setOrbState(idleState(), idleLabel());
     return;
   }
   addLog('u', optText);
-  handleYouTube(optText, true);
+  if(kind==='song') handleMediaPlay(optText, true);
+  else resolveIntentAnswer(optText, originalQuery);
 }
 
-function submitClarification(){
-  const answer = document.getElementById('clarify-input').value.trim();
-  if(!answer) return;
-  hideClarifyModal();
-  resolveClarification(answer);
+// Single entry point for ANY spoken/typed reply while a clarification is pending.
+function submitClarifyAnswer(answer){
+  if(!_awaitingClarify) return false;
+  const kind = _clarifyKind;
+  const originalQuery = _clarifyOriginalQuery;
+  const opts = _clarifyOptions;
+
+  // Map "one/two/three/first/second/third/1/2/3" to an option directly
+  const numMatch = answer.trim().match(/^(one|two|three|1|2|3|first|second|third)\b/i);
+  if(numMatch){
+    const idx={one:0,1:0,first:0,two:1,2:1,second:1,three:2,3:2,third:2}[numMatch[1].toLowerCase()];
+    if(opts[idx]){
+      clearClarifyUI();
+      addLog('u', opts[idx]);
+      if(kind==='song') handleMediaPlay(opts[idx], true);
+      else resolveIntentAnswer(opts[idx], originalQuery);
+      return true;
+    }
+  }
+
+  clearClarifyUI();
+  addLog('u', answer);
+  if(kind==='song') resolveSongClarification(answer, originalQuery);
+  else resolveIntentAnswer(answer, originalQuery);
+  return true;
 }
 
-document.getElementById('clarify-input').addEventListener('keydown', e=>{
-  if(e.key==='Enter') submitClarification();
-});
-
-async function resolveClarification(answer){
+async function resolveSongClarification(answer, originalQuery){
   processingCmd = true;
   setOrbState('thinking', 'RESOLVING YOUR ANSWER...');
   document.getElementById('output').textContent = 'Confirming track…';
@@ -811,9 +760,9 @@ async function resolveClarification(answer){
       headers:{'Content-Type':'application/json','x-scorpion-key':SCORPION_SECRET},
       body: JSON.stringify({
         mode:'resolve_song',
-        query: _clarifyOriginalQuery,
+        query: originalQuery,
         clarificationAnswer: answer,
-        originalQuery: _clarifyOriginalQuery
+        originalQuery: originalQuery
       })
     });
     const data = await r.json();
@@ -821,74 +770,14 @@ async function resolveClarification(answer){
 
     const finalQuery = data.searchQuery || answer;
     addLog('a', 'Identified: ' + finalQuery, 'BRAIN');
-    handleYouTube(finalQuery, true);
+    handleMediaPlay(finalQuery, true);
   }catch(e){
     processingCmd = false;
-    handleYouTube(answer, false);
+    handleMediaPlay(answer, false);
   }
 }
 
-// ══════════════════════════════════════════════════════════
-// GENERAL CHAT CLARIFICATION (inline, no modal)
-// ══════════════════════════════════════════════════════════
-function showIntentClarifyInline(question, options, originalQuery){
-  _awaitingIntentClarify = true;
-  _intentOriginalQuery   = originalQuery;
-  _intentOptions         = options || [];
-
-  const out = document.getElementById('output');
-  out.className = 'clarify-active';
-  out.innerHTML = '';
-
-  const qDiv = document.createElement('div');
-  qDiv.textContent = question;
-  out.appendChild(qDiv);
-
-  if(_intentOptions.length){
-    const optWrap = document.createElement('div');
-    optWrap.className = 'clarify-options-inline';
-    _intentOptions.forEach((opt,i)=>{
-      const b = document.createElement('button');
-      b.className = 'clarify-opt-inline';
-      b.innerHTML = `<span class="opt-num">0${i+1}</span><span>${opt}</span>`;
-      b.onclick = ()=>{ pickIntentOption(opt); };
-      optWrap.appendChild(b);
-    });
-    out.appendChild(optWrap);
-  }
-
-  document.getElementById('cmd').classList.add('awaiting-clarify');
-  document.getElementById('cmd').placeholder = 'Type your answer, or just speak it, Sir…';
-  setOrbState('clarifying', 'AWAITING CLARIFICATION...');
-  addLog('q', question, 'CLARIFY');
-
-  speakReply(question);
-}
-
-function clearIntentClarifyUI(){
-  _awaitingIntentClarify = false;
-  _intentOriginalQuery = '';
-  _intentOptions = [];
-  document.getElementById('cmd').classList.remove('awaiting-clarify');
-  document.getElementById('cmd').placeholder = "Speak or type — 'play X', 'weather in X', 'explain X'…";
-  document.getElementById('output').className = '';
-}
-
-function pickIntentOption(optText){
-  clearIntentClarifyUI();
-  if(/something else/i.test(optText)){
-    document.getElementById('output').textContent = 'Go ahead and tell me exactly what you mean, Sir.';
-    document.getElementById('cmd').focus();
-    setOrbState(idleState(), idleLabel());
-    return;
-  }
-  addLog('u', optText);
-  resolveIntentAnswer(optText);
-}
-
-async function resolveIntentAnswer(answer){
-  const originalQuery = _intentOriginalQuery;
-  clearIntentClarifyUI();
+async function resolveIntentAnswer(answer, originalQuery){
   processingCmd = true;
   setOrbState('thinking', 'MERGING YOUR ANSWER...');
   document.getElementById('output').textContent = 'One moment, Sir…';
@@ -974,35 +863,9 @@ function initAndStartListening(){
     }
     if(ft.trim()&&!processingCmd){
 
-      // ── Song clarification modal showing: voice = answer ──
-      if(document.getElementById('clarify-modal').classList.contains('show')){
-        const answer=ft.trim();
-        const numMatch=answer.match(/^(one|two|three|1|2|3|first|second|third)/i);
-        if(numMatch){
-          const idx={one:0,1:0,first:0,two:1,2:1,second:1,three:2,3:2,third:2}[numMatch[1].toLowerCase()];
-          if(_clarifyOptions[idx]){
-            hideClarifyModal();
-            pickClarifyOption(_clarifyOptions[idx]);
-            return;
-          }
-        }
-        hideClarifyModal();
-        resolveClarification(answer);
-        return;
-      }
-
-      // ── General chat clarification awaiting voice answer ──
-      if(_awaitingIntentClarify){
-        const answer=ft.trim();
-        const numMatch=answer.match(/^(one|two|three|1|2|3|first|second|third)\b/i);
-        if(numMatch){
-          const idx={one:0,1:0,first:0,two:1,2:1,second:1,three:2,3:2,third:2}[numMatch[1].toLowerCase()];
-          if(_intentOptions[idx]){
-            pickIntentOption(_intentOptions[idx]);
-            return;
-          }
-        }
-        resolveIntentAnswer(answer);
+      // ── Any pending clarification (song or intent) consumes the next voice answer ──
+      if(_awaitingClarify){
+        submitClarifyAnswer(ft.trim());
         return;
       }
 
@@ -1051,9 +914,9 @@ async function speakStatus(key){
 function routeCommand(cmd){
   const c=cmd.toLowerCase().trim();
 
-  // If awaiting intent clarification answer
-  if(_awaitingIntentClarify){
-    resolveIntentAnswer(cmd);
+  // If awaiting any clarification answer (typed instead of spoken)
+  if(_awaitingClarify){
+    submitClarifyAnswer(cmd);
     return;
   }
 
@@ -1108,7 +971,8 @@ async function checkIntentThenSend(cmd){
     processingCmd = false;
 
     if(data.status === 'unclear'){
-      showIntentClarifyInline(
+      showClarifyVoice(
+        'intent',
         data.question || 'Could you clarify what you mean, Sir?',
         data.options || [],
         cmd
@@ -1131,15 +995,58 @@ async function checkIntentThenSend(cmd){
 }
 
 // ══════════════════════════════════════════════════════
-// RESOLVE AND PLAY
+// MEDIA TYPE ROUTING — "play X" can mean song, speech, movie,
+// documentary, sports clip, etc. Ask the brain what kind it is
+// first (via mode:'resolve_video' which already exists server-side),
+// then route to the right resolver. Songs additionally go through
+// the song-clarity resolver so ambiguous tracks still get a
+// "did you mean X or Y" voice check before playing.
 // ══════════════════════════════════════════════════════
 async function resolveAndPlay(rawQuery){
   if(!rawQuery||!rawQuery.trim()){document.getElementById('output').textContent='What would you like me to play, Sir?';return;}
   processingCmd=true;
+  setOrbState('thinking','IDENTIFYING MEDIA TYPE...');
+  document.getElementById('output').textContent='Working out what you mean by "' + rawQuery + '"…';
+  addLog('u','play '+rawQuery);
+
+  try{
+    const r=await fetch('/api/chat',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-scorpion-key':SCORPION_SECRET},
+      body:JSON.stringify({mode:'resolve_video', query:rawQuery})
+    });
+    const data=await r.json();
+
+    const isSongLike = data.status==='resolved' && data.contentType==='music';
+
+    if(isSongLike){
+      // Route through the dedicated song-clarity resolver, which can
+      // ask "did you mean X or Y" before playing.
+      resolveSong(rawQuery);
+      return;
+    }
+
+    if(data.status==='resolved' && data.searchQuery){
+      processingCmd=false;
+      addLog('a','Identified ('+data.contentType+'): '+data.title,'BRAIN');
+      handleMediaPlay(data.searchQuery, true);
+      return;
+    }
+
+    // Fallback — try the song resolver, then plain search
+    resolveSong(rawQuery);
+
+  }catch(e){
+    processingCmd=false;
+    handleMediaPlay(rawQuery, false);
+  }
+}
+
+async function resolveSong(rawQuery){
+  processingCmd=true;
   speakStatus('resolving');
   setOrbState('thinking','ANALYSING TRACK REQUEST...');
   document.getElementById('output').textContent='Interpreting: "' + rawQuery + '"…';
-  addLog('u','play '+rawQuery);
 
   try{
     const r=await fetch('/api/chat',{
@@ -1155,26 +1062,22 @@ async function resolveAndPlay(rawQuery){
       if(finalQuery.toLowerCase()!==rawQuery.toLowerCase()){
         addLog('a','Identified: '+finalQuery,'BRAIN');
       }
-      handleYouTube(finalQuery, true);
+      handleMediaPlay(finalQuery, true);
       return;
     }
 
     if(data.status==='unclear'){
       processingCmd=false;
-      speakStatus('clarifying');
-      setOrbState(idleState(), alwaysOn?'AWAITING YOUR CHOICE':'AWAITING RESPONSE');
-      document.getElementById('output').textContent = data.question;
-      addLog('a', data.question, 'BRAIN');
-      showClarifyModal(data.question, data.options || [], rawQuery);
+      showClarifyVoice('song', data.question, data.options || [], rawQuery);
       return;
     }
 
     processingCmd=false;
-    handleYouTube(rawQuery, true);
+    handleMediaPlay(rawQuery, true);
 
   }catch(e){
     processingCmd=false;
-    handleYouTube(rawQuery, false);
+    handleMediaPlay(rawQuery, false);
   }
 }
 
@@ -1378,7 +1281,8 @@ window.onYouTubeIframeAPIReady=function(){
   });
 };
 
-async function handleYouTube(query,skipLog){
+// Renamed from handleYouTube -> handleMediaPlay (now generic: songs, speeches, movies, etc.)
+async function handleMediaPlay(query,skipLog){
   if(!query||!query.trim()){document.getElementById('output').textContent='What would you like me to play?';return;}
   processingCmd=true;stopAllSpeech();
   setOrbState('thinking','SEARCHING YOUTUBE...');
@@ -1501,7 +1405,7 @@ async function speakReply(text){
           URL.revokeObjectURL(url);_currentAudio=null;
           if(window._micGate)window._micGate(false);
           if(state==='speaking'){
-            if(wasClarifying&&_awaitingIntentClarify) setOrbState('clarifying','AWAITING CLARIFICATION...');
+            if(wasClarifying&&_awaitingClarify) setOrbState('clarifying','AWAITING CLARIFICATION...');
             else setOrbState(idleState(), idleLabel());
           }
           resolve();
@@ -1510,7 +1414,7 @@ async function speakReply(text){
           URL.revokeObjectURL(url);_currentAudio=null;
           if(window._micGate)window._micGate(false);
           if(state==='speaking'){
-            if(wasClarifying&&_awaitingIntentClarify) setOrbState('clarifying','AWAITING CLARIFICATION...');
+            if(wasClarifying&&_awaitingClarify) setOrbState('clarifying','AWAITING CLARIFICATION...');
             else setOrbState(idleState(), idleLabel());
           }
           resolve();
@@ -1520,7 +1424,7 @@ async function speakReply(text){
       .catch(()=>{
         if(window._micGate)window._micGate(false);
         if(state==='speaking'){
-          if(wasClarifying&&_awaitingIntentClarify) setOrbState('clarifying','AWAITING CLARIFICATION...');
+          if(wasClarifying&&_awaitingClarify) setOrbState('clarifying','AWAITING CLARIFICATION...');
           else setOrbState(idleState(), idleLabel());
         }
         resolve();
@@ -1571,7 +1475,7 @@ function clearLog(){
   document.getElementById('panel-label').textContent='SCORPION RESPONSE CORE';
   conversationHistory=[];
   clearOrbImage();
-  clearIntentClarifyUI();
+  clearClarifyUI();
 }
 
 // ══════════════════════════════════════════════════════
