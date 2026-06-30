@@ -542,11 +542,17 @@ const PLAY_AFFIRM_REGEX=/^(yes|yeah|yep|yup|sure|please|go ahead|do it|play it|a
 // Interruption state
 let _interrupted=false,_interruptedText='',_continueTimer=null;
 
-// Voice-only clarification state (no modal — used for BOTH song and general intent clarification)
+// Voice-only clarification state (no modal — used for song, intent, AND
+// play-choice clarification — see kind values below)
 let _awaitingClarify=false;
-let _clarifyKind=null;          // 'song' | 'intent'
+let _clarifyKind=null;          // 'song' | 'intent' | 'play_choice'
 let _clarifyOriginalQuery='';
 let _clarifyOptions=[];
+
+// Maps option labels -> ready-to-play YouTube search queries when the
+// "play X" research pipeline itself surfaces multiple distinct real
+// candidates (see resolveAndPlay / extract_play_query backend mode).
+let _playChoiceMap=[];
 
 // Single audio channel
 let _currentAudio=null;
@@ -670,11 +676,13 @@ function clearContinueBanner(){
 
 // ══════════════════════════════════════════════════════════════
 // VOICE-ONLY CLARIFICATION (no modal — Jarvis just speaks & listens)
-// Used for BOTH song-resolution ambiguity and general intent ambiguity.
+// Used for song-resolution, general intent ambiguity, AND for the
+// "play" pipeline when research itself turns up multiple distinct
+// real candidates (kind: 'play_choice').
 // ══════════════════════════════════════════════════════════════
 function showClarifyVoice(kind, question, options, originalQuery){
   _awaitingClarify       = true;
-  _clarifyKind           = kind;            // 'song' | 'intent'
+  _clarifyKind           = kind;            // 'song' | 'intent' | 'play_choice'
   _clarifyOriginalQuery  = originalQuery;
   _clarifyOptions        = options || [];
 
@@ -725,6 +733,14 @@ function clearClarifyUI(){
   document.getElementById('output').className = '';
 }
 
+// Resolves a play_choice label back to its ready-to-play searchQuery.
+function _resolvePlayChoiceQuery(optText){
+  const exact = _playChoiceMap.find(o => o.label === optText);
+  if(exact) return exact.searchQuery;
+  const fuzzy = _playChoiceMap.find(o => o.label.toLowerCase().includes(String(optText).toLowerCase()) || String(optText).toLowerCase().includes(o.label.toLowerCase()));
+  return fuzzy ? fuzzy.searchQuery : optText;
+}
+
 function pickClarifyOption(optText){
   const kind = _clarifyKind;
   const originalQuery = _clarifyOriginalQuery;
@@ -738,6 +754,12 @@ function pickClarifyOption(optText){
   // FIX: record the user's chosen answer into conversation memory
   pushHistory('user', optText);
   addLog('u', optText);
+  if(kind==='play_choice'){
+    const sq=_resolvePlayChoiceQuery(optText);
+    _playChoiceMap=[];
+    handleMediaPlay(sq, true);
+    return;
+  }
   if(kind==='song') handleMediaPlay(optText, true);
   else resolveIntentAnswer(optText, originalQuery);
 }
@@ -757,6 +779,12 @@ function submitClarifyAnswer(answer){
       clearClarifyUI();
       pushHistory('user', opts[idx]);
       addLog('u', opts[idx]);
+      if(kind==='play_choice'){
+        const sq=(_playChoiceMap[idx]&&_playChoiceMap[idx].searchQuery)||_resolvePlayChoiceQuery(opts[idx]);
+        _playChoiceMap=[];
+        handleMediaPlay(sq, true);
+        return true;
+      }
       if(kind==='song') handleMediaPlay(opts[idx], true);
       else resolveIntentAnswer(opts[idx], originalQuery);
       return true;
@@ -767,6 +795,12 @@ function submitClarifyAnswer(answer){
   // FIX: record the user's free-form clarifying answer into conversation memory
   pushHistory('user', answer);
   addLog('u', answer);
+  if(kind==='play_choice'){
+    const sq=_resolvePlayChoiceQuery(answer);
+    _playChoiceMap=[];
+    handleMediaPlay(sq, true);
+    return true;
+  }
   if(kind==='song') resolveSongClarification(answer, originalQuery);
   else resolveIntentAnswer(answer, originalQuery);
   return true;
@@ -782,7 +816,7 @@ async function resolveSongClarification(answer, originalQuery){
       method:'POST',
       headers:{'Content-Type':'application/json','x-scorpion-key':SCORPION_SECRET},
       body: JSON.stringify({
-        mode:'resolve_song',
+        mode:'resolve_intent',
         query: originalQuery,
         clarificationAnswer: answer,
         originalQuery: originalQuery,
@@ -792,7 +826,7 @@ async function resolveSongClarification(answer, originalQuery){
     const data = await r.json();
     processingCmd = false;
 
-    const finalQuery = data.searchQuery || answer;
+    const finalQuery = data.resolvedQuery || answer;
     addLog('a', 'Identified: ' + finalQuery, 'BRAIN');
     handleMediaPlay(finalQuery, true);
   }catch(e){
@@ -888,7 +922,7 @@ function initAndStartListening(){
     }
     if(ft.trim()&&!processingCmd){
 
-      // ── Any pending clarification (song or intent) consumes the next voice answer ──
+      // ── Any pending clarification (song / intent / play_choice) consumes the next voice answer ──
       if(_awaitingClarify){
         submitClarifyAnswer(ft.trim());
         return;
@@ -1050,13 +1084,15 @@ async function checkIntentThenSend(cmd){
 }
 
 // ══════════════════════════════════════════════════════
-// MEDIA TYPE ROUTING — "play X" now goes through the EXACT same
-// SSE research pipeline as normal chat (Processing… → Planning
-// search strategy → Running queries → researched answer), with the
-// same staged UI. Once the answer identifies exactly what the user
-// wants, a clean YouTube search query is extracted and the YouTube
-// API is called immediately — no more separate song-clarifier detour
-// that could misfire on non-song content like speeches.
+// MEDIA TYPE ROUTING — "play X" goes through the EXACT same SSE
+// research pipeline as normal chat (Processing… → Planning search
+// strategy → Running queries → Fetching → researched answer), with
+// the same staged UI. Once the answer identifies exactly what the
+// user wants, extract_play_query (backend) decides CLEAR (play
+// immediately) or CHOICE (genuinely distinct candidates found in the
+// research — surfaced inline, same mechanism as intent-clarify).
+// There is no separate song/speech pre-check — the brain decides
+// from real fetched facts, not a guess made before searching.
 // ══════════════════════════════════════════════════════
 async function resolveAndPlay(rawQuery){
   if(!rawQuery||!rawQuery.trim()){document.getElementById('output').textContent='What would you like me to play, Sir?';return;}
@@ -1120,65 +1156,36 @@ async function resolveAndPlay(rawQuery){
       return;
     }
 
-    // Extract a clean, specific YouTube query from the researched answer
+    // Decide: play immediately (CLEAR), or surface real found candidates (CHOICE)
     setOrbState('thinking','LOCKING ONTO TRACK...');
-    let finalQuery=rawQuery;
+    let exData=null;
     try{
       const exR=await fetch('/api/chat',{
         method:'POST',
         headers:{'Content-Type':'application/json','x-scorpion-key':SCORPION_SECRET},
         body:JSON.stringify({mode:'extract_play_query', query:rawQuery, answer:fullReply})
       });
-      const exData=await exR.json();
-      if(exData.searchQuery)finalQuery=exData.searchQuery;
+      exData=await exR.json();
     }catch(e){}
 
     processingCmd=false;
+
+    if(exData && exData.status==='choice' && Array.isArray(exData.options) && exData.options.length>=2){
+      // Real candidates surfaced by research itself — show inline,
+      // same UI as intent clarify, no separate "speech or song" gate.
+      _playChoiceMap = exData.options; // [{label, searchQuery}]
+      const labels = exData.options.map(o=>o.label);
+      showClarifyVoice('play_choice', exData.question || 'Which one, Sir?', labels, rawQuery);
+      return;
+    }
+
+    const finalQuery = (exData && exData.searchQuery) || rawQuery;
     handleMediaPlay(finalQuery, true);
 
   }catch(e){
     processingCmd=false;out.className='';
     out.innerHTML='<span style="color:var(--red)">ERROR: '+e.message+'</span>';
     setOrbState(idleState(),'ERROR');
-  }
-}
-
-async function resolveSong(rawQuery){
-  processingCmd=true;
-  speakStatus('resolving');
-  setOrbState('thinking','ANALYSING TRACK REQUEST...');
-  document.getElementById('output').textContent='Interpreting: "' + rawQuery + '"…';
-
-  try{
-    const r=await fetch('/api/chat',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','x-scorpion-key':SCORPION_SECRET},
-      body:JSON.stringify({mode:'resolve_song', query:rawQuery, messages:conversationHistory})
-    });
-    const data=await r.json();
-
-    if(data.status==='clear'){
-      processingCmd=false;
-      const finalQuery=data.searchQuery||rawQuery;
-      if(finalQuery.toLowerCase()!==rawQuery.toLowerCase()){
-        addLog('a','Identified: '+finalQuery,'BRAIN');
-      }
-      handleMediaPlay(finalQuery, true);
-      return;
-    }
-
-    if(data.status==='unclear'){
-      processingCmd=false;
-      showClarifyVoice('song', data.question, data.options || [], rawQuery);
-      return;
-    }
-
-    processingCmd=false;
-    handleMediaPlay(rawQuery, true);
-
-  }catch(e){
-    processingCmd=false;
-    handleMediaPlay(rawQuery, false);
   }
 }
 
@@ -1380,7 +1387,8 @@ window.onYouTubeIframeAPIReady=function(){
   });
 };
 
-// Renamed from handleYouTube -> handleMediaPlay (now generic: songs, speeches, movies, etc.)
+// Generic media play (songs, speeches, movies, etc.) — final step after
+// the search query has been resolved by resolveAndPlay/extract_play_query.
 async function handleMediaPlay(query,skipLog){
   if(!query||!query.trim()){document.getElementById('output').textContent='What would you like me to play?';return;}
   processingCmd=true;stopAllSpeech();
@@ -1579,6 +1587,7 @@ function clearLog(){
   document.getElementById('output').textContent='SCORPION AI READY.';
   document.getElementById('panel-label').textContent='SCORPION RESPONSE CORE';
   conversationHistory=[];
+  _playChoiceMap=[];
   clearOrbImage();
   clearClarifyUI();
 }
