@@ -12,11 +12,14 @@
 // Body        : { text: string, voiceProfile?: string }
 // Response    : audio/mpeg stream
 //
-// Status phrases are exported so index.html can import them
-// for pre-fetch spoken feedback.
+// v2.2.0 Fix: removed the hard .slice(0, 900) truncation that was
+// silently cutting off replies mid-sentence. The frontend now sends
+// pre-chunked text (see chunkForSpeech in index.html), and this
+// endpoint accepts a much higher ceiling purely as a safety cap, not
+// as a normal-operation truncation point.
 //
 // Author      : Dr. Davie Mwangi
-// Version     : 2.1.0
+// Version     : 2.2.0
 // ============================================================
 
 import { EdgeTTS } from 'edge-tts-universal';
@@ -124,7 +127,12 @@ export default async function handler(req, res) {
     const { text, voiceProfile } = req.body;
     if (!text || !text.trim()) return res.status(400).json({ error: 'No text provided' });
 
-    const clean = cleanText(text).slice(0, 900);
+    // FIX: raised from a hard 900-char truncation to a generous 6000-char
+    // safety ceiling. The frontend already chunks long replies into
+    // ~550-char pieces before calling this endpoint (see chunkForSpeech
+    // in index.html), so in normal operation this never actually cuts
+    // anything off — it only protects against a single pathological chunk.
+    const clean = cleanText(text).slice(0, 6000);
     const profile = VOICE_PROFILES[voiceProfile] || VOICE_PROFILES.jarvis;
 
     res.setHeader('Content-Type', 'audio/mpeg');
@@ -151,7 +159,7 @@ export default async function handler(req, res) {
   } catch (e) {
     if (!res.headersSent) {
       try {
-        const clean = cleanText(req.body?.text || '').slice(0, 900);
+        const clean = cleanText(req.body?.text || '').slice(0, 6000);
         const tts = new EdgeTTS(clean, 'en-GB-RyanNeural');
         const result = await tts.synthesize();
         res.setHeader('Content-Type', 'audio/mpeg');
