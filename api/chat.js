@@ -287,10 +287,33 @@ export default async function handler(req, res) {
       } catch (e) { return null; }
     }
 
+    // ── CREDIBILITY FILTER ────────────────────────────────
+    // Flags channels/titles matching the clickbait-news-farm pattern seen
+    // in practice (e.g. "NR 2 STUDIO" reposting fabricated headlines like
+    // "Trump Orders Immediate National Lockdown") so they get filtered out
+    // before being offered to the user as a real match for play requests.
+    const CLICKBAIT_TITLE_PATTERNS = /\b(stuns everyone|urgent (24|breaking)[- ]hour|america in shock|shocking announcement|you won'?t believe|breaking news live now|world stunned|panic erupts|emergency alert|in shock as|national lockdown)\b/i;
+    const CLICKBAIT_CHANNEL_PATTERNS = /\b(news\s*live|studio\s*\d|\bnr\s*\d\b|live\s*now\s*\d|breaking\s*now)\b/i;
+
+    function isLowCredibilitySource(video) {
+      const title = (video.title || '');
+      const channel = (video.channel || '');
+      if (CLICKBAIT_TITLE_PATTERNS.test(title)) return true;
+      if (CLICKBAIT_CHANNEL_PATTERNS.test(channel)) return true;
+      return false;
+    }
+
     // ── YOUTUBE SEARCH VALIDATION ──────────────────────────
     async function youtubeSearch(q) {
       try {
-        const r = await fetch('http://localhost:3000/api/youtube', {
+        // FIX: localhost:3000 does NOT work between Vercel serverless
+        // function invocations in production — each function call is an
+        // isolated instance with nothing listening on localhost. Use the
+        // real deployment host instead (Vercel injects VERCEL_URL).
+        const base = process.env.VERCEL_URL
+          ? 'https://' + process.env.VERCEL_URL
+          : (process.env.APP_BASE_URL || 'http://localhost:3000');
+        const r = await fetch(base + '/api/youtube', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ query: q }),
@@ -299,8 +322,14 @@ export default async function handler(req, res) {
         if (!r.ok) return null;
         const data = await r.json();
         if (!data.results?.length) return null;
+
+        // FIX: drop clickbait/low-credibility channels before they ever
+        // reach the model as "VERIFIED" results.
+        const filtered = data.results.filter(v => !isLowCredibilitySource(v));
+        const pool = filtered.length ? filtered : data.results;
+
         let result = 'YOUTUBE SEARCH RESULTS (VERIFIED):\n';
-        data.results.slice(0, 5).forEach((v, i) => {
+        pool.slice(0, 5).forEach((v, i) => {
           result += '[' + (i+1) + '] "' + v.title + '" by ' + v.channel + ' (ID: ' + v.videoId + ')\n';
         });
         return result.trim();
