@@ -532,6 +532,13 @@ function pushHistory(role,text){
   if(conversationHistory.length>MAX_HISTORY)conversationHistory=conversationHistory.slice(-MAX_HISTORY);
 }
 
+// Tracks a pending "would you like me to play X?" offer made by the AI in
+// a normal chat answer, so that a simple "yes" afterwards actually triggers
+// real YouTube playback instead of just generating more text pretending to play.
+let _pendingPlayOffer=null; // { query: string, answer: string }
+const PLAY_OFFER_REGEX=/\b(would you like me to play|shall i play|want me to play|like me to play it|should i play|do you want me to play)\b/i;
+const PLAY_AFFIRM_REGEX=/^(yes|yeah|yep|yup|sure|please|go ahead|do it|play it|affirmative|sounds good|do that|please do)\b/i;
+
 // Interruption state
 let _interrupted=false,_interruptedText='',_continueTimer=null;
 
@@ -937,6 +944,15 @@ function routeCommand(cmd){
     submitClarifyAnswer(cmd);
     return;
   }
+
+  // If the AI just offered to play something and the user is confirming —
+  // actually trigger playback instead of letting it fall through to chat.
+  if(_pendingPlayOffer && PLAY_AFFIRM_REGEX.test(c)){
+    triggerPendingPlay(cmd);
+    return;
+  }
+  // Any other command clears a stale pending offer so it can't misfire later.
+  if(_pendingPlayOffer)_pendingPlayOffer=null;
 
   // Memory wipe command
   if(/\b(forget everything|clear your memory|wipe your memory)\b/i.test(c)){
