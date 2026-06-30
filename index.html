@@ -215,7 +215,7 @@ footer{border-top:1px solid var(--border);padding:5px 0;display:flex;justify-con
     </svg>
     <div>
       <div class="logo-main">THE MIGHTY SCORPION</div>
-      <div class="logo-sub">NEURAL CORE v4.2.0 // JARVIS INTELLIGENCE MATRIX</div>
+      <div class="logo-sub">NEURAL CORE v4.2.1 // JARVIS INTELLIGENCE MATRIX</div>
     </div>
   </div>
   <div class="hdr-right">
@@ -526,6 +526,12 @@ let state='idle',alwaysOn=false,recognition=null,audioUnlocked=false,processingC
 let conversationHistory=[];
 const MAX_HISTORY=20;
 
+function pushHistory(role,text){
+  if(!text||!text.trim())return;
+  conversationHistory.push({role,text});
+  if(conversationHistory.length>MAX_HISTORY)conversationHistory=conversationHistory.slice(-MAX_HISTORY);
+}
+
 // Interruption state
 let _interrupted=false,_interruptedText='',_continueTimer=null;
 
@@ -665,6 +671,11 @@ function showClarifyVoice(kind, question, options, originalQuery){
   _clarifyOriginalQuery  = originalQuery;
   _clarifyOptions        = options || [];
 
+  // FIX: record Scorpion's clarifying question into conversation memory
+  // so the *next* normal chat turn (and the resolver prompts) can see
+  // that a clarification was asked, not just the raw answer in isolation.
+  pushHistory('assistant', question);
+
   const out = document.getElementById('output');
   out.className = 'clarify-active';
   out.innerHTML = '';
@@ -717,6 +728,8 @@ function pickClarifyOption(optText){
     setOrbState(idleState(), idleLabel());
     return;
   }
+  // FIX: record the user's chosen answer into conversation memory
+  pushHistory('user', optText);
   addLog('u', optText);
   if(kind==='song') handleMediaPlay(optText, true);
   else resolveIntentAnswer(optText, originalQuery);
@@ -735,6 +748,7 @@ function submitClarifyAnswer(answer){
     const idx={one:0,1:0,first:0,two:1,2:1,second:1,three:2,3:2,third:2}[numMatch[1].toLowerCase()];
     if(opts[idx]){
       clearClarifyUI();
+      pushHistory('user', opts[idx]);
       addLog('u', opts[idx]);
       if(kind==='song') handleMediaPlay(opts[idx], true);
       else resolveIntentAnswer(opts[idx], originalQuery);
@@ -743,6 +757,8 @@ function submitClarifyAnswer(answer){
   }
 
   clearClarifyUI();
+  // FIX: record the user's free-form clarifying answer into conversation memory
+  pushHistory('user', answer);
   addLog('u', answer);
   if(kind==='song') resolveSongClarification(answer, originalQuery);
   else resolveIntentAnswer(answer, originalQuery);
@@ -762,7 +778,8 @@ async function resolveSongClarification(answer, originalQuery){
         mode:'resolve_song',
         query: originalQuery,
         clarificationAnswer: answer,
-        originalQuery: originalQuery
+        originalQuery: originalQuery,
+        messages: conversationHistory
       })
     });
     const data = await r.json();
@@ -790,7 +807,8 @@ async function resolveIntentAnswer(answer, originalQuery){
         mode: 'resolve_intent',
         query: originalQuery,
         clarificationAnswer: answer,
-        originalQuery: originalQuery
+        originalQuery: originalQuery,
+        messages: conversationHistory
       })
     });
     const data = await r.json();
@@ -986,7 +1004,7 @@ async function checkIntentThenSend(cmd){
     const r = await fetch('/api/chat', {
       method:'POST',
       headers:{'Content-Type':'application/json','x-scorpion-key':SCORPION_SECRET},
-      body: JSON.stringify({ mode:'resolve_intent', query: cmd })
+      body: JSON.stringify({ mode:'resolve_intent', query: cmd, messages: conversationHistory })
     });
     const data = await r.json();
     processingCmd = false;
@@ -1022,6 +1040,13 @@ async function checkIntentThenSend(cmd){
 // then route to the right resolver. Songs additionally go through
 // the song-clarity resolver so ambiguous tracks still get a
 // "did you mean X or Y" voice check before playing.
+//
+// FIX: "play X" requests now go through conversation memory the
+// same way normal chat messages do — pushed into conversationHistory
+// before the resolver call, and conversationHistory is sent along
+// with every resolve_video/resolve_song request, so the AI can
+// follow up on its own previous responses (e.g. "play the other
+// version of that", "no, the one you mentioned earlier").
 // ══════════════════════════════════════════════════════
 async function resolveAndPlay(rawQuery){
   if(!rawQuery||!rawQuery.trim()){document.getElementById('output').textContent='What would you like me to play, Sir?';return;}
@@ -1030,11 +1055,15 @@ async function resolveAndPlay(rawQuery){
   document.getElementById('output').textContent='Working out what you mean by "' + rawQuery + '"…';
   addLog('u','play '+rawQuery);
 
+  // FIX: record this play request in conversation memory before resolving,
+  // exactly like sendCmdText does for normal chat messages.
+  pushHistory('user', 'play ' + rawQuery);
+
   try{
     const r=await fetch('/api/chat',{
       method:'POST',
       headers:{'Content-Type':'application/json','x-scorpion-key':SCORPION_SECRET},
-      body:JSON.stringify({mode:'resolve_video', query:rawQuery})
+      body:JSON.stringify({mode:'resolve_video', query:rawQuery, messages:conversationHistory})
     });
     const data=await r.json();
 
@@ -1073,7 +1102,7 @@ async function resolveSong(rawQuery){
     const r=await fetch('/api/chat',{
       method:'POST',
       headers:{'Content-Type':'application/json','x-scorpion-key':SCORPION_SECRET},
-      body:JSON.stringify({mode:'resolve_song', query:rawQuery})
+      body:JSON.stringify({mode:'resolve_song', query:rawQuery, messages:conversationHistory})
     });
     const data=await r.json();
 
@@ -1176,8 +1205,7 @@ async function sendCmdText(val){
   out.className='out-think';
   out.innerHTML='<span style="color:var(--amber)">Processing…</span>';
   addLog('u',val);
-  conversationHistory.push({role:'user',text:val});
-  if(conversationHistory.length>MAX_HISTORY)conversationHistory=conversationHistory.slice(-MAX_HISTORY);
+  pushHistory('user', val);
   
   try{
     const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -1251,8 +1279,7 @@ async function sendCmdText(val){
     
     processingCmd=false;
     out.className='';
-    conversationHistory.push({role:'assistant',text:fullReply});
-    if(conversationHistory.length>MAX_HISTORY)conversationHistory=conversationHistory.slice(-MAX_HISTORY);
+    pushHistory('assistant', fullReply);
     bumpQ();
     addLog('a',fullReply,brainLabel);
     speakReply(fullReply);
@@ -1308,7 +1335,7 @@ async function handleMediaPlay(query,skipLog){
   processingCmd=true;stopAllSpeech();
   setOrbState('thinking','SEARCHING YOUTUBE...');
   document.getElementById('output').textContent='Searching: '+query;
-  if(!skipLog)addLog('u','play '+query);
+  if(!skipLog){addLog('u','play '+query);pushHistory('user','play '+query);}
   try{
     const r=await fetch('/api/youtube',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query})});
     const data=await r.json();processingCmd=false;
@@ -1334,6 +1361,10 @@ function ytPlayIndex(i){
   setYtBadge('playing');
   document.getElementById('output').textContent='Now playing: '+item.title+'\n'+item.channel;
   addLog('a','Now playing: '+item.title,'YOUTUBE');
+  // FIX: record what is now playing into conversation memory, so a later
+  // chat message ("what's playing", "play the other version of that")
+  // can refer back to it.
+  pushHistory('assistant', 'Now playing: ' + item.title + ' by ' + item.channel);
   bumpQ();
   setOrbState(idleState(),idleLabel());
   document.getElementById('ft-brain').textContent='BRAIN: YOUTUBE // STREAMING';
@@ -1366,6 +1397,7 @@ function ytClose(){
 // ══════════════════════════════════════════════════════
 async function handleWeather(cmd){
   processingCmd=true;setOrbState('thinking','CHECKING WEATHER...');addLog('u',cmd);
+  pushHistory('user', cmd);
   const m=cmd.match(/(?:weather|temperature|forecast|rain|sunny|humidity|wind)\s+(?:in|at|for|of)?\s*([a-zA-Z\s]+)/i);
   const city=m?m[1].trim():'Nairobi';
   try{
@@ -1381,6 +1413,7 @@ async function handleWeather(cmd){
     processingCmd=false;
     document.getElementById('output').textContent=reply;
     addLog('a',reply,'WEATHER');bumpQ();
+    pushHistory('assistant', reply);
     setOrbState(idleState(),idleLabel());
     speakReply(reply);
   }catch(e){processingCmd=false;document.getElementById('output').textContent='Weather error: '+e.message;setOrbState(idleState(),idleLabel());}
@@ -1458,13 +1491,13 @@ async function speakReply(text){
 // ══════════════════════════════════════════════════════
 function handleSing(cmd){
   processingCmd=true;setOrbState('thinking','COMPOSING…');addLog('u',cmd);
-  conversationHistory.push({role:'user',text:cmd});
+  pushHistory('user', cmd);
   fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json','x-scorpion-key':SCORPION_SECRET},body:JSON.stringify({messages:conversationHistory})})
     .then(r=>r.json()).then(data=>{
       processingCmd=false;
       if(data.error){document.getElementById('output').textContent='Error: '+data.error;setOrbState(idleState(),idleLabel());return;}
       document.getElementById('output').textContent=data.reply;
-      conversationHistory.push({role:'assistant',text:data.reply});
+      pushHistory('assistant', data.reply);
       addLog('a',data.reply,'SONG');bumpQ();
       speakReply(data.reply);
     }).catch(e=>{processingCmd=false;document.getElementById('output').textContent='Error: '+e.message;setOrbState(idleState(),idleLabel());});
