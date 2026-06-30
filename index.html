@@ -954,8 +954,29 @@ function routeCommand(cmd){
     showOrbImage(imagePrompt);
   }
 
-  // General intent clarity check
-  checkIntentThenSend(cmd);
+  // General intent clarity check — only bother for genuinely vague
+  // referents. Most messages (questions, statements, casual chat)
+  // should go straight to the brain with no detour or delay.
+  if(needsIntentCheck(cmd)){
+    checkIntentThenSend(cmd);
+  }else{
+    speakStatus('thinking');
+    setOrbState('thinking','HEARD: '+cmd.toUpperCase().slice(0,45));
+    sendCmdText(cmd);
+  }
+}
+
+// Heuristic: only flag messages that lean on an unresolved pronoun/referent
+// with no subject of their own (e.g. "tell me about it", "do that thing",
+// "play it again", "continue that"). Everything else — including open-ended
+// or rhetorical phrasing like "what's on your mind?" — is treated as clear.
+function needsIntentCheck(cmd){
+  const c=cmd.toLowerCase().trim();
+  if(c.split(/\s+/).length>14)return false; // long messages carry their own context
+  const vagueReferent=/\b(it|that|this|them|those|the thing|the one)\b/.test(c);
+  const noConcreteSubject=!/\b(weather|song|video|movie|news|price|stock|crypto|bitcoin|gold|silver|forex|sports|football|score|time|date|joke|story|recipe|code|explain|define|translate|calculate|convert)\b/.test(c);
+  const isBareVagueOpener=/^(do (that|it)|tell me about (it|that)|what about (it|that)|continue( that)?|keep going|finish (it|that)|play (it|that) again|repeat (it|that)|say (it|that) again)\b/.test(c);
+  return isBareVagueOpener || (vagueReferent && noConcreteSubject && c.split(/\s+/).length<=6);
 }
 
 async function checkIntentThenSend(cmd){
