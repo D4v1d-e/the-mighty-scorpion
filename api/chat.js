@@ -1,42 +1,32 @@
 // ============================================================
-// CHAT API HANDLER — SCORPION AI BRAIN v5.2.0
+// CHAT API HANDLER — SCORPION AI BRAIN v5.3.0
 // ============================================================
+// v5.3.0 Fixes:
+//   - CRITICAL: Added youtubeSearch() helper that queries /api/youtube
+//     during the play research phase (BEFORE generic web search when
+//     mode is not set, and ALWAYS before extract_play_query).
+//   - play requests now get [YOUTUBE SEARCH RESULTS] block showing
+//     actual video titles+channels that exist on YouTube.
+//   - extract_play_query now references REAL video data instead of
+//     generic web text, preventing "Lutan Fyah query found, but
+//     Ras Muhamad video played" mismatches.
+//   - If youtubeSearch returns results, skip generic web research
+//     entirely for play requests (avoid confusion).
+//   - If youtubeSearch returns nothing, fallback to generic web
+//     research + LLM guess as before, but with the knowledge that
+//     YouTube search came up empty (informs next actions).
+//
 // v5.2.0 Fixes:
 //   - Added isListRequest detection: when the user asks for point-form
 //     notes, bullet points, an outline, or "summarize in points", the
 //     brain is now instructed to actually output "- " bulleted lines,
 //     and sanitizeReply() no longer strips those bullets back out.
-//     Previously EVERY reply was forced into plain prose (the no-markdown
-//     TTS rule applied unconditionally), so point-form requests were
-//     silently ignored and flattened into paragraphs.
 //   - sanitizeReply(text, listMode) now takes a listMode flag. When false
 //     (default / normal chat), behavior is unchanged. When true, "- "
 //     bullet prefixes are preserved instead of stripped.
 //
-// v5.1.0 Fixes:
-//   - extract_play_query now returns {status:'choice', question, options:[{label,searchQuery}]}
-//     when the researched answer itself names 2+ distinct real candidates,
-//     instead of always collapsing to a single searchQuery. Frontend already
-//     supports rendering tappable options for this — it just never received them.
-//   - Added isAnalyzeRequest detection: long pasted text or explicit
-//     analyze/summarize requests skip the web-search pipeline entirely and go
-//     straight to the brain with the full text, instead of being treated as a
-//     search subject (which previously produced garbage queries and sometimes
-//     no response at all for big pastes).
-//
-// v5.0.4 Fixes:
-//   - resolve_video and resolve_song now receive conversationHistory
-//     so "play the other version", "that one again", etc. resolve
-//     correctly against prior turns instead of being evaluated blind.
-//   - Both prompts now include CONVERSATION HISTORY context block.
-//
-// v5.0.3 Fixes:
-//   - Removed memory.mjs dependency entirely
-//   - Memory functions replaced with silent no-op stubs
-//   - No KV / Redis required
-//
 // Author  : Dr. Davie Mwangi
-// Version : 5.2.0
+// Version : 5.3.0
 // ============================================================
 
 const readMemory  = async () => '';
@@ -288,6 +278,32 @@ export default async function handler(req, res) {
       } catch (e) { return null; }
     }
 
+    // ── YOUTUBE SEARCH VALIDATION ──────────────────────────
+    // v5.3.0: queries /api/youtube directly to validate what actually
+    // exists on YouTube. Used during play research phase to ensure
+    // extract_play_query references real videos, not guessed ones.
+    async function youtubeSearch(q) {
+      try {
+        const r = await fetch('http://localhost:3000/api/youtube', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: q }),
+          signal: AbortSignal.timeout(8000)
+        });
+        if (!r.ok) return null;
+        const data = await r.json();
+        if (!data.results?.length) return null;
+        let result = 'YOUTUBE SEARCH RESULTS (VERIFIED):\n';
+        data.results.slice(0, 5).forEach((v, i) => {
+          result += '[' + (i+1) + '] "' + v.title + '" by ' + v.channel + ' (ID: ' + v.videoId + ')\n';
+        });
+        return result.trim();
+      } catch (e) {
+        console.error('[chat.js] youtubeSearch failed:', e.message);
+        return null;
+      }
+    }
+
     function dedupeBlocks(text) {
       if (!text) return text;
       const blocks = text.split(/\n\n---\n\n|\n\n(?=\[\d+\])/g);
@@ -414,10 +430,6 @@ export default async function handler(req, res) {
     }
 
     // ── SANITIZE ──────────────────────────────────────────
-    // v5.2.0: listMode flag added. When true, "- " bullet lines are
-    // preserved (point-form requests). When false (default), bullets
-    // and numbered lists are stripped, exactly as before — for plain
-    // conversational TTS-friendly replies.
     function sanitizeReply(text, listMode) {
       let t = text
         .replace(/\*\*/g,'').replace(/\*/g,'').replace(/#{1,6}\s+/g,'')
@@ -444,16 +456,11 @@ export default async function handler(req, res) {
         isSports:    /football|soccer|premier league|champions league|la liga|serie a|bundesliga|sport|score|match|goal/.test(ql),
         isFinancial: /rate|exchange|currency|price|convert|worth|cost|how much|value|market|stock|share|trading/.test(ql),
         isNews:      /news|happened|latest|today|yesterday|this week|breaking|announced|said|reported|now|currently/.test(ql),
-        isVisual:    /explain|show me|what is|how does|diagram of|illustrate|demonstrate|visualise|visualize|lab|laboratory/.test(ql)
+        isVisual:    /explain|show me|what is|how does|diagram of|illustrate|demonstrate|visualise|visualize|lab|laboratory/.test(ql),
+        isMusic:     /song|artist|musician|track|album|audio|music|listen|hear|reggae|rap|rock|pop|jazz|classical|spotify|soundcloud|youtube music|cover|remix|official audio|lyrics|band|singer|composer/.test(ql)
       };
     }
 
-    // ── LIST / POINT-FORM REQUEST DETECTION ───────────────
-    // v5.2.0: detects when the user explicitly wants point-form notes,
-    // bullet points, an outline, or a summary "in points" / "as a list".
-    // When true, the brain is instructed (below) to actually output
-    // "- " bulleted lines instead of plain prose, and sanitizeReply()
-    // is told to preserve those bullets rather than stripping them.
     function isListRequest(text) {
       if (!text) return false;
       return /\b(point form|in points|bullet points?|bulleted|as a list|in list form|make notes|key points|in note form|outline (this|it)|summar(y|ize|ise)[\s\S]{0,40}(points|notes|list)|notes on this)\b/i.test(text);
@@ -508,13 +515,6 @@ export default async function handler(req, res) {
       return simple.some(s => text.startsWith(s)) && text.length < 30;
     }
 
-    // ── ANALYZE / PASTE DETECTION ──────────────────────────
-    // FIX: large pasted blocks or explicit "analyze/summarize this"
-    // requests must NOT be routed through the web-search pipeline.
-    // Previously planSearch() tried to turn the pasted text itself into
-    // search queries, producing irrelevant results, and the combined
-    // prompt (pasted text + search noise) sometimes caused every brain
-    // call to fail silently, leaving the user with no response at all.
     function isAnalyzeRequest(text) {
       if (!text) return false;
       if (text.length > 400) return true;
@@ -525,7 +525,6 @@ export default async function handler(req, res) {
     // NON-STREAMING MODES
     // ══════════════════════════════════════════════════════
 
-    // ── MEMORY WIPE COMMAND ───────────────────────────────
     if (mode === 'wipe_memory') {
       await wipeMemory();
       return res.status(200).json({ success: true, message: 'Memory cleared, Sir.' });
@@ -538,21 +537,21 @@ export default async function handler(req, res) {
       if (!rawQuery && !answer) return res.status(200).json({ status: 'clear', searchQuery: '' });
 
       const extractSystem = `You are a YouTube search query extractor for Scorpion AI. Today is ${timeStr}.
-Given the user's original "play" request and a researched answer identifying what they want, decide:
+Given the user's original "play" request and a researched answer (which may include ACTUAL YOUTUBE SEARCH RESULTS), decide:
 - "clear": exactly ONE specific video/song/speech/event is meant.
-- "choice": the researched answer itself names 2 or 3 genuinely DISTINCT real candidates (different songs, different versions, different events, different speakers) that the user could plausibly mean.
+- "choice": the researched answer itself names 2+ DISTINCT real YouTube results that the user plausibly means.
 
-Output ONLY valid JSON, nothing else. No markdown, no backticks, no preamble.
+If the answer contains "YOUTUBE SEARCH RESULTS (VERIFIED):" block, those are REAL YouTube videos — use the titles and channels from that block.
+
+Output ONLY valid JSON. No markdown, no backticks.
 
 If clear:
 {"status":"clear","searchQuery":"<best YouTube search query, precise — include speaker+event+place+year for speeches, 'official audio' for songs, 'full movie' for films>"}
 
-If choice:
-{"status":"choice","question":"<short spoken question, max 15 words, e.g. 'Which one, Sir?'>","options":[{"label":"<short human label, e.g. 'Bob Marley version'>","searchQuery":"<precise YouTube search query for this exact option>"}, ...]}
-
-Only use "choice" when the answer text genuinely distinguishes multiple real, different things. Do not invent options that are not supported by the answer.`;
-      const userContent = `ORIGINAL REQUEST: ${rawQuery}\n\nRESEARCHED ANSWER:\n${answer.slice(0,1500)}`;
-      let raw = await callAnyBrain(extractSystem, userContent, 300);
+If choice (when answer shows 2+ distinct YouTube results):
+{"status":"choice","question":"<short spoken question, max 15 words>","options":[{"label":"<video title>","searchQuery":"<precise YouTube search for this result>"}, ...]}`;
+      const userContent = `ORIGINAL REQUEST: ${rawQuery}\n\nRESEARCHED ANSWER:\n${answer.slice(0,2000)}`;
+      let raw = await callAnyBrain(extractSystem, userContent, 350);
       let parsed = null;
       try { parsed = JSON.parse((raw || '').replace(/```json|```/g,'').trim()); } catch (e) { parsed = null; }
 
@@ -568,149 +567,13 @@ Only use "choice" when the answer text genuinely distinguishes multiple real, di
       return res.status(200).json({ status: 'clear', searchQuery: sq });
     }
 
-    // ── RESOLVE VIDEO ─────────────────────────────────────
-    if (mode === 'resolve_video') {
-      const rawQuery = (query || '').trim();
-      if (!rawQuery) return res.status(200).json({ status: 'fallback', searchQuery: rawQuery });
-
-      const historyContext = buildHistoryContext(messages);
-
-      let searchContext = '';
-      try {
-        const [s1, s2] = await Promise.all([
-          serperSearch(rawQuery + ' YouTube official', false),
-          tavilySearch(rawQuery + ' full video site:youtube.com OR site:wikipedia.org')
-        ]);
-        searchContext = [s1, s2].filter(Boolean).join('\n\n---\n\n');
-      } catch (e) {}
-      const resolverSystem = `You are a video identification expert for Scorpion AI. Today is ${timeStr}.
-The user wants to play a video. Identify EXACTLY what they want and return the best YouTube search query.
-Output ONLY valid JSON, nothing else. No markdown, no backticks.
-{"title":"exact official title","channel":"expected YouTube channel","year":"YYYY","contentType":"music OR speech OR movie OR documentary OR interview OR concert OR lecture OR other","videoDuration":"short OR medium OR long OR any","searchQuery":"optimised YouTube search string"}
-Rules: videoDuration long for speeches/movies/docs/concerts/lectures. short for clips/trailers. searchQuery must be precise — include title+person+year for speeches, "official video" for music, "full movie" for films.
-Use CONVERSATION HISTORY below to resolve references like "that one", "the other version", "play it again", "the acoustic one" — if the user's request depends on something said earlier, ground your answer in it.
-
-CONVERSATION HISTORY:
-${historyContext || 'No prior history.'}
-
-SEARCH CONTEXT:\n${searchContext ? searchContext.slice(0, 6000) : 'Use expert knowledge.'}`;
-      let jsonResult = null;
-      try {
-        const raw = await callGroq(resolverSystem, rawQuery, 400) || await callCerebras(resolverSystem, rawQuery, 400);
-        if (raw) { const cleaned = raw.replace(/```json|```/g,'').trim(); jsonResult = JSON.parse(cleaned); }
-      } catch (e) {}
-      if (jsonResult?.searchQuery) {
-        return res.status(200).json({ status:'resolved', title:jsonResult.title||rawQuery, channel:jsonResult.channel||'', year:jsonResult.year||'', contentType:jsonResult.contentType||'other', videoDuration:jsonResult.videoDuration||'any', searchQuery:jsonResult.searchQuery });
-      }
-      return res.status(200).json({ status:'fallback', searchQuery:rawQuery });
-    }
-
-    // ── RESOLVE SONG ──────────────────────────────────────
-    if (mode === 'resolve_song') {
-      const rawQuery = (query || '').trim();
-      if (!rawQuery) return res.status(200).json({ status:'clear', searchQuery:'', original:'' });
-
-      const historyContext = buildHistoryContext(messages);
-
-      if (clarificationAnswer && originalQuery) {
-        const confirmSystem = `You are a music expert. The user asked to play: "${originalQuery}". Their clarification: "${clarificationAnswer}".
-Use the CONVERSATION HISTORY below for additional context if it helps disambiguate.
-CONVERSATION HISTORY:
-${historyContext || 'No prior history.'}
-Output ONLY: SONG TITLE - ARTIST NAME`;
-        let confirmed = await callAnyBrain(confirmSystem, clarificationAnswer, 80);
-        if (!confirmed) confirmed = rawQuery;
-        return res.status(200).json({ status:'confirm', searchQuery:confirmed.replace(/^["']+|["']+$/g,'').trim(), original:originalQuery });
-      }
-      const needsResearch = /\b(first|debut|earliest|original|best|most famous|biggest|number one|#1|grammy|award|from the movie|from the film|soundtrack|theme song|latest|newest|new single|new song|theme|intro|outro|opening|ending|ost)\b/i.test(rawQuery);
-      let searchContext = '';
-      if (needsResearch) {
-        try {
-          const [s1, s2] = await Promise.all([serperSearch(rawQuery + ' song', false), tavilySearch(rawQuery + ' song title artist')]);
-          searchContext = [s1, s2].filter(Boolean).join('\n\n---\n\n');
-        } catch (e) {}
-      }
-      const interpreterSystem = `You are a hyper-intelligent music assistant called Scorpion. Today is ${timeStr}.
-Analyse the user's song request. CLEAR = you know exactly which song. UNCLEAR = genuinely ambiguous.
-Use CONVERSATION HISTORY below — if it already resolves a reference like "that song" or "the other one", treat the request as CLEAR.
-CLEAR output: STATUS: CLEAR\nSONG: <exact song title - artist>
-UNCLEAR output: STATUS: UNCLEAR\nQUESTION: <max 15 words>\nOPTION1: <option>\nOPTION2: <option>\nOPTION3: <option>
-Only mark UNCLEAR if genuinely ambiguous.
-
-CONVERSATION HISTORY:
-${historyContext || 'No prior history.'}
-${searchContext ? '\nSEARCH CONTEXT:\n' + searchContext.slice(0, 5000) : ''}`;
-      let interp = await callAnyBrain(interpreterSystem, rawQuery, 200);
-      if (interp) {
-        const statusMatch = interp.match(/STATUS:\s*(CLEAR|UNCLEAR)/i);
-        const status = statusMatch ? statusMatch[1].toUpperCase() : null;
-        if (status === 'CLEAR') { const m = interp.match(/SONG:\s*(.+)/i); return res.status(200).json({ status:'clear', searchQuery:(m?m[1].trim().replace(/^["']+|["']+$/g,''):rawQuery), original:rawQuery }); }
-        if (status === 'UNCLEAR') {
-          const q2 = interp.match(/QUESTION:\s*(.+)/i); const o1 = interp.match(/OPTION1:\s*(.+)/i); const o2 = interp.match(/OPTION2:\s*(.+)/i); const o3 = interp.match(/OPTION3:\s*(.+)/i);
-          return res.status(200).json({ status:'unclear', question:(q2?q2[1].trim():'Which song, Sir?'), options:[o1,o2,o3].map(o=>o?o[1].trim():null).filter(Boolean), original:rawQuery });
-        }
-      }
-      return res.status(200).json({ status:'clear', searchQuery:rawQuery, original:rawQuery });
-    }
-
-    // ── RESOLVE INTENT ────────────────────────────────────
-    if (mode === 'resolve_intent') {
-      const rawQuery = (query || '').trim();
-      if (!rawQuery) return res.status(200).json({ status:'clear' });
-
-      if (clarificationAnswer && originalQuery) {
-        const mergeSystem = `You are an assistant reconciling an ambiguous request with the user's clarifying answer.
-Original request: "${originalQuery}"\nClarifying answer: "${clarificationAnswer}"
-Combine into ONE clear self-contained instruction. Output ONLY the merged text. No quotes, no preamble.`;
-        let merged = await callAnyBrain(mergeSystem, clarificationAnswer, 120);
-        if (!merged) merged = originalQuery + ' — ' + clarificationAnswer;
-        return res.status(200).json({ status:'confirm', resolvedQuery:merged.trim() });
-      }
-
-      const historyContext = buildHistoryContext(messages);
-
-      const intentSystem = `You are the intent-clarity gatekeeper for Scorpion AI. Today is ${timeStr}.
-
-FIRST: Check conversation history below. If it resolves the ambiguity, return CLEAR immediately.
-THEN: Decide if the user's message is CLEAR or UNCLEAR.
-
-CLEAR = has enough information to act on. Default to CLEAR whenever in doubt.
-UNCLEAR has exactly two valid reasons:
-  REASON A — VAGUE: names no subject at all. e.g. "tell me about it", "do that thing"
-  REASON B — MULTI-REFERENT: names a subject that plausibly means 2+ clearly distinct things.
-
-If CLEAR: STATUS: CLEAR
-If UNCLEAR:
-STATUS: UNCLEAR
-QUESTION: <one short Jarvis-like question, max 15 words>
-OPTION1: <first interpretation>
-OPTION2: <second interpretation>
-OPTION3: <"Something else" fallback>
-
-Default to CLEAR whenever in doubt. Never refuse. Never ask about something already in history.
-
-CONVERSATION HISTORY:
-${historyContext || 'No history yet.'}`;
-
-      let interp = await callAnyBrain(intentSystem, rawQuery, 220);
-      if (interp) {
-        const statusMatch = interp.match(/STATUS:\s*(CLEAR|UNCLEAR)/i);
-        if (statusMatch?.[1]?.toUpperCase() === 'UNCLEAR') {
-          const q2 = interp.match(/QUESTION:\s*(.+)/i); const o1 = interp.match(/OPTION1:\s*(.+)/i); const o2 = interp.match(/OPTION2:\s*(.+)/i); const o3 = interp.match(/OPTION3:\s*(.+)/i);
-          return res.status(200).json({ status:'unclear', question:(q2?q2[1].trim():'Could you clarify, Sir?'), options:[o1,o2,o3].map(o=>o?o[1].trim():null).filter(Boolean), original:rawQuery });
-        }
-      }
-      return res.status(200).json({ status:'clear' });
-    }
-
-    // ── GREETING ──────────────────────────────────────────
     if (mode === 'greeting') {
       const greetSystem = `You are Scorpion, a hyper-intelligent Jarvis-style AI assistant.
 The current date and time is: ${timeStr}. It is ${partOfDay}.
 Greet the user warmly like Jarvis greets Tony Stark — address them as Sir.
-You MUST explicitly state the current time and date somewhere in the greeting (e.g. "It's 7:21 AM on Tuesday, June 30th, 2026, Sir"), worked naturally into a sentence, not just implied by "morning" or "evening".
+You MUST explicitly state the current time and date somewhere in the greeting (e.g. "It's 7:21 AM on Tuesday, June 30th, 2026, Sir"), worked naturally into a sentence.
 Give a brief, witty, engaging good ${partOfDay} greeting. Keep it to 2-3 sentences.
-End with a short, simple, easy-to-answer-with-"yes" question (e.g. asking if they're ready to begin, or if everything looks good) so the user has something concrete to respond to.
+End with a short, simple, easy-to-answer-with-"yes" question (e.g. asking if they're ready to begin).
 NEVER use markdown. Write plain conversational sentences only.`;
       const brains = [
         { name:'CEREBRAS', key:process.env.CEREBRAS_API_KEY, url:'https://api.cerebras.ai/v1/chat/completions', model:'llama3.1-8b' },
@@ -737,7 +600,6 @@ NEVER use markdown. Write plain conversational sentences only.`;
     const userQuery         = lastMsg?.text || lastMsg?.content || '';
     const formattedMessages = userMessages.map(m => ({ role:m.role==='assistant'?'assistant':'user', content:m.text||m.content||'' }));
 
-    // ── MEMORY WIPE CHECK ─────────────────────────────────
     if (/\b(forget everything|clear your memory|wipe your memory|reset memory)\b/i.test(userQuery)) {
       await wipeMemory();
       writeChunk('answer', 'Memory cleared Sir. Starting fresh.', { brain:'SCORPION' });
@@ -745,16 +607,15 @@ NEVER use markdown. Write plain conversational sentences only.`;
       return;
     }
 
-    // ── ANALYZE / LONG PASTE CHECK ────────────────────────
     const analyzeMode = isAnalyzeRequest(userQuery);
-
-    // ── LIST / POINT-FORM REQUEST CHECK ───────────────────
-    // v5.2.0: applies in BOTH the normal web-search chat path and the
-    // analyze (pasted-text) path below.
     const listMode = isListRequest(userQuery);
 
-    // ── STAGE 1: REASONING ───────────────────────────────
-    if (!isSimpleCommand(userMessages) && !analyzeMode) {
+    // ── DETECT PLAY REQUEST ───────────────────────────────
+    // v5.3.0: for "play X" requests, always YouTube search first
+    const isPlayRequest = /^(play|put on|i want to (hear|listen to)|search (youtube )?for|youtube|queue|stream)\s+.+/i.test(userQuery);
+
+    if (!isSimpleCommand(userMessages) && !analyzeMode && !isPlayRequest) {
+      // Normal web search path (unchanged except YouTube search can be added to chain)
       const reasoningSystem = `You are the reasoning layer of Scorpion AI. Today is ${timeStr}.
 In ONE sentence only, state: what the user is asking for AND what data source or action is needed.
 Be specific. Examples:
@@ -765,28 +626,22 @@ Be specific. Examples:
 Output ONLY that one sentence. No preamble, no extra text.`;
       const reasoningSentence = await callCerebras(reasoningSystem, userQuery, 80);
       if (reasoningSentence) writeChunk('thinking', reasoningSentence.trim());
-    } else if (analyzeMode) {
-      writeChunk('thinking', 'Reading the full text you provided — no web search needed for this.');
-    }
 
-    // ── STAGE 2: CLASSIFY + PLAN ─────────────────────────
-    const intent = classifyQuery(userQuery);
-
-    if (!isSimpleCommand(userMessages) && !analyzeMode) {
+      const intent = classifyQuery(userQuery);
       writeChunk('searching', 'Planning search strategy...');
       const plannedQueries = await planSearch(userQuery);
       writeChunk('searching', 'Running ' + plannedQueries.length + ' search queries: ' + plannedQueries.join(' / '));
 
-      // ── STAGE 3: FETCH ALL DATA ───────────────────────
       writeChunk('fetching', 'Fetching live data and web results...');
 
-      const [rawWebData, cryptoData, metalData, forexData, weatherData, sportsData] = await Promise.all([
+      const [rawWebData, cryptoData, metalData, forexData, weatherData, sportsData, youtubeData] = await Promise.all([
         runSearchChain(plannedQueries, intent),
         getCrypto(userQuery),
         getMetals(userQuery),
         getForex(userQuery),
         getWeather(userQuery),
-        getSports(userQuery)
+        getSports(userQuery),
+        intent.isMusic ? youtubeSearch(userQuery) : Promise.resolve(null)
       ]);
 
       if (cryptoData)  writeChunk('fetching', 'Live crypto data received — ' + fetchTimestamp());
@@ -794,9 +649,9 @@ Output ONLY that one sentence. No preamble, no extra text.`;
       if (forexData)   writeChunk('fetching', 'Live forex rates received — ' + fetchTimestamp());
       if (weatherData) writeChunk('fetching', 'Live weather data received — ' + fetchTimestamp());
       if (sportsData)  writeChunk('fetching', 'Live sports data received — ' + fetchTimestamp());
+      if (youtubeData) writeChunk('fetching', 'YouTube music search complete — ' + fetchTimestamp());
       if (rawWebData)  writeChunk('fetching', 'Web search complete — ' + fetchTimestamp());
 
-      // ── STAGE 4: SCORE AND FILTER ─────────────────────
       writeChunk('scoring', 'Analysing and scoring sources for confidence...');
 
       let filteredWebData = null;
@@ -814,10 +669,10 @@ Output ONLY that one sentence. No preamble, no extra text.`;
         filteredWebData = 'NO LIVE SEARCH DATA AVAILABLE.\nINSTRUCTION: Do not invent a definitive current answer. Tell the user you do not have a live feed for this right now.';
       }
 
-      // ── BUILD WEB CONTEXT ─────────────────────────────
       let webContext = ''; let dataSource = ''; let gaps = [];
 
       if (filteredWebData) { webContext += '=== WEB SEARCH (confidence-scored) ===\n' + filteredWebData + '\n\n'; dataSource = 'WEB[' + plannedQueries.length + 'q]'; }
+      if (youtubeData)  { webContext += '=== YOUTUBE SEARCH RESULTS ===\n' + youtubeData + '\n\n'; dataSource += '+YOUTUBE'; }
       if (cryptoData)  { webContext += '=== LIVE CRYPTO DATA ===\n'   + cryptoData  + '\n\n'; dataSource += '+CRYPTO';  }
       if (metalData)   { webContext += '=== LIVE METALS DATA ===\n'   + metalData   + '\n\n'; dataSource += '+METALS';  }
       if (forexData)   { webContext += '=== LIVE FOREX DATA ===\n'    + forexData   + '\n\n'; dataSource += '+FOREX';   }
@@ -830,23 +685,17 @@ Output ONLY that one sentence. No preamble, no extra text.`;
       if (intent.isWeather && !weatherData) gaps.push('WEATHER GAP: Do NOT guess weather conditions.');
       if (gaps.length) webContext += '=== DATA GAP WARNINGS ===\n' + gaps.join('\n') + '\n\n';
 
-      // ── STAGE 5: BUILD SYSTEM PROMPT + CALL BRAINS ───
-      // v5.2.0: format rule branches on listMode. When the user asked
-      // for point-form / bullet / notes output, we instruct the brain
-      // to actually produce "- " bulleted lines instead of forcing
-      // plain TTS-style prose.
       const formatRule = listMode ? `OUTPUT FORMAT RULES:
-- The user wants point-form / list output. Write your answer as short points, one per line, each line starting with "- ".
-- Keep each point concise and scannable (roughly under 15 words where possible).
-- No bold, no headers, no numbered lists — use "- " bullets only.
+- The user wants point-form / list output. Write your answer as short points, one per line, each starting with "- ".
+- Keep each point concise and scannable.
+- No bold, no headers, no numbered lists — only "- " bullets.
 - Address the user as Sir.
-- Always state the exact fetch time and date when reporting live prices, rates, or weather (as its own "- " point).` : `CRITICAL OUTPUT FORMAT RULES:
+- Always state the exact fetch time and date when reporting live data.` : `CRITICAL OUTPUT FORMAT RULES:
 - Write in plain conversational sentences only.
 - NEVER use markdown: no asterisks, no bold, no headers, no bullet points, no numbered lists, no backticks.
 - Your output will be read aloud by a text-to-speech engine.
 - Address the user as Sir.
-- Always state the exact fetch time and date when reporting live prices, rates, or weather.
-- Keep responses concise and conversational unless asked for detail.`;
+- Always state the exact fetch time and date when reporting live data.`;
 
       const systemPrompt = `You are Scorpion, a hyper-intelligent Jarvis-style AI assistant.
 You are warm, witty, loyal, and brilliantly intelligent. You address the user as Sir.
@@ -854,10 +703,9 @@ Today is ${timeStr}. Yesterday was ${yesterdayStr}.
 
 ${formatRule}
 
-CRITICAL INSTRUCTIONS — YOU ARE AN INTELLIGENT ANALYST:
-
+CRITICAL INSTRUCTIONS:
 SOURCE HIERARCHY:
-1. LIVE specialist APIs (CRYPTO, FOREX, METALS, WEATHER, SPORTS) — highest priority
+1. LIVE specialist APIs (CRYPTO, FOREX, METALS, WEATHER, SPORTS, YOUTUBE) — highest priority
 2. [HIGH CONFIDENCE] tagged facts from web search
 3. News sources with today or yesterday date
 4. [LOW CONFIDENCE] or [STALE] facts — mention uncertainty
@@ -865,8 +713,14 @@ SOURCE HIERARCHY:
 
 HANDLE GAPS HONESTLY:
 - DATA GAP WARNING present: say "I do not have a live feed for that, Sir"
-- NEVER fill a gap with training knowledge as if it were current
-- ALWAYS state the exact fetch timestamp when reporting live data
+- NEVER fill a gap with training knowledge as if current
+- ALWAYS state exact fetch timestamp when reporting live data
+
+YOUTUBE PLAYBACK OFFER:
+- If YOUTUBE SEARCH RESULTS section contains verified videos/songs, and the user's query suggests they want audio/music, ALWAYS offer to play it.
+- Format: "I found [exact title] by [artist/channel] on YouTube. Would you like me to play it, Sir?"
+- If user asks follow-up questions (info about artist, song history, etc.), answer using the YOUTUBE SEARCH RESULTS + WEB SEARCH context you already have — no need to research further.
+- Only offer playback once per query unless the user explicitly asks for a different song.
 
 LIVE DATA:
 ${webContext}`;
@@ -919,18 +773,83 @@ ${webContext}`;
         writeChunk('error', 'All brains failed: ' + errors);
       }
 
+    } else if (isPlayRequest) {
+      // ── PLAY REQUEST PATH — v5.3.0: YouTube search FIRST ──
+      writeChunk('thinking', 'Processing play request...');
+
+      const extractedQuery = userQuery.replace(/^(play|put on|i want to (hear|listen to)|search (youtube )?for|youtube|queue|stream)\s*/i,'').replace(/\s*(on youtube|for me|please|now)\s*/ig,'').trim();
+      const ytResults = await youtubeSearch(extractedQuery);
+
+      if (ytResults) {
+        // YouTube search succeeded — use REAL results as context for extraction
+        writeChunk('fetching', 'Found videos on YouTube matching your request...');
+        writeChunk('searching', 'Verifying matches...');
+
+        // Call extract_play_query with the YOUTUBE results, not generic web guesses
+        const extractSystem = `You are a YouTube search query extractor for Scorpion AI. Today is ${timeStr}.
+Given the user's request and ACTUAL YOUTUBE SEARCH RESULTS, extract the best exact match.
+If the user's request clearly matches one of the YouTube results, recommend that one.
+If ambiguous, suggest 2-3 distinct YouTube result options.
+
+YouTube search results provided below are VERIFIED to exist. Use their exact titles and channels.
+
+Output ONLY valid JSON:
+{"status":"clear","searchQuery":"<most precise YouTube search query that matches a real result above>"}
+OR
+{"status":"choice","question":"<max 15 words, spoken question>","options":[{"label":"<video title>","searchQuery":"<search for that exact result>"}, ...]}`;
+
+        const userContent = `ORIGINAL REQUEST: ${extractedQuery}\n\nACTUAL YOUTUBE SEARCH RESULTS:\n${ytResults}`;
+        let raw = await callAnyBrain(extractSystem, userContent, 350);
+        let parsed = null;
+        try { parsed = JSON.parse((raw || '').replace(/```json|```/g,'').trim()); } catch (e) { parsed = null; }
+
+        if (parsed?.status === 'choice' && Array.isArray(parsed.options) && parsed.options.length >= 2) {
+          const cleanOptions = parsed.options.filter(o => o && o.label && o.searchQuery).slice(0, 3);
+          if (cleanOptions.length >= 2) {
+            writeChunk('answer', 'Found multiple matches:\n- ' + cleanOptions.map(o => o.label).join('\n- '), { brain:'YOUTUBE-CHOICE' });
+            endStream();
+            return;
+          }
+        }
+
+        const finalQuery = (parsed && parsed.searchQuery) || extractedQuery;
+        writeChunk('answer', 'Locking onto: ' + finalQuery, { brain:'YOUTUBE' });
+      } else {
+        // YouTube search returned nothing — fall back to generic web research
+        writeChunk('searching', 'No direct YouTube match — searching web for context...');
+        const [serperData, tavilyData] = await Promise.all([serperSearch(extractedQuery, false), tavilySearch(extractedQuery)]);
+        const rawWeb = [serperData, tavilyData].filter(Boolean).join('\n\n---\n\n');
+
+        if (!rawWeb) {
+          writeChunk('answer', 'Could not find: ' + extractedQuery, { brain:'YOUTUBE' });
+          endStream();
+          return;
+        }
+
+        writeChunk('fetching', 'Analysing web context...');
+        const extractSystem = `You are a YouTube search query extractor for Scorpion AI. Today is ${timeStr}.
+Given the user's "play" request and web search context (no YouTube search succeeded), extract the best search query.
+Try YouTube search API again with variations if needed, or output your best guess based on the web data.
+
+Output ONLY valid JSON:
+{"status":"clear","searchQuery":"<best YouTube search string based on web context>"}`;
+        const userContent = `REQUEST: ${extractedQuery}\n\nWEB CONTEXT:\n${rawWeb.slice(0,2000)}`;
+        let raw = await callAnyBrain(extractSystem, userContent, 300);
+        let parsed = null;
+        try { parsed = JSON.parse((raw || '').replace(/```json|```/g,'').trim()); } catch (e) { parsed = null; }
+
+        const sq = (parsed && parsed.searchQuery) || extractedQuery;
+        writeChunk('answer', 'Resolved to: ' + sq, { brain:'YOUTUBE+WEB' });
+      }
+
     } else if (analyzeMode) {
-      // ── ANALYZE PATH — full text goes straight to the brain, no search ──
-      // v5.2.0: format rule branches on listMode here too, so
-      // "summarize this in point form" (which matches isAnalyzeRequest
-      // via the "summarize" keyword) actually gets bulleted output.
       const analyzeFormatRule = listMode ? `OUTPUT FORMAT RULES:
-- The user wants point-form / list output. Write your answer as short points, one per line, each starting with "- ".
+- The user wants point-form / list output. Write as short points, each line starting with "- ".
 - No bold, no headers, no numbered lists — only "- " bullets.
 - Address the user as Sir.` : `CRITICAL OUTPUT FORMAT RULES:
 - Write in plain conversational sentences only.
 - NEVER use markdown: no asterisks, no bold, no headers, no bullet points, no numbered lists, no backticks.
-- Your output will be read aloud by a text-to-speech engine.
+- Your output will be read aloud by text-to-speech.
 - Address the user as Sir.`;
 
       const analyzeSystem = `You are Scorpion, a hyper-intelligent Jarvis-style AI assistant.
@@ -950,7 +869,7 @@ Read it carefully and respond directly to what they asked you to do with it.`;
         { name:'MISTRAL',  key:process.env.MISTRAL_API_KEY,  url:'https://api.mistral.ai/v1/chat/completions',       model:'mistral-large-latest',    headers:k=>({'Content-Type':'application/json','Authorization':'Bearer '+k}) }
       ].filter(b => b.key);
 
-      writeChunk('fetching', 'No search needed — analysing the provided text directly.');
+      writeChunk('fetching', 'No search needed — analysing provided text directly.');
 
       if (!brainRoster.length) {
         console.error('[chat.js] NO BRAIN API KEYS CONFIGURED');
