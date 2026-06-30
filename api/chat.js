@@ -1,47 +1,41 @@
 // ============================================================
-// CHAT API HANDLER — SCORPION AI BRAIN v5.4.0
+// CHAT API HANDLER — SCORPION AI BRAIN v5.5.0
 // ============================================================
+// v5.5.0 Fixes (THIS VERSION):
+//   - extract_play_query (both the standalone mode AND the inline
+//     version used in the isPlayRequest path) now REFUSES to output
+//     a vague/descriptive searchQuery (e.g. "movie about bullied
+//     math genius", "guy who is bullied math genius"). It must
+//     commit to a real, specific, identifiable title/speaker/event,
+//     or explicitly say it doesn't know — in which case the frontend
+//     should ask the user to clarify rather than blindly searching
+//     YouTube with a vague phrase and grabbing result[0].
+//   - Added a "status":"unknown" output option so the frontend can
+//     distinguish "I genuinely don't know which video" from "here is
+//     exactly one match" — previously every uncertain case silently
+//     fell back to the original vague query, which is how wrong
+//     videos (Michael Jackson short, 2008 Obama clip, etc.) ended up
+//     auto-playing.
+//   - extract_play_query system prompts now explicitly forbid
+//     guessing a plausible-sounding but unverified title.
+//
 // v5.4.0 Fixes:
 //   - YouTube search now runs for EVERY chat query, not just ones
-//     classified as isMusic. Previously a general question (e.g.
-//     "latest Obama speech in Chicago") never even checked YouTube
-//     unless it tripped the music-intent regex, so the model had no
-//     video context to offer unless you literally said "song"/"play"/
-//     etc. Now every normal chat turn gathers YouTube results in
-//     parallel with web search, and they're appended to context
-//     regardless of intent.
-//   - Added an INSTRUCTION line to the 'general' and 'news' role
-//     prompts so the model actually surfaces relevant YouTube finds
-//     ("I also found a video on this... want me to play it, Sir?")
-//     instead of silently ignoring the YOUTUBE SEARCH RESULTS block
-//     when the topic isn't classified as music.
+//     classified as isMusic.
+//   - Added an INSTRUCTION line to 'general'/'news' role prompts so
+//     the model surfaces relevant YouTube finds.
 //
 // v5.3.0 Fixes:
-//   - CRITICAL: Added youtubeSearch() helper that queries /api/youtube
-//     during the play research phase (BEFORE generic web search when
-//     mode is not set, and ALWAYS before extract_play_query).
-//   - play requests now get [YOUTUBE SEARCH RESULTS] block showing
-//     actual video titles+channels that exist on YouTube.
-//   - extract_play_query now references REAL video data instead of
-//     generic web text, preventing "Lutan Fyah query found, but
-//     Ras Muhamad video played" mismatches.
-//   - If youtubeSearch returns results, skip generic web research
-//     entirely for play requests (avoid confusion).
-//   - If youtubeSearch returns nothing, fallback to generic web
-//     research + LLM guess as before, but with the knowledge that
-//     YouTube search came up empty (informs next actions).
+//   - Added youtubeSearch() helper validating real YouTube results
+//     during the play research phase.
+//   - play requests get a [YOUTUBE SEARCH RESULTS] block.
+//   - extract_play_query references REAL video data.
 //
 // v5.2.0 Fixes:
-//   - Added isListRequest detection: when the user asks for point-form
-//     notes, bullet points, an outline, or "summarize in points", the
-//     brain is now instructed to actually output "- " bulleted lines,
-//     and sanitizeReply() no longer strips those bullets back out.
-//   - sanitizeReply(text, listMode) now takes a listMode flag. When false
-//     (default / normal chat), behavior is unchanged. When true, "- "
-//     bullet prefixes are preserved instead of stripped.
+//   - isListRequest detection + bullet-preserving sanitizeReply.
 //
 // Author  : Dr. Davie Mwangi
-// Version : 5.4.0
+// Version : 5.5.0
 // ============================================================
 
 const readMemory  = async () => '';
@@ -294,14 +288,6 @@ export default async function handler(req, res) {
     }
 
     // ── YOUTUBE SEARCH VALIDATION ──────────────────────────
-    // v5.3.0: queries /api/youtube directly to validate what actually
-    // exists on YouTube. Used during play research phase to ensure
-    // extract_play_query references real videos, not guessed ones.
-    //
-    // v5.4.0: this same helper is now also called for EVERY normal
-    // chat query (see the main Promise.all below) — not just ones
-    // classified as music — so any question can surface relevant
-    // video coverage if it exists, not just "play X" / song requests.
     async function youtubeSearch(q) {
       try {
         const r = await fetch('http://localhost:3000/api/youtube', {
@@ -479,16 +465,14 @@ export default async function handler(req, res) {
         isTechnical: /code|python|javascript|api|database|algorithm|function|class|library|framework|syntax|debug|error|compile/.test(ql),
         needsLiveData: false
       };
-      
-      // Determine primary intent
+
       intent.primary = Object.keys(intent)
         .filter(k => k !== 'needsLiveData' && k !== 'primary' && intent[k])
         .sort()[0] || 'general';
-      
-      // Flag if needs live data
-      intent.needsLiveData = intent.isCrypto || intent.isForex || intent.isMetals || intent.isWeather || intent.isSports || 
+
+      intent.needsLiveData = intent.isCrypto || intent.isForex || intent.isMetals || intent.isWeather || intent.isSports ||
         (/\b(current|now|today|live|real[- ]?time|right now)\b/i.test(ql));
-      
+
       return intent;
     }
 
@@ -512,7 +496,7 @@ You are a music encyclopedia and curator. You know:
 - Album release dates, chart positions, critical reception
 - Song meanings, lyrics context, live versions, remixes
 
-INSTRUCTION: 
+INSTRUCTION:
 - If YOUTUBE SEARCH RESULTS show verified videos matching the query, ALWAYS offer: "I found [exact title] by [channel]. Would you like me to play it, Sir?"
 - Answer follow-ups about artist/song using the YOUTUBE + WEB context already available — no new research needed.
 - Be enthusiastic about music. Use era/genre context naturally.`,
@@ -579,7 +563,7 @@ INSTRUCTION:
     // ── DATA DISTILLATION ──────────────────────────────
     async function distillWebData(rawData, q) {
       if (!rawData || rawData.length < 300) return rawData;
-      
+
       const distillSystem = `You are a data analyst. Extract ONLY facts directly answering: "${q}"
 Remove: ads, navigation, repetition, tangents, irrelevant sections.
 Output: bullet list of key facts, max 600 chars. Be specific (numbers, dates, names).
@@ -655,25 +639,34 @@ If nothing relevant, output: NO RELEVANT DATA`;
     }
 
     // ── EXTRACT PLAY QUERY ────────────────────────────────
+    // v5.5.0: this now REFUSES to output a vague descriptive query.
+    // It must either commit to one real, specific, identifiable title
+    // (movie/song/speech name + speaker/artist), or say it doesn't
+    // know — never guess a plausible-sounding-but-unverified one.
     if (mode === 'extract_play_query') {
       const rawQuery = (query || '').trim();
       const answer   = (req.body.answer || '').trim();
       if (!rawQuery && !answer) return res.status(200).json({ status: 'clear', searchQuery: '' });
 
       const extractSystem = `You are a YouTube search query extractor for Scorpion AI. Today is ${timeStr}.
-Given the user's original "play" request and a researched answer (which may include ACTUAL YOUTUBE SEARCH RESULTS), decide:
-- "clear": exactly ONE specific video/song/speech/event is meant.
-- "choice": the researched answer itself names 2+ DISTINCT real YouTube results that the user plausibly means.
+Given the user's original "play" request and a researched answer (which may include ACTUAL YOUTUBE SEARCH RESULTS), decide one of THREE outcomes:
 
-If the answer contains "YOUTUBE SEARCH RESULTS (VERIFIED):" block, those are REAL YouTube videos — use the titles and channels from that block.
+- "clear": exactly ONE specific, real, identifiable video/song/speech/event is meant, AND you can name it precisely (exact or near-exact title, plus speaker/artist/event/date if relevant). NEVER output a vague description like "movie about a bullied math genius" or "guy who gets bullied" as the searchQuery — that is NOT a valid clear result, it is a guess. If you cannot name the actual title, do NOT use "clear".
+- "choice": the researched answer itself names 2+ DISTINCT real, specific titles that the user plausibly means.
+- "unknown": you cannot confidently identify a specific real title from the request and the researched answer (e.g. the request is just a vague plot description with no title given anywhere in the answer). Do NOT guess in this case.
+
+If the answer contains "YOUTUBE SEARCH RESULTS (VERIFIED):" block, those are REAL YouTube videos — use the titles and channels from that block, never invent your own.
 
 Output ONLY valid JSON. No markdown, no backticks.
 
 If clear:
-{"status":"clear","searchQuery":"<best YouTube search query, precise — include speaker+event+place+year for speeches, 'official audio' for songs, 'full movie' for films>"}
+{"status":"clear","searchQuery":"<exact, specific YouTube search query — a real title, never a vague description>"}
 
-If choice (when answer shows 2+ distinct YouTube results):
-{"status":"choice","question":"<short spoken question, max 15 words>","options":[{"label":"<video title>","searchQuery":"<precise YouTube search for this result>"}, ...]}`;
+If choice (when answer shows 2+ distinct real candidates):
+{"status":"choice","question":"<short spoken question, max 15 words>","options":[{"label":"<video title>","searchQuery":"<precise YouTube search for this result>"}, ...]}
+
+If unknown:
+{"status":"unknown","reason":"<one short sentence explaining what extra detail is needed, e.g. 'I don't have a confirmed title — could you name the movie or describe it more specifically?'"}`;
       const userContent = `ORIGINAL REQUEST: ${rawQuery}\n\nRESEARCHED ANSWER:\n${answer.slice(0,2000)}`;
       let raw = await callAnyBrain(extractSystem, userContent, 350);
       let parsed = null;
@@ -687,8 +680,21 @@ If choice (when answer shows 2+ distinct YouTube results):
           return res.status(200).json({ status: 'choice', question: parsed.question || 'Which one, Sir?', options: cleanOptions });
         }
       }
-      const sq = (parsed && parsed.searchQuery) || rawQuery;
-      return res.status(200).json({ status: 'clear', searchQuery: sq });
+
+      if (parsed?.status === 'unknown') {
+        return res.status(200).json({ status: 'unknown', reason: parsed.reason || 'I do not have a confirmed match, Sir. Could you be more specific?' });
+      }
+
+      // Guard: even if status was "clear", reject obviously vague/descriptive
+      // searchQueries as a last line of defense (a long phrase with no
+      // proper-noun-looking tokens is a strong vagueness signal).
+      const sq = (parsed && parsed.searchQuery) || '';
+      const hasProperNounSignal = /[A-Z][a-z]+/.test(sq);
+      if (sq && sq.split(/\s+/).length >= 5 && !hasProperNounSignal) {
+        return res.status(200).json({ status: 'unknown', reason: 'I do not have a confirmed title for that, Sir. Could you name it more specifically?' });
+      }
+
+      return res.status(200).json({ status: 'clear', searchQuery: sq || rawQuery });
     }
 
     if (mode === 'greeting') {
@@ -735,11 +741,9 @@ NEVER use markdown. Write plain conversational sentences only.`;
     const listMode = isListRequest(userQuery);
 
     // ── DETECT PLAY REQUEST ───────────────────────────────
-    // v5.3.0: for "play X" requests, always YouTube search first
     const isPlayRequest = /^(play|put on|i want to (hear|listen to)|search (youtube )?for|youtube|queue|stream)\s+.+/i.test(userQuery);
 
     if (!isSimpleCommand(userMessages) && !analyzeMode && !isPlayRequest) {
-      // Normal web search path (unchanged except YouTube search can be added to chain)
       const reasoningSystem = `You are the reasoning layer of Scorpion AI. Today is ${timeStr}.
 In ONE sentence only, state: what the user is asking for AND what data source or action is needed.
 Be specific. Examples:
@@ -758,12 +762,6 @@ Output ONLY that one sentence. No preamble, no extra text.`;
 
       writeChunk('fetching', 'Fetching live data and web results...');
 
-      // v5.4.0: youtubeSearch(userQuery) now runs unconditionally for
-      // EVERY chat turn, not just when intent.isMusic. This means any
-      // question — news, general knowledge, whatever — also gets a
-      // chance to surface real, verified YouTube coverage if it exists
-      // (e.g. "latest Obama speech in Chicago" now checks YouTube even
-      // though that query never trips the music-intent regex).
       const [rawWebData, cryptoData, metalData, forexData, weatherData, sportsData, youtubeData] = await Promise.all([
         runSearchChain(plannedQueries, intent),
         getCrypto(userQuery),
@@ -786,8 +784,7 @@ Output ONLY that one sentence. No preamble, no extra text.`;
 
       let filteredWebData = null;
       if (rawWebData) filteredWebData = await scoreAndFilter(rawWebData, userQuery);
-      
-      // Distill large datasets to signal-only
+
       if (filteredWebData && filteredWebData.length > 2000) {
         writeChunk('fetching', 'Condensing data to key facts...');
         filteredWebData = await distillWebData(filteredWebData, userQuery);
@@ -926,29 +923,34 @@ ${webContext}`;
       }
 
     } else if (isPlayRequest) {
-      // ── PLAY REQUEST PATH — v5.3.0: YouTube search FIRST ──
+      // ── PLAY REQUEST PATH — v5.5.0: extraction now also supports
+      // "unknown" so vague descriptions trigger a clarifying question
+      // instead of a guessed/wrong video. ──
       writeChunk('thinking', 'Processing play request...');
 
       const extractedQuery = userQuery.replace(/^(play|put on|i want to (hear|listen to)|search (youtube )?for|youtube|queue|stream)\s*/i,'').replace(/\s*(on youtube|for me|please|now)\s*/ig,'').trim();
       const ytResults = await youtubeSearch(extractedQuery);
 
       if (ytResults) {
-        // YouTube search succeeded — use REAL results as context for extraction
         writeChunk('fetching', 'Found videos on YouTube matching your request...');
         writeChunk('searching', 'Verifying matches...');
 
-        // Call extract_play_query with the YOUTUBE results, not generic web guesses
         const extractSystem = `You are a YouTube search query extractor for Scorpion AI. Today is ${timeStr}.
 Given the user's request and ACTUAL YOUTUBE SEARCH RESULTS, extract the best exact match.
-If the user's request clearly matches one of the YouTube results, recommend that one.
-If ambiguous, suggest 2-3 distinct YouTube result options.
 
-YouTube search results provided below are VERIFIED to exist. Use their exact titles and channels.
+Choose ONE of three outcomes:
+- "clear": the user's request clearly matches exactly ONE of the YouTube results above (recommend it by its real title/channel).
+- "choice": 2+ of the YouTube results plausibly match equally well — surface them as distinct options.
+- "unknown": NONE of the YouTube results above genuinely match what the user described (e.g. their request was a vague plot/topic description and the actual results are unrelated, like an unrelated short or clip). In this case do NOT pick a result just because it's the only one available — say so.
+
+YouTube search results provided below are VERIFIED to exist. Use their exact titles and channels. NEVER invent a title that isn't listed.
 
 Output ONLY valid JSON:
 {"status":"clear","searchQuery":"<most precise YouTube search query that matches a real result above>"}
 OR
-{"status":"choice","question":"<max 15 words, spoken question>","options":[{"label":"<video title>","searchQuery":"<search for that exact result>"}, ...]}`;
+{"status":"choice","question":"<max 15 words, spoken question>","options":[{"label":"<video title>","searchQuery":"<search for that exact result>"}, ...]}
+OR
+{"status":"unknown","reason":"<one short sentence — e.g. 'None of the results I found genuinely match that description, Sir — could you tell me the movie/song title?'"}`;
 
         const userContent = `ORIGINAL REQUEST: ${extractedQuery}\n\nACTUAL YOUTUBE SEARCH RESULTS:\n${ytResults}`;
         let raw = await callAnyBrain(extractSystem, userContent, 350);
@@ -964,10 +966,15 @@ OR
           }
         }
 
+        if (parsed?.status === 'unknown') {
+          writeChunk('answer', parsed.reason || ('I could not confidently match that to a real video, Sir. Could you name the title more specifically? "' + extractedQuery + '" was too vague to verify against what I found on YouTube.'), { brain:'YOUTUBE-UNKNOWN' });
+          endStream();
+          return;
+        }
+
         const finalQuery = (parsed && parsed.searchQuery) || extractedQuery;
         writeChunk('answer', 'Locking onto: ' + finalQuery, { brain:'YOUTUBE' });
       } else {
-        // YouTube search returned nothing — fall back to generic web research
         writeChunk('searching', 'No direct YouTube match — searching web for context...');
         const [serperData, tavilyData] = await Promise.all([serperSearch(extractedQuery, false), tavilySearch(extractedQuery)]);
         const rawWeb = [serperData, tavilyData].filter(Boolean).join('\n\n---\n\n');
@@ -980,15 +987,22 @@ OR
 
         writeChunk('fetching', 'Analysing web context...');
         const extractSystem = `You are a YouTube search query extractor for Scorpion AI. Today is ${timeStr}.
-Given the user's "play" request and web search context (no YouTube search succeeded), extract the best search query.
-Try YouTube search API again with variations if needed, or output your best guess based on the web data.
+Given the user's "play" request and web search context (no YouTube search succeeded), extract the best search query — but ONLY if the web context actually names a specific, real, identifiable title/speaker/event. Never output a vague plot description as the search query.
 
 Output ONLY valid JSON:
-{"status":"clear","searchQuery":"<best YouTube search string based on web context>"}`;
+{"status":"clear","searchQuery":"<best YouTube search string based on web context — must be a real specific title, not a vague description>"}
+OR
+{"status":"unknown","reason":"<one short sentence explaining what's missing>"}`;
         const userContent = `REQUEST: ${extractedQuery}\n\nWEB CONTEXT:\n${rawWeb.slice(0,2000)}`;
         let raw = await callAnyBrain(extractSystem, userContent, 300);
         let parsed = null;
         try { parsed = JSON.parse((raw || '').replace(/```json|```/g,'').trim()); } catch (e) { parsed = null; }
+
+        if (parsed?.status === 'unknown') {
+          writeChunk('answer', parsed.reason || ('I could not confirm a specific match for "' + extractedQuery + '", Sir. Could you give me the exact title?'), { brain:'WEB-UNKNOWN' });
+          endStream();
+          return;
+        }
 
         const sq = (parsed && parsed.searchQuery) || extractedQuery;
         writeChunk('answer', 'Resolved to: ' + sq, { brain:'YOUTUBE+WEB' });
