@@ -448,22 +448,122 @@ export default async function handler(req, res) {
     // ── CLASSIFIERS ───────────────────────────────────────
     function classifyQuery(q) {
       const ql = q.toLowerCase();
-      return {
-        isCrypto:    /bitcoin|btc|ethereum|eth|solana|sol|bnb|dogecoin|doge|xrp|cardano|ada|crypto|coin/.test(ql),
-        isForex:     /forex|currency|exchange rate|usd|eur|gbp|kes|jpy|cad|aud|zar|ngn|ugx|tzs|convert|shilling|dollar|euro|pound/.test(ql),
-        isMetals:    /gold|silver|xau|xag|platinum|palladium|metal/.test(ql),
-        isWeather:   /weather|temperature|forecast|rain|humid|wind|sunny|cold|hot/.test(ql),
-        isSports:    /football|soccer|premier league|champions league|la liga|serie a|bundesliga|sport|score|match|goal/.test(ql),
-        isFinancial: /rate|exchange|currency|price|convert|worth|cost|how much|value|market|stock|share|trading/.test(ql),
-        isNews:      /news|happened|latest|today|yesterday|this week|breaking|announced|said|reported|now|currently/.test(ql),
-        isVisual:    /explain|show me|what is|how does|diagram of|illustrate|demonstrate|visualise|visualize|lab|laboratory/.test(ql),
-        isMusic:     /song|artist|musician|track|album|audio|music|listen|hear|reggae|rap|rock|pop|jazz|classical|spotify|soundcloud|youtube music|cover|remix|official audio|lyrics|band|singer|composer/.test(ql)
+      const intent = {
+        isCrypto:    /bitcoin|btc|ethereum|eth|solana|sol|bnb|dogecoin|doge|xrp|cardano|ada|crypto|coin|blockchain|wallet|exchange/.test(ql),
+        isForex:     /forex|currency|exchange rate|usd|eur|gbp|kes|jpy|cad|aud|zar|ngn|ugx|tzs|convert|shilling|dollar|euro|pound|pips|pair/.test(ql),
+        isMetals:    /gold|silver|xau|xag|platinum|palladium|metal|commodity|bullion|spot price/.test(ql),
+        isWeather:   /weather|temperature|forecast|rain|humid|wind|sunny|cold|hot|celsius|fahrenheit|climate/.test(ql),
+        isSports:    /football|soccer|premier league|champions league|la liga|serie a|bundesliga|sport|score|match|goal|team|league|tournament/.test(ql),
+        isNews:      /news|happened|latest|today|yesterday|this week|breaking|announced|said|reported|now|currently|recent|update|headline/.test(ql),
+        isMusic:     /song|artist|musician|track|album|audio|music|listen|hear|reggae|rap|rock|pop|jazz|classical|spotify|soundcloud|youtube music|cover|remix|official audio|lyrics|band|singer|composer|discography/.test(ql),
+        isTechnical: /code|python|javascript|api|database|algorithm|function|class|library|framework|syntax|debug|error|compile/.test(ql),
+        needsLiveData: false
       };
+      
+      // Determine primary intent
+      intent.primary = Object.keys(intent)
+        .filter(k => k !== 'needsLiveData' && k !== 'primary' && intent[k])
+        .sort()[0] || 'general';
+      
+      // Flag if needs live data
+      intent.needsLiveData = intent.isCrypto || intent.isForex || intent.isMetals || intent.isWeather || intent.isSports || 
+        (/\b(current|now|today|live|real[- ]?time|right now)\b/i.test(ql));
+      
+      return intent;
     }
 
     function isListRequest(text) {
       if (!text) return false;
       return /\b(point form|in points|bullet points?|bulleted|as a list|in list form|make notes|key points|in note form|outline (this|it)|summar(y|ize|ise)[\s\S]{0,40}(points|notes|list)|notes on this)\b/i.test(text);
+    }
+
+    // ── ROLE-BASED SYSTEM PROMPTS ──────────────────────
+    function getRolePrompt(intent, partOfDay, timeStr) {
+      const basePersonality = `You are Scorpion, a hyper-intelligent Jarvis-style AI assistant.
+You are warm, witty, loyal, and brilliantly intelligent. You address the user as Sir.
+Today is ${timeStr}. It is ${partOfDay}.`;
+
+      const roles = {
+        music: `${basePersonality}
+
+You are a music encyclopedia and curator. You know:
+- Artist histories, discographies, sample sources
+- Production techniques, collaborations, influences
+- Album release dates, chart positions, critical reception
+- Song meanings, lyrics context, live versions, remixes
+
+INSTRUCTION: 
+- If YOUTUBE SEARCH RESULTS show verified videos matching the query, ALWAYS offer: "I found [exact title] by [channel]. Would you like me to play it, Sir?"
+- Answer follow-ups about artist/song using the YOUTUBE + WEB context already available — no new research needed.
+- Be enthusiastic about music. Use era/genre context naturally.`,
+
+        news: `${basePersonality}
+
+You are a news analyst and fact-checker. You:
+- Synthesize multiple sources, spot agreements and disagreements
+- Flag uncertain claims and outdated information
+- Understand publication biases and source reliability
+- Trace facts to original reporting
+
+INSTRUCTION:
+- ALWAYS state fetch timestamp and source freshness ([HIGH CONFIDENCE] = today/yesterday, [MEDIUM] = 1-7 days, [LOW] = older)
+- If sources contradict, explicitly say which source and analyze why (different measurement? old data? bias?)
+- Warn: "This is 30+ days old, Sir — may not reflect current status."
+- Never state unverified claims as fact.`,
+
+        crypto: `${basePersonality}
+
+You are a markets analyst specializing in cryptocurrency. You:
+- Read live price feeds and understand volatility
+- Explain blockchain fundamentals, wallets, exchanges
+- Know major projects and their use cases
+- Understand technical analysis basics
+
+CRITICAL: Live crypto data in [LIVE CRYPTO DATA] section is GROUND TRUTH. Do NOT use training knowledge for prices — ONLY cite the live feed with timestamp.
+
+INSTRUCTION:
+- Always report prices with [LIVE CRYPTO DATA] timestamp
+- If query asks for price but no live data: "I do not have a live feed for that, Sir."
+- Provide context (market cap, 24h change) when available
+- Admit uncertainty for predictions (price going up/down is speculation).`,
+
+        technical: `${basePersonality}
+
+You are a technical problem-solver and engineer. You:
+- Debug code, explain architecture, write pseudocode
+- Know multiple languages, frameworks, design patterns
+- Understand system performance, scalability, trade-offs
+- Write clear, correct examples
+
+INSTRUCTION:
+- Be precise. Code examples must be syntactically valid or clearly marked pseudocode.
+- Explain *why*, not just how.
+- Admit when something is beyond scope or requires specialized knowledge.`,
+
+        general: `${basePersonality}
+
+You are a conversationalist and explainer. You:
+- Answer questions clearly and conversationally
+- Break complex topics into digestible pieces
+- Know when to go deep and when to stay surface-level
+- Engage naturally without being robotic`
+      };
+
+      return roles[intent.primary] || roles.general;
+    }
+
+    // ── DATA DISTILLATION ──────────────────────────────
+    async function distillWebData(rawData, q) {
+      if (!rawData || rawData.length < 300) return rawData;
+      
+      const distillSystem = `You are a data analyst. Extract ONLY facts directly answering: "${q}"
+Remove: ads, navigation, repetition, tangents, irrelevant sections.
+Output: bullet list of key facts, max 600 chars. Be specific (numbers, dates, names).
+If nothing relevant, output: NO RELEVANT DATA`;
+
+      const result = await callCerebras(distillSystem, rawData.slice(0, 8000), 200);
+      if (!result || result === 'NO RELEVANT DATA') return rawData;
+      return result;
     }
 
     function enhanceQuery(q) {
@@ -496,8 +596,8 @@ export default async function handler(req, res) {
         '2) Remove irrelevant content, ads, navigation, repetition. ' +
         '3) Tag each key fact as [HIGH CONFIDENCE] or [LOW CONFIDENCE]. ' +
         '4) Flag dates as [DATE: YYYY-MM-DD]. If no date tag [DATE: UNKNOWN]. ' +
-        '5) REJECT news facts older than 48 hours — mark [STALE]. ' +
-        '6) Preserve exact numbers. ' +
+        '5) PENALIZE STALE DATA: facts older than 48 hours get [STALE]. Facts older than 30 days get [VERY STALE]. ' +
+        '6) Preserve exact numbers and dates. ' +
         '7) Output clean structured facts only. If nothing relevant output: NO RELEVANT DATA FOUND',
         'QUERY: ' + q + '\n\nRAW DATA:\n' + rawData.slice(0, 10000), 2000
       );
@@ -656,6 +756,12 @@ Output ONLY that one sentence. No preamble, no extra text.`;
 
       let filteredWebData = null;
       if (rawWebData) filteredWebData = await scoreAndFilter(rawWebData, userQuery);
+      
+      // Distill large datasets to signal-only
+      if (filteredWebData && filteredWebData.length > 2000) {
+        writeChunk('fetching', 'Condensing data to key facts...');
+        filteredWebData = await distillWebData(filteredWebData, userQuery);
+      }
 
       if (filteredWebData && intent.isNews) {
         const tightWindow = /\btoday\b|\bthis morning\b|\bright now\b|\bcurrently\b/i.test(userQuery);
@@ -697,32 +803,48 @@ Output ONLY that one sentence. No preamble, no extra text.`;
 - Address the user as Sir.
 - Always state the exact fetch time and date when reporting live data.`;
 
-      const systemPrompt = `You are Scorpion, a hyper-intelligent Jarvis-style AI assistant.
-You are warm, witty, loyal, and brilliantly intelligent. You address the user as Sir.
-Today is ${timeStr}. Yesterday was ${yesterdayStr}.
+      const rolePrompt = getRolePrompt(intent, partOfDay, timeStr);
+
+      const systemPrompt = `${rolePrompt}
 
 ${formatRule}
 
-CRITICAL INSTRUCTIONS:
-SOURCE HIERARCHY:
-1. LIVE specialist APIs (CRYPTO, FOREX, METALS, WEATHER, SPORTS, YOUTUBE) — highest priority
-2. [HIGH CONFIDENCE] tagged facts from web search
-3. News sources with today or yesterday date
-4. [LOW CONFIDENCE] or [STALE] facts — mention uncertainty
-5. Training knowledge — FORBIDDEN for any live factual claim
+CONFIDENCE SELF-RATING (critical):
+Before answering, rate yourself [CONFIDENT] / [LIKELY] / [UNCERTAIN] / [GUESSING]:
+- [CONFIDENT] = data directly answers query, sources agree, info is recent/verified
+- [LIKELY] = data mostly answers, some minor uncertainty or source disagreement
+- [UNCERTAIN] = partial data, sources disagree, or data is older
+- [GUESSING] = no direct data, using training knowledge only
 
-HANDLE GAPS HONESTLY:
-- DATA GAP WARNING present: say "I do not have a live feed for that, Sir"
-- NEVER fill a gap with training knowledge as if current
-- ALWAYS state exact fetch timestamp when reporting live data
+Start your answer with [CONFIDENCE LEVEL] then the answer. Example: "[CONFIDENT] Bitcoin is currently $45,230 USD..."
 
-YOUTUBE PLAYBACK OFFER:
-- If YOUTUBE SEARCH RESULTS section contains verified videos/songs, and the user's query suggests they want audio/music, ALWAYS offer to play it.
-- Format: "I found [exact title] by [artist/channel] on YouTube. Would you like me to play it, Sir?"
-- If user asks follow-up questions (info about artist, song history, etc.), answer using the YOUTUBE SEARCH RESULTS + WEB SEARCH context you already have — no need to research further.
-- Only offer playback once per query unless the user explicitly asks for a different song.
+CONTRADICTION RESOLUTION:
+If sources disagree on same fact, analyze why:
+1) Is one source outdated? (check timestamps)
+2) Do they measure different things?
+3) Is one source more reliable?
+4) Could both be partially true?
+Mention this analysis in your answer.
 
-LIVE DATA:
+EXAMPLE ANSWERS:
+
+MUSIC:
+Query: "Tell me about reggae in the 70s"
+Good: "[CONFIDENT] Reggae in the 1970s was revolutionized by Bob Marley and the Wailers, who released 'Exodus' in 1977... I found several albums on YouTube. Would you like me to play one, Sir?"
+
+NEWS:
+Query: "What happened in tech today"
+Good: "[CONFIDENT] OpenAI announced GPT-5 this morning [TechCrunch, fetched 6:45 AM]. [LIKELY] Reports suggest $10B funding, but unconfirmed [source disagreement noted]."
+
+CRYPTO:
+Query: "Bitcoin price now"
+Good: "[CONFIDENT] Bitcoin = $45,230 USD, up 3.2% in 24h. [LIVE CRYPTO DATA fetched 10:15 AM GMT+3]"
+
+TECHNICAL:
+Query: "Sort array in Python"
+Good: "[CONFIDENT] Use sorted(): sorted([3,1,2]) returns [1,2,3]"
+
+LIVE DATA CONTEXT:
 ${webContext}`;
 
       const brainRoster = [
