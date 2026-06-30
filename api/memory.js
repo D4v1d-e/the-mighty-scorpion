@@ -1,38 +1,25 @@
 // ============================================================
-// MEMORY.JS — SCORPION AI PERSISTENT MEMORY v1.0
+// MEMORY.MJS — SCORPION AI PERSISTENT MEMORY v1.1
 // ============================================================
-// Stores and retrieves long-term memory for Scorpion AI
-// using Vercel KV (Redis). Memory is injected into every
-// chat request so Scorpion remembers who you are, what you
-// trade, and what matters to you across all sessions.
-//
-// Storage key: scorpion_memory (single JSON object)
-//
-// Memory shape:
-//   {
-//     user_facts: string[],           // discovered facts about user
-//     conversation_summaries: string[], // rolling 10-entry log
-//     watched_assets: string[],       // symbols mentioned >1 time
-//     asset_mention_counts: {},       // tracks mention frequency
-//     last_updated: string            // ISO timestamp
-//   }
-//
-// Functions:
-//   readMemory()  — fetch + format for system prompt injection
-//   writeMemory() — extract + merge new facts after a reply
+// v1.1: Switched from @vercel/kv to @upstash/redis directly.
+//       Uses KV_REST_API_URL and KV_REST_API_TOKEN env vars.
 //
 // Author  : Dr. Davie Mwangi
-// Version : 1.0.0
+// Version : 1.1.0
 // ============================================================
 
-import { kv } from '@vercel/kv';
+import { Redis } from '@upstash/redis';
+
+const kv = new Redis({
+  url:   process.env.KV_REST_API_URL,
+  token: process.env.KV_REST_API_TOKEN,
+});
 
 const MEMORY_KEY    = 'scorpion_memory';
 const MAX_SUMMARIES = 10;
 const MAX_FACTS     = 30;
 const MAX_ASSETS    = 20;
 
-// ── EMPTY MEMORY TEMPLATE ───────────────────────────────────
 function emptyMemory() {
   return {
     user_facts:              [],
@@ -43,17 +30,12 @@ function emptyMemory() {
   };
 }
 
-// ── READ MEMORY ─────────────────────────────────────────────
-// Called at the start of every chat request.
-// Returns a formatted string ready to inject into system prompt.
-// Fails silently — if KV is down, chat still works without memory.
 export async function readMemory() {
   try {
     const raw = await kv.get(MEMORY_KEY);
     if (!raw) return '';
 
     const mem = typeof raw === 'string' ? JSON.parse(raw) : raw;
-
     let block = '';
 
     if (mem.user_facts?.length) {
@@ -79,20 +61,13 @@ export async function readMemory() {
       : '';
 
   } catch (e) {
-    console.error('[memory.js] readMemory error:', e.message);
+    console.error('[memory.mjs] readMemory error:', e.message);
     return '';
   }
 }
 
-// ── WRITE MEMORY ────────────────────────────────────────────
-// Called AFTER the response has been streamed — does not block.
-// Sends the exchange through Cerebras to extract memorable facts,
-// then merges into existing memory and writes back to KV.
-//
-// Skips trivial exchanges (greetings, short messages, YouTube plays).
 export async function writeMemory(userMessage, assistantReply, cerebrasKey) {
   try {
-    // ── Skip trivial exchanges ──────────────────────────────
     const msg = (userMessage || '').toLowerCase().trim();
     const SKIP_PATTERNS = [
       /^(hello|hi|hey|thanks|thank you|bye|goodbye|good morning|good evening|good night)/,
@@ -102,19 +77,16 @@ export async function writeMemory(userMessage, assistantReply, cerebrasKey) {
     ];
     if (msg.length < 8 || SKIP_PATTERNS.some(p => p.test(msg))) return;
 
-    // ── Load existing memory ────────────────────────────────
     let mem = emptyMemory();
     try {
       const raw = await kv.get(MEMORY_KEY);
       if (raw) mem = typeof raw === 'string' ? JSON.parse(raw) : raw;
-      // ensure all fields exist on old memory objects
       mem.user_facts             = mem.user_facts             || [];
       mem.conversation_summaries = mem.conversation_summaries || [];
       mem.watched_assets         = mem.watched_assets         || [];
       mem.asset_mention_counts   = mem.asset_mention_counts   || {};
     } catch (e) { /* start fresh */ }
 
-    // ── Extract assets mentioned in this exchange ───────────
     const ASSET_PATTERNS = [
       /\b(XAU\/USD|XAUUSD|gold)\b/gi,
       /\b(XAG\/USD|XAGUSD|silver)\b/gi,
@@ -142,7 +114,6 @@ export async function writeMemory(userMessage, assistantReply, cerebrasKey) {
       });
     });
 
-    // ── Ask Cerebras to extract memorable facts ─────────────
     if (cerebrasKey) {
       try {
         const extractSystem = `You are a memory extraction system for Scorpion AI.
@@ -180,27 +151,22 @@ If nothing worth remembering, return: {"new_facts": [], "summary": ""}`;
         const raw  = data.choices?.[0]?.message?.content?.trim();
 
         if (raw) {
-          const cleaned  = raw.replace(/```json|```/g, '').trim();
+          const cleaned   = raw.replace(/```json|```/g, '').trim();
           const extracted = JSON.parse(cleaned);
 
-          // Merge new facts — deduplicate by checking similarity
           if (extracted.new_facts?.length) {
             extracted.new_facts.forEach(fact => {
               const factLower = fact.toLowerCase();
               const alreadyKnown = mem.user_facts.some(f =>
                 f.toLowerCase().slice(0, 30) === factLower.slice(0, 30)
               );
-              if (!alreadyKnown) {
-                mem.user_facts.push(fact);
-              }
+              if (!alreadyKnown) mem.user_facts.push(fact);
             });
-            // Cap at MAX_FACTS — drop oldest
             if (mem.user_facts.length > MAX_FACTS) {
               mem.user_facts = mem.user_facts.slice(-MAX_FACTS);
             }
           }
 
-          // Add summary to rolling window
           if (extracted.summary && extracted.summary.trim()) {
             const timestamp = new Date().toLocaleString('en-US', {
               timeZone: 'Africa/Nairobi',
@@ -208,42 +174,34 @@ If nothing worth remembering, return: {"new_facts": [], "summary": ""}`;
               hour: '2-digit', minute: '2-digit', hour12: true
             });
             mem.conversation_summaries.push('[' + timestamp + '] ' + extracted.summary.trim());
-            // Keep rolling window of MAX_SUMMARIES
             if (mem.conversation_summaries.length > MAX_SUMMARIES) {
               mem.conversation_summaries = mem.conversation_summaries.slice(-MAX_SUMMARIES);
             }
           }
         }
       } catch (e) {
-        console.error('[memory.js] extraction error:', e.message);
-        // Still proceed to save asset data even if extraction failed
+        console.error('[memory.mjs] extraction error:', e.message);
       }
     }
 
-    // ── Write updated memory back to KV ─────────────────────
     mem.last_updated = new Date().toISOString();
     await kv.set(MEMORY_KEY, JSON.stringify(mem));
 
   } catch (e) {
-    console.error('[memory.js] writeMemory error:', e.message);
-    // Silent fail — never block the chat flow
+    console.error('[memory.mjs] writeMemory error:', e.message);
   }
 }
 
-// ── WIPE MEMORY ─────────────────────────────────────────────
-// Called when user says "forget everything" or "clear your memory"
 export async function wipeMemory() {
   try {
     await kv.set(MEMORY_KEY, JSON.stringify(emptyMemory()));
     return true;
   } catch (e) {
-    console.error('[memory.js] wipeMemory error:', e.message);
+    console.error('[memory.mjs] wipeMemory error:', e.message);
     return false;
   }
 }
 
-// ── API HANDLER ─────────────────────────────────────────────
-// Direct endpoint — GET to read, DELETE to wipe
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, DELETE, OPTIONS');
@@ -251,7 +209,6 @@ export default async function handler(req, res) {
 
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  // ── Auth check ──────────────────────────────────────────
   const SECRET = process.env.APP_SECRET;
   if (SECRET && req.headers['x-scorpion-key'] !== SECRET) {
     return res.status(401).json({ error: 'Unauthorized' });
