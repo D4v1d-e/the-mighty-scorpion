@@ -1,6 +1,17 @@
 // ============================================================
-// CHAT API HANDLER — SCORPION AI BRAIN v5.0.4
+// CHAT API HANDLER — SCORPION AI BRAIN v5.1.0
 // ============================================================
+// v5.1.0 Fixes:
+//   - extract_play_query now returns {status:'choice', question, options:[{label,searchQuery}]}
+//     when the researched answer itself names 2+ distinct real candidates,
+//     instead of always collapsing to a single searchQuery. Frontend already
+//     supports rendering tappable options for this — it just never received them.
+//   - Added isAnalyzeRequest detection: long pasted text or explicit
+//     analyze/summarize requests skip the web-search pipeline entirely and go
+//     straight to the brain with the full text, instead of being treated as a
+//     search subject (which previously produced garbage queries and sometimes
+//     no response at all for big pastes).
+//
 // v5.0.4 Fixes:
 //   - resolve_video and resolve_song now receive conversationHistory
 //     so "play the other version", "that one again", etc. resolve
@@ -13,7 +24,7 @@
 //   - No KV / Redis required
 //
 // Author  : Dr. Davie Mwangi
-// Version : 5.0.4
+// Version : 5.1.0
 // ============================================================
 
 const readMemory  = async () => '';
@@ -466,6 +477,19 @@ export default async function handler(req, res) {
       return simple.some(s => text.startsWith(s)) && text.length < 30;
     }
 
+    // ── ANALYZE / PASTE DETECTION ──────────────────────────
+    // FIX: large pasted blocks or explicit "analyze/summarize this"
+    // requests must NOT be routed through the web-search pipeline.
+    // Previously planSearch() tried to turn the pasted text itself into
+    // search queries, producing irrelevant results, and the combined
+    // prompt (pasted text + search noise) sometimes caused every brain
+    // call to fail silently, leaving the user with no response at all.
+    function isAnalyzeRequest(text) {
+      if (!text) return false;
+      if (text.length > 400) return true;
+      return /\b(analy[sz]e|summar[iz]e|review this|what does this (mean|say)|proofread|critique this)\b/i.test(text);
+    }
+
     // ══════════════════════════════════════════════════════
     // NON-STREAMING MODES
     // ══════════════════════════════════════════════════════
@@ -478,22 +502,46 @@ export default async function handler(req, res) {
 
     // ── EXTRACT PLAY QUERY ────────────────────────────────
     // Takes a fully-researched chat answer (already staged through the
-    // normal Processing/Planning/Running pipeline) and pulls out a clean,
-    // optimised YouTube search string. Used by the "play X" flow so it
-    // shares the SAME research pipeline as normal chat instead of the
-    // separate resolve_video/resolve_song detour.
+    // normal Processing/Planning/Running pipeline) and decides whether
+    // the user's request resolves to ONE clear video, or whether the
+    // research answer itself names 2+ genuinely distinct real candidates
+    // — in which case it returns structured options so the frontend can
+    // render tappable/speakable choices (same UI as intent-clarify),
+    // instead of just reading the ambiguity out loud as plain text.
     if (mode === 'extract_play_query') {
       const rawQuery = (query || '').trim();
       const answer   = (req.body.answer || '').trim();
-      if (!rawQuery && !answer) return res.status(200).json({ searchQuery: '' });
-      const extractSystem = `You are a YouTube search query extractor. Today is ${timeStr}.
-Given the user's original "play" request and a researched answer identifying exactly what they want, output ONLY the best YouTube search query as plain text. No quotes, no preamble, no JSON.
-Rules: For speeches/events include speaker + event + place + year/date. For songs include "official audio" or "official video". For movies include "full movie". Be precise and specific using facts from the answer (names, dates, places) rather than vague terms.`;
+      if (!rawQuery && !answer) return res.status(200).json({ status: 'clear', searchQuery: '' });
+
+      const extractSystem = `You are a YouTube search query extractor for Scorpion AI. Today is ${timeStr}.
+Given the user's original "play" request and a researched answer identifying what they want, decide:
+- "clear": exactly ONE specific video/song/speech/event is meant.
+- "choice": the researched answer itself names 2 or 3 genuinely DISTINCT real candidates (different songs, different versions, different events, different speakers) that the user could plausibly mean.
+
+Output ONLY valid JSON, nothing else. No markdown, no backticks, no preamble.
+
+If clear:
+{"status":"clear","searchQuery":"<best YouTube search query, precise — include speaker+event+place+year for speeches, 'official audio' for songs, 'full movie' for films>"}
+
+If choice:
+{"status":"choice","question":"<short spoken question, max 15 words, e.g. 'Which one, Sir?'>","options":[{"label":"<short human label, e.g. 'Bob Marley version'>","searchQuery":"<precise YouTube search query for this exact option>"}, ...]}
+
+Only use "choice" when the answer text genuinely distinguishes multiple real, different things. Do not invent options that are not supported by the answer.`;
       const userContent = `ORIGINAL REQUEST: ${rawQuery}\n\nRESEARCHED ANSWER:\n${answer.slice(0,1500)}`;
-      let extracted = await callAnyBrain(extractSystem, userContent, 60);
-      if (!extracted) extracted = rawQuery;
-      extracted = extracted.replace(/^["']+|["']+$/g,'').replace(/\n/g,' ').trim();
-      return res.status(200).json({ searchQuery: extracted || rawQuery });
+      let raw = await callAnyBrain(extractSystem, userContent, 300);
+      let parsed = null;
+      try { parsed = JSON.parse((raw || '').replace(/```json|```/g,'').trim()); } catch (e) { parsed = null; }
+
+      if (parsed?.status === 'choice' && Array.isArray(parsed.options) && parsed.options.length >= 2) {
+        const cleanOptions = parsed.options
+          .filter(o => o && o.label && o.searchQuery)
+          .slice(0, 3);
+        if (cleanOptions.length >= 2) {
+          return res.status(200).json({ status: 'choice', question: parsed.question || 'Which one, Sir?', options: cleanOptions });
+        }
+      }
+      const sq = (parsed && parsed.searchQuery) || rawQuery;
+      return res.status(200).json({ status: 'clear', searchQuery: sq });
     }
 
     // ── RESOLVE VIDEO ─────────────────────────────────────
@@ -677,8 +725,13 @@ NEVER use markdown. Write plain conversational sentences only.`;
       return;
     }
 
+    // ── ANALYZE / LONG PASTE CHECK ────────────────────────
+    // FIX: skip the entire web-search pipeline for analysis requests —
+    // go straight to the brain with the full pasted text as context.
+    const analyzeMode = isAnalyzeRequest(userQuery);
+
     // ── STAGE 1: REASONING ───────────────────────────────
-    if (!isSimpleCommand(userMessages)) {
+    if (!isSimpleCommand(userMessages) && !analyzeMode) {
       const reasoningSystem = `You are the reasoning layer of Scorpion AI. Today is ${timeStr}.
 In ONE sentence only, state: what the user is asking for AND what data source or action is needed.
 Be specific. Examples:
@@ -689,12 +742,14 @@ Be specific. Examples:
 Output ONLY that one sentence. No preamble, no extra text.`;
       const reasoningSentence = await callCerebras(reasoningSystem, userQuery, 80);
       if (reasoningSentence) writeChunk('thinking', reasoningSentence.trim());
+    } else if (analyzeMode) {
+      writeChunk('thinking', 'Reading the full text you provided — no web search needed for this.');
     }
 
     // ── STAGE 2: CLASSIFY + PLAN ─────────────────────────
     const intent = classifyQuery(userQuery);
 
-    if (!isSimpleCommand(userMessages)) {
+    if (!isSimpleCommand(userMessages) && !analyzeMode) {
       writeChunk('searching', 'Planning search strategy...');
       const plannedQueries = await planSearch(userQuery);
       writeChunk('searching', 'Running ' + plannedQueries.length + ' search queries: ' + plannedQueries.join(' / '));
@@ -829,6 +884,71 @@ ${webContext}`;
       } catch (aggErr) {
         const errors = aggErr.errors?.map(e => e.message).join(' | ') || aggErr.message;
         console.error('[chat.js] All brains failed:', errors);
+        writeChunk('error', 'All brains failed: ' + errors);
+      }
+
+    } else if (analyzeMode) {
+      // ── ANALYZE PATH — full text goes straight to the brain, no search ──
+      const analyzeSystem = `You are Scorpion, a hyper-intelligent Jarvis-style AI assistant.
+You are warm, witty, loyal, and brilliantly intelligent. You address the user as Sir.
+Today is ${timeStr}.
+
+CRITICAL OUTPUT FORMAT RULES:
+- Write in plain conversational sentences only.
+- NEVER use markdown: no asterisks, no bold, no headers, no bullet points, no numbered lists, no backticks.
+- Your output will be read aloud by a text-to-speech engine.
+- Address the user as Sir.
+
+The user has pasted or referenced a block of text below for you to analyse, summarise, or otherwise work with.
+Do NOT treat this content as something to search the web for — it is already provided to you in full.
+Read it carefully and respond directly to what they asked you to do with it.`;
+
+      const brainRoster = [
+        { name:'CEREBRAS', key:process.env.CEREBRAS_API_KEY, url:'https://api.cerebras.ai/v1/chat/completions',     model:'llama3.1-8b',            headers:k=>({'Content-Type':'application/json','Authorization':'Bearer '+k}) },
+        { name:'GROQ',     key:process.env.GROQ_API_KEY,     url:'https://api.groq.com/openai/v1/chat/completions', model:'llama-3.3-70b-versatile', headers:k=>({'Content-Type':'application/json','Authorization':'Bearer '+k}) },
+        { name:'GEMINI',   key:process.env.GEMINI_API_KEY,   url:null,                                               model:'gemini-2.0-flash' },
+        { name:'MISTRAL',  key:process.env.MISTRAL_API_KEY,  url:'https://api.mistral.ai/v1/chat/completions',       model:'mistral-large-latest',    headers:k=>({'Content-Type':'application/json','Authorization':'Bearer '+k}) }
+      ].filter(b => b.key);
+
+      writeChunk('fetching', 'No search needed — analysing the provided text directly.');
+
+      if (!brainRoster.length) {
+        console.error('[chat.js] NO BRAIN API KEYS CONFIGURED');
+        writeChunk('error', 'No brain API keys configured.');
+        endStream(); return;
+      }
+
+      async function callAnalyzeBrain(brain) {
+        if (brain.name === 'GEMINI') {
+          const geminiMessages = formattedMessages.map(m => ({ role:m.role==='assistant'?'model':'user', parts:[{text:m.content}] }));
+          const gRes  = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + brain.model + ':generateContent?key=' + brain.key, {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({ systemInstruction:{parts:[{text:analyzeSystem}]}, contents:geminiMessages, generationConfig:{temperature:0.2,maxOutputTokens:1536} })
+          });
+          const gData = await gRes.json();
+          if (gData.error) throw new Error(gData.error.message);
+          const reply = gData?.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (!reply) throw new Error('Empty reply from GEMINI');
+          return { reply:sanitizeReply(reply), brain:brain.name };
+        } else {
+          const oRes  = await fetch(brain.url, {
+            method:'POST', headers:brain.headers(brain.key),
+            body:JSON.stringify({ model:brain.model, messages:[{role:'system',content:analyzeSystem},...formattedMessages], temperature:0.2, max_tokens:1536 })
+          });
+          const oData = await oRes.json();
+          if (oData.error) throw new Error(oData.error?.message || JSON.stringify(oData.error));
+          const reply = oData?.choices?.[0]?.message?.content;
+          if (!reply) throw new Error('Empty reply from ' + brain.name);
+          return { reply:sanitizeReply(reply), brain:brain.name };
+        }
+      }
+
+      try {
+        const result = await Promise.any(brainRoster.map(b => callAnalyzeBrain(b)));
+        writeChunk('answer', result.reply, { brain: result.brain + ' + DIRECT' });
+      } catch (aggErr) {
+        const errors = aggErr.errors?.map(e => e.message).join(' | ') || aggErr.message;
+        console.error('[chat.js] All brains failed (analyze mode):', errors);
         writeChunk('error', 'All brains failed: ' + errors);
       }
 
