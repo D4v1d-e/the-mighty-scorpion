@@ -1661,6 +1661,24 @@ function _fetchChunkBlob(chunkText){
     .then(blob=>{if(!blob||blob.size<100)throw new Error('Empty blob');return blob;});
 }
 
+let _pendingAutoplayResumes=[];
+let _autoplayUnlockArmed=false;
+function _armAutoplayUnlock(){
+  if(_autoplayUnlockArmed)return;
+  _autoplayUnlockArmed=true;
+  const resumeAll=()=>{
+    document.removeEventListener('pointerdown',resumeAll,true);
+    document.removeEventListener('keydown',resumeAll,true);
+    audioUnlocked=true;
+    const pending=_pendingAutoplayResumes;
+    _pendingAutoplayResumes=[];
+    pending.forEach(fn=>{try{fn();}catch(e){}});
+    _autoplayUnlockArmed=false;
+  };
+  document.addEventListener('pointerdown',resumeAll,true);
+  document.addEventListener('keydown',resumeAll,true);
+}
+
 function _playBlob(blob){
   return new Promise((resolve)=>{
     const url=URL.createObjectURL(blob);
@@ -1669,7 +1687,17 @@ function _playBlob(blob){
     const cleanup=()=>{URL.revokeObjectURL(url);if(_currentAudio===audio)_currentAudio=null;resolve();};
     audio.onended=cleanup;
     audio.onerror=cleanup;
-    audio.play().catch(cleanup);
+    audio.play().catch(err=>{
+      if(err && err.name==='NotAllowedError'){
+        _armAutoplayUnlock();
+        _pendingAutoplayResumes.push(()=>{
+          audio.play().catch(cleanup);
+        });
+        resolve(); // don't block the chunk queue on a gesture that may never come
+      }else{
+        cleanup();
+      }
+    });
   });
 }
 
@@ -1778,16 +1806,21 @@ async function bootGreeting(){
     const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json','x-scorpion-key':SCORPION_SECRET},body:JSON.stringify({mode:'greeting',timezone:tz,messages:[{role:'user',text:'greet me'}]})});
     const data=await r.json();
     if(data.reply){
+      // Text + speech fire in the same tick: paint the reply, then
+      // immediately kick off the TTS fetch (speakReply) before any of
+      // the secondary bookkeeping below, so there's no artificial gap
+      // between the greeting appearing and audio starting.
       document.getElementById('output').textContent=data.reply;
       document.getElementById('m-brain').textContent=data.brain||'AI';
+      speakReply(data.reply);
       pushHistory('assistant', data.reply);
       addLog('a', data.reply, data.brain||'GREETING');
       bumpQ();
-      speakReply(data.reply);
     }
   }catch(e){
     const fallback='Scorpion AI ready, Sir. All systems online.';
     document.getElementById('output').textContent=fallback;
+    speakReply(fallback);
     pushHistory('assistant', fallback);
     addLog('a', fallback, 'FALLBACK');
   }
