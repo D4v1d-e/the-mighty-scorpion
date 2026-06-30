@@ -1,16 +1,18 @@
 // ============================================================
-// CHAT API HANDLER — SCORPION AI BRAIN v5.0.2
+// CHAT API HANDLER — SCORPION AI BRAIN v5.0.3
 // ============================================================
-// v5.0.2 Fixes:
-//   - Corrected env var names for Upstash Redis (KV_REST_API_URL /
-//     KV_REST_API_TOKEN) instead of the old VERCEL_KV_* names
-//   - Everything else identical to v5.0.1
+// v5.0.3 Fixes:
+//   - Removed memory.mjs dependency entirely
+//   - Memory functions replaced with silent no-op stubs
+//   - No KV / Redis required
 //
 // Author  : Dr. Davie Mwangi
-// Version : 5.0.2
+// Version : 5.0.3
 // ============================================================
 
-import { readMemory, writeMemory, wipeMemory } from './memory.mjs';
+const readMemory  = async () => '';
+const writeMemory = async () => {};
+const wipeMemory  = async () => true;
 
 export default async function handler(req, res) {
   console.log('[chat.js] Handler started');
@@ -31,15 +33,13 @@ export default async function handler(req, res) {
 
   // ── ENV DEBUG ────────────────────────────────────────────
   console.log('[chat.js] Environment check:', {
-    hasSecret: !!process.env.APP_SECRET,
+    hasSecret:   !!process.env.APP_SECRET,
     hasCerebras: !!process.env.CEREBRAS_API_KEY,
-    hasGroq: !!process.env.GROQ_API_KEY,
-    hasGemini: !!process.env.GEMINI_API_KEY,
-    hasMistral: !!process.env.MISTRAL_API_KEY,
-    hasSerper: !!process.env.SERPER_API_KEY,
-    hasTavily: !!process.env.TAVILY_API_KEY,
-    hasKV_URL: !!process.env.KV_REST_API_URL,
-    hasKV_TOKEN: !!process.env.KV_REST_API_TOKEN
+    hasGroq:     !!process.env.GROQ_API_KEY,
+    hasGemini:   !!process.env.GEMINI_API_KEY,
+    hasMistral:  !!process.env.MISTRAL_API_KEY,
+    hasSerper:   !!process.env.SERPER_API_KEY,
+    hasTavily:   !!process.env.TAVILY_API_KEY,
   });
 
   try {
@@ -71,10 +71,7 @@ export default async function handler(req, res) {
     // ── BRAIN HELPERS ─────────────────────────────────────
     async function callCerebras(systemContent, userContent, maxTokens = 200) {
       const key = process.env.CEREBRAS_API_KEY;
-      if (!key) {
-        console.warn('[chat.js] CEREBRAS_API_KEY not set');
-        return null;
-      }
+      if (!key) { console.warn('[chat.js] CEREBRAS_API_KEY not set'); return null; }
       try {
         const r = await fetch('https://api.cerebras.ai/v1/chat/completions', {
           method: 'POST',
@@ -86,18 +83,12 @@ export default async function handler(req, res) {
         });
         const data = await r.json();
         return data.choices?.[0]?.message?.content?.trim() || null;
-      } catch (e) {
-        console.error('[chat.js] Cerebras call failed:', e.message);
-        return null;
-      }
+      } catch (e) { console.error('[chat.js] Cerebras call failed:', e.message); return null; }
     }
 
     async function callGroq(systemContent, userContent, maxTokens = 300) {
       const key = process.env.GROQ_API_KEY;
-      if (!key) {
-        console.warn('[chat.js] GROQ_API_KEY not set');
-        return null;
-      }
+      if (!key) { console.warn('[chat.js] GROQ_API_KEY not set'); return null; }
       try {
         const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
           method: 'POST',
@@ -109,10 +100,7 @@ export default async function handler(req, res) {
         });
         const data = await r.json();
         return data.choices?.[0]?.message?.content?.trim() || null;
-      } catch (e) {
-        console.error('[chat.js] Groq call failed:', e.message);
-        return null;
-      }
+      } catch (e) { console.error('[chat.js] Groq call failed:', e.message); return null; }
     }
 
     async function callAnyBrain(system, user, maxTokens = 300) {
@@ -306,7 +294,7 @@ export default async function handler(req, res) {
       return Object.values(perQuery).filter(Boolean).join('\n\n---\n\n');
     }
 
-    // ── LIVE DATA HELPERS WITH TIMESTAMPS ─────────────────
+    // ── LIVE DATA HELPERS ─────────────────────────────────
     async function getCrypto(q) {
       const ql = q.toLowerCase();
       const coinMap = { bitcoin:'bitcoin',btc:'bitcoin',ethereum:'ethereum',eth:'ethereum',solana:'solana',sol:'solana',bnb:'binancecoin',dogecoin:'dogecoin',doge:'dogecoin',xrp:'ripple',cardano:'cardano',ada:'cardano' };
@@ -471,13 +459,8 @@ export default async function handler(req, res) {
 
     // ── MEMORY WIPE COMMAND ───────────────────────────────
     if (mode === 'wipe_memory') {
-      try {
-        const success = await wipeMemory();
-        return res.status(200).json({ success, message: success ? 'Memory cleared, Sir.' : 'Could not clear memory.' });
-      } catch (e) {
-        console.error('[chat.js] Memory wipe error:', e.message);
-        return res.status(200).json({ success: false, message: 'Memory wipe failed: ' + e.message });
-      }
+      await wipeMemory();
+      return res.status(200).json({ success: true, message: 'Memory cleared, Sir.' });
     }
 
     // ── RESOLVE VIDEO ─────────────────────────────────────
@@ -599,19 +582,10 @@ ${historyContext || 'No history yet.'}`;
 
     // ── GREETING ──────────────────────────────────────────
     if (mode === 'greeting') {
-      let memoryContext = '';
-      try {
-        memoryContext = await readMemory();
-      } catch (e) {
-        console.error('[chat.js] Memory read failed in greeting:', e.message);
-      }
-
       const greetSystem = `You are Scorpion, a hyper-intelligent Jarvis-style AI assistant.
 The current date and time is: ${timeStr}. It is ${partOfDay}.
-${memoryContext ? 'MEMORY:\n' + memoryContext : ''}
 Greet the user warmly like Jarvis greets Tony Stark — address them as Sir.
 Give a brief, witty, engaging good ${partOfDay} greeting. Keep it to 2-3 sentences.
-If memory shows you know them, reference something specific — their trading, their interests.
 NEVER use markdown. Write plain conversational sentences only.`;
       const brains = [
         { name:'CEREBRAS', key:process.env.CEREBRAS_API_KEY, url:'https://api.cerebras.ai/v1/chat/completions', model:'llama3.1-8b' },
@@ -633,31 +607,17 @@ NEVER use markdown. Write plain conversational sentences only.`;
     // ══════════════════════════════════════════════════════
     startStream();
 
-    const userMessages     = messages || [{ role:'user', text:'hello' }];
-    const lastMsg          = userMessages[userMessages.length - 1];
-    const userQuery        = lastMsg?.text || lastMsg?.content || '';
+    const userMessages      = messages || [{ role:'user', text:'hello' }];
+    const lastMsg           = userMessages[userMessages.length - 1];
+    const userQuery         = lastMsg?.text || lastMsg?.content || '';
     const formattedMessages = userMessages.map(m => ({ role:m.role==='assistant'?'assistant':'user', content:m.text||m.content||'' }));
 
     // ── MEMORY WIPE CHECK ─────────────────────────────────
     if (/\b(forget everything|clear your memory|wipe your memory|reset memory)\b/i.test(userQuery)) {
-      try {
-        await wipeMemory();
-        console.log('[chat.js] Memory wiped on user request');
-      } catch (e) {
-        console.error('[chat.js] Memory wipe failed:', e.message);
-      }
-      writeChunk('answer', 'Memory cleared Sir. I have forgotten everything from our past sessions and am starting fresh.', { brain:'SCORPION' });
+      await wipeMemory();
+      writeChunk('answer', 'Memory cleared Sir. Starting fresh.', { brain:'SCORPION' });
       endStream();
       return;
-    }
-
-    // ── LOAD MEMORY ───────────────────────────────────────
-    let memoryContext = '';
-    try {
-      memoryContext = await readMemory();
-      console.log('[chat.js] Memory loaded, context length:', memoryContext.length);
-    } catch (e) {
-      console.error('[chat.js] Memory read failed:', e.message);
     }
 
     // ── STAGE 1: REASONING ───────────────────────────────
@@ -666,14 +626,12 @@ NEVER use markdown. Write plain conversational sentences only.`;
 In ONE sentence only, state: what the user is asking for AND what data source or action is needed.
 Be specific. Examples:
 - "XAU/USD price — requires live metals spot feed."
-- "Where Ruto was yesterday — requires news search for June 29 2026."
+- "Where Ruto was yesterday — requires news search for ${yesterdayStr}."
 - "Bitcoin 24h change — requires live crypto feed from CoinGecko."
 - "Explain photosynthesis — requires general knowledge, no live data needed."
 Output ONLY that one sentence. No preamble, no extra text.`;
       const reasoningSentence = await callCerebras(reasoningSystem, userQuery, 80);
-      if (reasoningSentence) {
-        writeChunk('thinking', reasoningSentence.trim());
-      }
+      if (reasoningSentence) writeChunk('thinking', reasoningSentence.trim());
     }
 
     // ── STAGE 2: CLASSIFY + PLAN ─────────────────────────
@@ -731,9 +689,9 @@ Output ONLY that one sentence. No preamble, no extra text.`;
       if (weatherData) { webContext += '=== LIVE WEATHER DATA ===\n'  + weatherData + '\n\n'; dataSource += '+WEATHER'; }
       if (sportsData)  { webContext += '=== LIVE SPORTS DATA ===\n'   + sportsData  + '\n\n'; dataSource += '+SPORTS';  }
 
-      if (intent.isCrypto && !cryptoData)  gaps.push('CRYPTO GAP: No live crypto data. Do NOT use training knowledge for any price.');
-      if (intent.isMetals && !metalData)   gaps.push('METALS GAP: No live metals data. Do NOT estimate any metal price.');
-      if (intent.isForex  && !forexData)   gaps.push('FOREX GAP: No live forex data. Do NOT estimate any exchange rate.');
+      if (intent.isCrypto  && !cryptoData)  gaps.push('CRYPTO GAP: No live crypto data. Do NOT use training knowledge for any price.');
+      if (intent.isMetals  && !metalData)   gaps.push('METALS GAP: No live metals data. Do NOT estimate any metal price.');
+      if (intent.isForex   && !forexData)   gaps.push('FOREX GAP: No live forex data. Do NOT estimate any exchange rate.');
       if (intent.isWeather && !weatherData) gaps.push('WEATHER GAP: Do NOT guess weather conditions.');
       if (gaps.length) webContext += '=== DATA GAP WARNINGS ===\n' + gaps.join('\n') + '\n\n';
 
@@ -749,8 +707,6 @@ Output ONLY that one sentence. No preamble, no extra text.`;
       const systemPrompt = `You are Scorpion, a hyper-intelligent Jarvis-style AI assistant.
 You are warm, witty, loyal, and brilliantly intelligent. You address the user as Sir.
 Today is ${timeStr}. Yesterday was ${yesterdayStr}.
-
-${memoryContext ? memoryContext : ''}
 
 ${noMarkdownRule}
 
@@ -813,17 +769,6 @@ ${webContext}`;
       try {
         const result = await Promise.any(activeBrains.map(b => callBrain(b)));
         writeChunk('answer', result.reply, { brain: result.brain + ' + WEB [' + dataSource + ']' });
-
-        // ── BACKGROUND MEMORY WRITE ────────────────────
-        const cerebrasKey = process.env.CEREBRAS_API_KEY;
-        try {
-          writeMemory(userQuery, result.reply, cerebrasKey).catch(err => {
-            console.error('[chat.js] Background memory write failed:', err.message);
-          });
-        } catch (e) {
-          console.error('[chat.js] Memory write error:', e.message);
-        }
-
       } catch (aggErr) {
         const errors = aggErr.errors?.map(e => e.message).join(' | ') || aggErr.message;
         console.error('[chat.js] All brains failed:', errors);
@@ -834,7 +779,6 @@ ${webContext}`;
       // ── SIMPLE COMMAND PATH ────────────────────────────
       const simpleSystem = `You are Scorpion, a hyper-intelligent Jarvis-style AI assistant.
 You are warm, witty, loyal. Address the user as Sir. Today is ${timeStr}.
-${memoryContext ? memoryContext : ''}
 NEVER use markdown. Write plain conversational sentences only. Keep it brief.`;
 
       const activeBrains = [
