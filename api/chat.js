@@ -1,14 +1,13 @@
 // ============================================================
-// CHAT API HANDLER — SCORPION AI BRAIN v5.0.1
+// CHAT API HANDLER — SCORPION AI BRAIN v5.0.2
 // ============================================================
-// v5.0.1 Fixes:
-//   - Proper memory.js import with error handling
-//   - Try/catch wrapping all memory operations
-//   - Debug logging for env var checking
-//   - Graceful fallbacks if memory fails
+// v5.0.2 Fixes:
+//   - Corrected env var names for Upstash Redis (KV_REST_API_URL /
+//     KV_REST_API_TOKEN) instead of the old VERCEL_KV_* names
+//   - Everything else identical to v5.0.1
 //
 // Author  : Dr. Davie Mwangi
-// Version : 5.0.1
+// Version : 5.0.2
 // ============================================================
 
 import { readMemory, writeMemory, wipeMemory } from './memory.mjs';
@@ -39,8 +38,8 @@ export default async function handler(req, res) {
     hasMistral: !!process.env.MISTRAL_API_KEY,
     hasSerper: !!process.env.SERPER_API_KEY,
     hasTavily: !!process.env.TAVILY_API_KEY,
-    hasKV_URL: !!process.env.VERCEL_KV_REST_API_URL,
-    hasKV_TOKEN: !!process.env.VERCEL_KV_REST_API_TOKEN
+    hasKV_URL: !!process.env.KV_REST_API_URL,
+    hasKV_TOKEN: !!process.env.KV_REST_API_TOKEN
   });
 
   try {
