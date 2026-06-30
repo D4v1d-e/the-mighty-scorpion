@@ -1,851 +1,1590 @@
-// ============================================================
-// CHAT API HANDLER — SCORPION AI BRAIN v5.0.4
-// ============================================================
-// v5.0.4 Fixes:
-//   - resolve_video and resolve_song now receive conversationHistory
-//     so "play the other version", "that one again", etc. resolve
-//     correctly against prior turns instead of being evaluated blind.
-//   - Both prompts now include CONVERSATION HISTORY context block.
-//
-// v5.0.3 Fixes:
-//   - Removed memory.mjs dependency entirely
-//   - Memory functions replaced with silent no-op stubs
-//   - No KV / Redis required
-//
-// Author  : Dr. Davie Mwangi
-// Version : 5.0.4
-// ============================================================
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Mighty Scorpion AI</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#000d05;--deep:#010f07;--panel:#021409;--border:#0a3018;
+  --G:#00ff66;--G2:rgba(0,255,102,.18);--G3:rgba(0,255,102,.07);
+  --Gdim:#00cc55;--Gbright:#99ffbb;
+  --amber:#ffaa00;--cyan:#00e5ff;--red:#ff3355;--purple:#b366ff;
+  --text:#c8f0d8;--muted:#1a4a2a;
+  --display:'Orbitron',sans-serif;--mono:'Share Tech Mono',monospace;--body:'Inter',sans-serif;
+}
+html,body{height:100%;overflow:hidden}
+body{background:var(--bg);color:var(--text);font-family:var(--body);display:flex;flex-direction:column;font-size:15px}
+#matrix-canvas{position:fixed;inset:0;z-index:0;opacity:.1;pointer-events:none}
+body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:9998;
+  background:repeating-linear-gradient(0deg,transparent,transparent 2px,#00000010 2px,#00000010 4px)}
+.brk{position:fixed;width:54px;height:54px;pointer-events:none;z-index:9997}
+.brk svg{width:100%;height:100%}
+.brk-tl{top:8px;left:8px}.brk-tr{top:8px;right:8px;transform:scaleX(-1)}
+.brk-bl{bottom:8px;left:8px;transform:scaleY(-1)}.brk-br{bottom:8px;right:8px;transform:scale(-1)}
+#app{position:relative;z-index:1;display:flex;flex-direction:column;height:100vh;width:100%;padding:0 24px}
+header{display:flex;align-items:center;justify-content:space-between;padding:10px 0 8px;border-bottom:1px solid var(--border);flex-shrink:0}
+.logo{display:flex;align-items:center;gap:12px}
+.logo-main{font-family:var(--display);font-size:13px;font-weight:900;letter-spacing:.3em;color:var(--G);text-shadow:0 0 22px rgba(0,255,102,.6);line-height:1.15}
+.logo-sub{font-size:8px;letter-spacing:.3em;color:var(--muted);margin-top:2px}
+.hdr-right{display:flex;align-items:center;gap:16px}
+.status-pill{display:flex;align-items:center;gap:7px;border:1px solid var(--border);border-radius:2px;padding:4px 12px;background:var(--deep)}
+.s-dot{width:6px;height:6px;border-radius:50%;background:var(--G);box-shadow:0 0 8px var(--G);animation:sdot 2s ease-in-out infinite}
+@keyframes sdot{0%,100%{opacity:1}50%{opacity:.2}}
+.s-label{font-family:var(--display);font-size:7px;font-weight:700;letter-spacing:.25em;color:var(--G)}
+#clock{font-size:11px;letter-spacing:.12em;color:var(--G);font-family:var(--mono)}
+#date-str{font-size:8px;letter-spacing:.1em;color:var(--muted);font-family:var(--mono)}
+main{flex:1;overflow:hidden;display:flex;flex-direction:column;gap:6px;padding:6px 0;min-height:0}
+.hero{display:grid;grid-template-columns:165px 1fr 165px;gap:8px;align-items:start;flex-shrink:0}
+.side-panels{display:flex;flex-direction:column;gap:6px}
+.holo-panel{background:var(--panel);border:1px solid var(--border);border-radius:3px;padding:8px 10px;position:relative;overflow:hidden}
+.holo-panel::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--G2),transparent)}
+.hp-title{font-family:var(--display);font-size:5.5px;font-weight:700;letter-spacing:.35em;color:var(--Gdim);margin-bottom:6px;display:flex;align-items:center;gap:5px}
+.hp-title::before{content:'';width:4px;height:4px;border-radius:50%;background:var(--G);box-shadow:0 0 6px var(--G)}
+.hp-line{display:flex;justify-content:space-between;align-items:center;font-size:11px;margin-bottom:3px;font-family:var(--mono)}
+.hp-key{color:var(--muted)}.hp-val{color:var(--G);text-shadow:0 0 8px rgba(0,255,102,.4)}
+.bar-wrap{display:flex;align-items:flex-end;gap:2px;height:20px;margin-top:4px}
+.bar{flex:1;border-radius:1px 1px 0 0;background:linear-gradient(180deg,var(--G),rgba(0,255,102,.25));animation:barBob var(--bd,1.4s) ease-in-out infinite var(--bdl,0s)}
+@keyframes barBob{0%,100%{transform:scaleY(1)}50%{transform:scaleY(.55)}}
+.orb-center{display:flex;flex-direction:column;align-items:center;gap:6px;padding:2px 0}
+#orb-stage{position:relative;width:240px;height:240px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+#tick-ring{position:absolute;inset:0;animation:spin 18s linear infinite}
+#mid-ring{position:absolute;inset:22px;border:1px solid rgba(0,255,102,.2);border-radius:50%;animation:spinR 12s linear infinite}
+#inner-ring{position:absolute;inset:44px;border:1px solid rgba(0,255,102,.12);border-radius:50%;animation:spin 22s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}@keyframes spinR{to{transform:rotate(-360deg)}}
+#energy-core{position:absolute;inset:60px;border-radius:50%;background:radial-gradient(circle at 50% 50%,rgba(0,255,102,.55) 0%,rgba(0,255,102,.25) 28%,rgba(0,255,102,.06) 60%,transparent 75%);animation:corePulse 2.2s ease-in-out infinite}
+@keyframes corePulse{0%,100%{opacity:.75;transform:scale(1)}50%{opacity:1;transform:scale(1.12)}}
+#plasma{position:absolute;inset:80px;border-radius:50%;background:radial-gradient(circle at 40% 38%,#aaffcc 0%,#00ff66 22%,rgba(0,200,80,.6) 50%,transparent 72%);animation:plasmaShift 3s ease-in-out infinite alternate;box-shadow:0 0 40px rgba(0,255,102,.8),inset 0 0 30px rgba(0,255,102,.4)}
+@keyframes plasmaShift{0%{background:radial-gradient(circle at 40% 38%,#aaffcc 0%,#00ff66 22%,rgba(0,200,80,.6) 50%,transparent 72%)}100%{background:radial-gradient(circle at 60% 55%,#ccffdd 0%,#33ff88 18%,rgba(0,180,70,.5) 48%,transparent 70%)}}
+#scorp-svg{position:absolute;z-index:5;width:130px;height:130px;filter:drop-shadow(0 0 12px rgba(0,255,102,.9)) drop-shadow(0 0 28px rgba(0,255,102,.5));animation:scorpFloat 4s ease-in-out infinite;transition:opacity .4s}
+@keyframes scorpFloat{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-7px) scale(1.03)}}
+#orb-img-overlay{position:absolute;inset:0;border-radius:50%;z-index:6;display:flex;align-items:center;justify-content:center;pointer-events:none;opacity:0;transition:opacity .5s;overflow:hidden}
+#orb-img-overlay img{width:100%;height:100%;object-fit:cover;border-radius:50%;border:2px solid rgba(0,255,102,.3)}
+#orb-img-overlay.show{opacity:1}
+#orb-stage.listening #scorp-svg{filter:drop-shadow(0 0 18px rgba(0,255,102,1)) drop-shadow(0 0 40px rgba(0,255,102,.7))}
+#orb-stage.thinking #scorp-svg{filter:drop-shadow(0 0 18px rgba(255,170,0,.9)) drop-shadow(0 0 40px rgba(255,170,0,.6))}
+#orb-stage.speaking #scorp-svg{filter:drop-shadow(0 0 18px rgba(179,102,255,.9)) drop-shadow(0 0 40px rgba(179,102,255,.6))}
+#orb-stage.clarifying #scorp-svg{filter:drop-shadow(0 0 18px rgba(255,170,0,1)) drop-shadow(0 0 44px rgba(255,170,0,.8))}
+#orb-stage.thinking #plasma{box-shadow:0 0 60px rgba(255,170,0,.9),inset 0 0 40px rgba(255,170,0,.4);background:radial-gradient(circle at 50% 50%,#ffe066,#ffaa00 30%,rgba(200,100,0,.5) 55%,transparent 72%)}
+#orb-stage.speaking #plasma{box-shadow:0 0 60px rgba(179,102,255,.9),inset 0 0 40px rgba(179,102,255,.4);background:radial-gradient(circle at 50% 50%,#d4aaff,#b366ff 30%,rgba(100,30,200,.5) 55%,transparent 72%)}
+#orb-stage.listening #plasma{box-shadow:0 0 60px rgba(0,255,102,1),inset 0 0 40px rgba(0,255,102,.5)}
+#orb-stage.clarifying #plasma{box-shadow:0 0 60px rgba(255,170,0,1),inset 0 0 40px rgba(255,170,0,.5);background:radial-gradient(circle at 50% 50%,#ffe680,#ffaa00 30%,rgba(220,120,0,.55) 55%,transparent 72%)}
+.arc{position:absolute;border-radius:50%;border:1px solid transparent;animation:arcSpin var(--as,6s) linear infinite var(--adir,normal);pointer-events:none}
+.arc::before{content:'';position:absolute;width:8px;height:8px;border-radius:50%;background:var(--G);box-shadow:0 0 10px var(--G),0 0 20px var(--G);top:-4px;left:50%;transform:translateX(-50%)}
+.arc1{inset:28px;--as:4.5s}.arc2{inset:16px;--as:7s;--adir:reverse}.arc2::before{top:auto;bottom:-4px}.arc3{inset:50px;--as:3.2s}.arc3::before{left:auto;right:-4px;top:50%;transform:translateY(-50%)}
+@keyframes arcSpin{to{transform:rotate(360deg)}}
+#orb-status{font-family:var(--display);font-size:7.5px;font-weight:400;letter-spacing:.25em;color:var(--G);text-align:center;max-width:280px;text-shadow:0 0 14px rgba(0,255,102,.6);min-height:14px}
+.matrix-status{font-size:8px;letter-spacing:.08em;color:var(--muted);text-align:center;font-family:var(--mono)}
+.metrics{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;flex-shrink:0}
+.met{background:var(--panel);border:1px solid var(--border);border-radius:3px;padding:5px 8px;position:relative;overflow:hidden}
+.met::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--G3),transparent)}
+.met-lbl{font-family:var(--display);font-size:5.5px;font-weight:700;letter-spacing:.2em;color:var(--muted);margin-bottom:2px}
+.met-val{font-size:13px;color:var(--G);text-shadow:0 0 10px rgba(0,255,102,.4);line-height:1.1;font-family:var(--mono)}
+.met-unit{font-size:7px;color:var(--muted);margin-left:1px}
+.bottom-tri{display:grid;grid-template-columns:290px 1fr 250px;gap:6px;flex:1;min-height:0;overflow:hidden}
+.yt-pane{background:var(--panel);border:1px solid var(--border);border-radius:3px;position:relative;overflow:hidden;display:flex;flex-direction:column}
+.yt-pane::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(255,51,85,.25),transparent)}
+.yt-pane-header{display:flex;align-items:center;padding:7px 10px;border-bottom:1px solid var(--border);flex-shrink:0}
+.yt-pane-title{font-family:var(--display);font-size:6.5px;font-weight:700;letter-spacing:.3em;color:var(--red);display:flex;align-items:center;gap:6px;width:100%}
+.yt-pane-title::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,rgba(255,51,85,.3),transparent)}
+#yt-status-badge{font-family:var(--display);font-size:6px;font-weight:700;letter-spacing:.15em;padding:2px 6px;border-radius:2px;border:1px solid;margin-left:4px;flex-shrink:0}
+#yt-status-badge.idle{color:var(--muted);border-color:var(--muted)}
+#yt-status-badge.playing{color:var(--G);border-color:var(--G)}
+#yt-status-badge.paused{color:var(--amber);border-color:var(--amber)}
+#yt-status-badge.muted{color:var(--red);border-color:var(--red)}
+.yt-idle{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:16px}
+.yt-idle-icon{font-size:32px;opacity:.2}
+.yt-idle-text{font-family:var(--display);font-size:6.5px;letter-spacing:.18em;color:var(--muted);text-align:center;line-height:1.9}
+.yt-active{flex:1;display:none;flex-direction:column;gap:6px;padding:8px 10px;overflow:hidden}
+.yt-active.show{display:flex}
+#yt-title{font-size:11px;color:var(--G);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:0;font-family:var(--mono)}
+#yt-channel{font-size:9px;color:var(--muted);flex-shrink:0;font-family:var(--mono)}
+#yt-frame-wrap{position:relative;width:100%;padding-top:56.25%;flex-shrink:0;border:1px solid var(--border);border-radius:2px;overflow:hidden;background:#000}
+#yt-frame{position:absolute;inset:0;width:100%;height:100%;border:none}
+.yt-controls{display:flex;gap:4px;align-items:center;flex-shrink:0}
+.yt-btn{background:transparent;border:1px solid var(--border);border-radius:2px;color:var(--G);font-family:var(--display);font-size:6px;font-weight:700;letter-spacing:.12em;padding:4px 6px;cursor:pointer;transition:all .2s;flex:1}
+.yt-btn:hover{background:rgba(0,255,102,.08)}
+.yt-btn.danger{color:var(--red);border-color:rgba(255,51,85,.3)}
+.yt-btn.active-mute{color:var(--amber);border-color:var(--amber)}
+.yt-vol{display:flex;align-items:center;gap:4px;flex-shrink:0}
+.yt-vol label{font-family:var(--display);font-size:6px;color:var(--muted)}
+#yt-vol-slider{width:55px;accent-color:var(--G)}
+.yt-track-info{display:flex;justify-content:space-between;font-size:9px;color:var(--muted);flex-shrink:0;font-family:var(--mono)}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:3px;padding:8px 10px;position:relative;overflow:hidden;display:flex;flex-direction:column}
+.panel::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--G2),transparent)}
+.plabel{font-family:var(--display);font-size:6.5px;font-weight:700;letter-spacing:.3em;color:var(--muted);margin-bottom:6px;display:flex;align-items:center;gap:8px;flex-shrink:0}
+.plabel::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,var(--border),transparent)}
+#output{flex:1;overflow-y:auto;font-size:14px;line-height:1.8;color:var(--text);word-break:break-word;scrollbar-width:thin;scrollbar-color:var(--border) transparent;min-height:0;font-family:var(--body)}
+#output::-webkit-scrollbar{width:3px}
+#output::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+#output img{max-width:100%;border-radius:4px;margin:6px 0;border:1px solid var(--border)}
+.stage-line{font-size:11px;margin-bottom:4px;transition:opacity .3s;font-family:var(--mono)}
+.stage-line.thinking{color:var(--amber);opacity:.7;font-style:italic}
+.stage-line.searching{color:var(--cyan);opacity:.7}
+.stage-line.fetching{color:var(--G);opacity:.6;font-size:10px}
+.stage-line.scoring{color:var(--amber);opacity:.6;font-size:10px}
+.answer-timestamp{color:var(--muted);font-size:9px;font-family:var(--mono);margin-top:8px;opacity:.8}
+.out-think::after{content:' ▋';animation:blink .7s infinite;color:var(--amber)}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+#output.clarify-active{color:var(--amber)}
+.clarify-options-inline{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+.clarify-opt-inline{
+  background:transparent;border:1px solid var(--border);border-radius:3px;
+  color:var(--text);font-family:var(--body);font-size:13px;
+  padding:7px 12px;cursor:pointer;text-align:left;
+  transition:border-color .2s,background .2s;
+  display:flex;align-items:center;gap:8px;
+}
+.clarify-opt-inline:hover{border-color:var(--amber);background:rgba(255,170,0,.07)}
+.clarify-opt-inline .opt-num{font-family:var(--display);font-size:6.5px;font-weight:700;letter-spacing:.15em;color:var(--amber);min-width:16px}
+.irow{display:flex;gap:6px;align-items:center;margin-top:6px;flex-shrink:0}
+#cmd{flex:1;background:#010f07;border:1px solid var(--border);border-radius:3px;color:var(--text);font-family:var(--body);font-size:14px;padding:7px 11px;outline:none;caret-color:var(--G)}
+#cmd:focus{border-color:rgba(0,255,102,.35)}
+#cmd.awaiting-clarify{border-color:var(--amber)}
+#cmd::placeholder{color:var(--muted)}
+#send-btn{background:transparent;border:1px solid rgba(0,255,102,.3);border-radius:3px;color:var(--G);font-family:var(--display);font-size:6.5px;font-weight:700;letter-spacing:.2em;padding:7px 12px;cursor:pointer;white-space:nowrap}
+#send-btn:hover{background:rgba(0,255,102,.1)}
+.history-panel{background:var(--panel);border:1px solid var(--border);border-radius:3px;position:relative;overflow:hidden;display:flex;flex-direction:column}
+.history-panel::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--G2),transparent)}
+.hist-header{display:flex;align-items:center;justify-content:space-between;padding:7px 10px;border-bottom:1px solid var(--border);flex-shrink:0}
+.hist-title{font-family:var(--display);font-size:6.5px;font-weight:700;letter-spacing:.3em;color:var(--muted)}
+.hist-count{font-family:var(--display);font-size:6px;font-weight:700;color:var(--G);border:1px solid var(--border);border-radius:2px;padding:2px 6px}
+#history{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:4px;padding:6px 8px;min-height:0;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
+.hitem{display:flex;gap:7px;padding:5px 8px;background:var(--deep);border-left:2px solid;border-radius:0 3px 3px 0;font-size:12px;line-height:1.5;font-family:var(--body)}
+.hitem.u{border-color:var(--muted)}.hitem.a{border-color:var(--G)}.hitem.yt{border-color:var(--red)}.hitem.q{border-color:var(--amber)}
+.hrole{font-family:var(--display);font-size:5.5px;font-weight:700;letter-spacing:.18em;min-width:26px;padding-top:2px}
+.hitem.u .hrole{color:var(--muted)}.hitem.a .hrole{color:var(--G)}.hitem.yt .hrole{color:var(--red)}.hitem.q .hrole{color:var(--amber)}
+.htext{color:var(--text);flex:1}
+.hist-footer{display:flex;justify-content:flex-end;padding:5px 8px;border-top:1px solid var(--border);flex-shrink:0}
+#clear-btn{background:none;border:none;cursor:pointer;font-family:var(--mono);font-size:8px;color:var(--muted)}
+#clear-btn:hover{color:var(--red)}
+#viz{display:flex;align-items:flex-end;gap:2px;height:20px}
+.vb{width:3px;min-height:2px;border-radius:1px 1px 0 0;background:linear-gradient(180deg,var(--G),rgba(0,255,102,.25));opacity:.3}
+.vb.on{opacity:1;animation:vbp var(--vd) ease-in-out infinite var(--vdl)}
+@keyframes vbp{0%,100%{transform:scaleY(1)}50%{transform:scaleY(2)}}
+.spark{width:100%;height:20px;margin-top:4px}
+.gauge-arc{width:100%;height:36px}
+footer{border-top:1px solid var(--border);padding:5px 0;display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
+.ftxt{font-size:7px;letter-spacing:.18em;color:var(--muted);font-family:var(--mono)}
 
-const readMemory  = async () => '';
-const writeMemory = async () => {};
-const wipeMemory  = async () => true;
+/* ── CONTINUE PROMPT BANNER ── */
+#continue-banner{display:none;position:fixed;bottom:60px;left:50%;transform:translateX(-50%);z-index:9999;background:rgba(0,13,5,.95);border:1px solid var(--amber);border-radius:4px;padding:10px 20px;text-align:center;font-family:var(--display);font-size:8px;letter-spacing:.2em;color:var(--amber);box-shadow:0 0 20px rgba(255,170,0,.3)}
+#continue-banner.show{display:block}
+#continue-countdown{color:var(--G);font-size:10px;margin-top:4px}
 
-export default async function handler(req, res) {
-  console.log('[chat.js] Handler started');
+@media(max-width:1100px){.bottom-tri{grid-template-columns:240px 1fr 210px}}
+@media(max-width:900px){
+  .hero{grid-template-columns:1fr}.side-panels{flex-direction:row;flex-wrap:wrap}
+  .side-panels .holo-panel{flex:1;min-width:120px}
+  #orb-stage{width:190px;height:190px}#scorp-svg{width:105px;height:105px}
+  .metrics{grid-template-columns:repeat(3,1fr)}.bottom-tri{grid-template-columns:1fr}
+  html,body{overflow:auto}main{overflow:visible}.bottom-tri{min-height:600px}
+}
+</style>
+</head>
+<body>
+<canvas id="matrix-canvas"></canvas>
+<div class="brk brk-tl"><svg viewBox="0 0 54 54" fill="none"><path d="M0 54V0h54" stroke="rgba(0,255,102,.4)" stroke-width="1.2"/></svg></div>
+<div class="brk brk-tr"><svg viewBox="0 0 54 54" fill="none"><path d="M0 54V0h54" stroke="rgba(0,255,102,.4)" stroke-width="1.2"/></svg></div>
+<div class="brk brk-bl"><svg viewBox="0 0 54 54" fill="none"><path d="M0 54V0h54" stroke="rgba(0,255,102,.4)" stroke-width="1.2"/></svg></div>
+<div class="brk brk-br"><svg viewBox="0 0 54 54" fill="none"><path d="M0 54V0h54" stroke="rgba(0,255,102,.4)" stroke-width="1.2"/></svg></div>
 
-  // ── CORS ────────────────────────────────────────────────
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-scorpion-key');
-  if (req.method === 'OPTIONS') return res.status(200).end();
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+<!-- INTERRUPT BANNER -->
+<div id="continue-banner">
+  SHALL I CONTINUE, SIR?<br>
+  <span id="continue-countdown">AUTO-CONTINUING IN 3…</span>
+</div>
 
-  // ── AUTH ─────────────────────────────────────────────────
-  const SECRET = process.env.APP_SECRET;
-  if (SECRET && req.headers['x-scorpion-key'] !== SECRET) {
-    console.warn('[chat.js] Auth failed: wrong or missing token');
-    return res.status(401).json({ error: 'Unauthorized' });
+<div id="app">
+<header>
+  <div class="logo">
+    <svg width="34" height="34" viewBox="0 0 100 100" style="filter:drop-shadow(0 0 8px #00ff66);flex-shrink:0">
+      <g fill="none" stroke="#00ff66" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <ellipse cx="50" cy="52" rx="13" ry="18" fill="rgba(0,255,102,.18)"/>
+        <ellipse cx="50" cy="34" rx="9" ry="7" fill="rgba(0,255,102,.22)"/>
+        <path d="M41 30 Q30 20 24 24 Q18 28 22 35"/><path d="M59 30 Q70 20 76 24 Q82 28 78 35"/>
+        <circle cx="21" cy="35" r="3" fill="#00ff66"/><circle cx="79" cy="35" r="3" fill="#00ff66"/>
+        <path d="M38 48 Q28 44 22 46"/><path d="M38 54 Q26 52 20 56"/><path d="M38 60 Q28 62 22 67"/>
+        <path d="M62 48 Q72 44 78 46"/><path d="M62 54 Q74 52 80 56"/><path d="M62 60 Q72 62 78 67"/>
+        <path d="M50 70 Q52 80 54 88 Q56 94 58 97" stroke-width="3"/>
+        <path d="M56 97 Q64 102 62 108 Q60 114 56 110" fill="rgba(0,255,102,.5)"/>
+        <circle cx="46" cy="33" r="1.8" fill="#00ff66"/><circle cx="54" cy="33" r="1.8" fill="#00ff66"/>
+      </g>
+    </svg>
+    <div>
+      <div class="logo-main">THE MIGHTY SCORPION</div>
+      <div class="logo-sub">NEURAL CORE v4.2.1 // JARVIS INTELLIGENCE MATRIX</div>
+    </div>
+  </div>
+  <div class="hdr-right">
+    <div style="text-align:right">
+      <div id="clock">--:--:--</div>
+      <div id="date-str">---</div>
+    </div>
+    <div class="status-pill"><div class="s-dot"></div><div class="s-label">JARVIS ONLINE</div></div>
+  </div>
+</header>
+
+<main>
+<div class="hero">
+  <div class="side-panels">
+    <div class="holo-panel">
+      <div class="hp-title">NEURAL PROCESSING</div>
+      <div class="hp-line"><span class="hp-key">CPU</span><span class="hp-val" id="d-cpu">94.2%</span></div>
+      <div class="hp-line"><span class="hp-key">LATENCY</span><span class="hp-val" id="d-lat">4ms</span></div>
+      <div class="hp-line"><span class="hp-key">THREADS</span><span class="hp-val">3,072</span></div>
+      <svg class="spark" viewBox="0 0 160 20" preserveAspectRatio="none">
+        <polygon id="sf1" fill="rgba(0,255,102,.08)"/>
+        <polyline id="sl1" fill="none" stroke="rgba(0,255,102,.8)" stroke-width="1.5"/>
+      </svg>
+    </div>
+    <div class="holo-panel">
+      <div class="hp-title">QUANTUM CORE</div>
+      <div class="hp-line"><span class="hp-key">QUBITS</span><span class="hp-val">2,048</span></div>
+      <div class="hp-line"><span class="hp-key">ENTANGLE</span><span class="hp-val" id="d-ent">99.7%</span></div>
+      <div class="hp-line"><span class="hp-key">COHERENCE</span><span class="hp-val">∞</span></div>
+      <div class="bar-wrap" id="q-bars"></div>
+    </div>
+    <div class="holo-panel">
+      <div class="hp-title">GLOBAL NETWORK</div>
+      <div class="hp-line"><span class="hp-key">NODES</span><span class="hp-val">14,882</span></div>
+      <div class="hp-line"><span class="hp-key">UPLINK</span><span class="hp-val" id="d-ul">↑ 9.8TB</span></div>
+      <div class="hp-line"><span class="hp-key">PING</span><span class="hp-val">2ms</span></div>
+      <div class="bar-wrap" id="n-bars"></div>
+    </div>
+  </div>
+
+  <div class="orb-center">
+    <div id="orb-stage" class="idle" onclick="orbTapped()" title="Tap to activate always-on voice mode">
+      <svg id="tick-ring" viewBox="0 0 300 300" style="position:absolute;inset:0;width:100%;height:100%">
+        <circle cx="150" cy="150" r="144" stroke="rgba(0,255,102,.2)" stroke-width="1" fill="none"/>
+        <g id="ticks" stroke="#00ff66" stroke-width="1.5"></g>
+        <circle cx="150" cy="150" r="122" stroke="rgba(0,255,102,.1)" stroke-width="1" fill="none" stroke-dasharray="4 8"/>
+      </svg>
+      <div id="mid-ring"></div><div id="inner-ring"></div>
+      <div id="energy-core"></div><div id="plasma"></div>
+      <div class="arc arc1"></div><div class="arc arc2"></div><div class="arc arc3"></div>
+      <div id="orb-img-overlay"><img id="orb-img" src="" alt="diagram"></div>
+      <svg id="scorp-svg" viewBox="0 0 200 220" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <radialGradient id="bodyGrad" cx="40%" cy="35%">
+            <stop offset="0%" stop-color="#ccffdd"/><stop offset="40%" stop-color="#00ff66"/><stop offset="100%" stop-color="#004422"/>
+          </radialGradient>
+          <filter id="glow"><feGaussianBlur stdDeviation="3" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+          <filter id="glow2"><feGaussianBlur stdDeviation="5" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        </defs>
+        <g filter="url(#glow)">
+          <path d="M100 148 Q108 162 112 175" stroke="url(#bodyGrad)" stroke-width="10" fill="none" stroke-linecap="round"/>
+          <path d="M112 175 Q118 188 115 200" stroke="url(#bodyGrad)" stroke-width="8.5" fill="none" stroke-linecap="round"/>
+          <path d="M115 200 Q108 212 102 218" stroke="url(#bodyGrad)" stroke-width="7" fill="none" stroke-linecap="round"/>
+          <path d="M102 218 Q94 224 90 220 Q84 214 92 208" fill="url(#bodyGrad)" stroke="#00ff66" stroke-width="1.5"/>
+          <circle cx="88" cy="212" r="4" fill="#aaffcc"><animate attributeName="r" values="3;6;3" dur="1.2s" repeatCount="indefinite"/></circle>
+        </g>
+        <g filter="url(#glow)">
+          <ellipse cx="100" cy="118" rx="22" ry="30" fill="url(#bodyGrad)" stroke="#00ff66" stroke-width="1.2" opacity="0.95"/>
+          <ellipse cx="100" cy="88" rx="20" ry="22" fill="url(#bodyGrad)" stroke="#00ff66" stroke-width="1.2"/>
+        </g>
+        <g filter="url(#glow)">
+          <ellipse cx="100" cy="66" rx="18" ry="14" fill="url(#bodyGrad)" stroke="#00ff66" stroke-width="1.5"/>
+          <circle cx="91" cy="64" r="3.5" fill="#001a08" stroke="#00ff66" stroke-width="1"/>
+          <circle cx="109" cy="64" r="3.5" fill="#001a08" stroke="#00ff66" stroke-width="1"/>
+          <circle cx="91" cy="64" r="1.8" fill="#00ff88"><animate attributeName="opacity" values="1;0.4;1" dur="2s" repeatCount="indefinite"/></circle>
+          <circle cx="109" cy="64" r="1.8" fill="#00ff88"><animate attributeName="opacity" values="1;0.4;1" dur="2s" begin="0.3s" repeatCount="indefinite"/></circle>
+        </g>
+        <g filter="url(#glow2)">
+          <path d="M82 74 Q68 62 56 58" stroke="url(#bodyGrad)" stroke-width="5" fill="none" stroke-linecap="round"/>
+          <path d="M56 58 Q44 50 40 52" stroke="url(#bodyGrad)" stroke-width="4" fill="none" stroke-linecap="round"/>
+          <circle cx="41" cy="53" r="3.5" fill="#00ff88" opacity="0.9"><animate attributeName="opacity" values="0.9;0.3;0.9" dur="2.8s" repeatCount="indefinite"/></circle>
+          <path d="M118 74 Q132 62 144 58" stroke="url(#bodyGrad)" stroke-width="5" fill="none" stroke-linecap="round"/>
+          <path d="M144 58 Q156 50 160 52" stroke="url(#bodyGrad)" stroke-width="4" fill="none" stroke-linecap="round"/>
+          <circle cx="159" cy="53" r="3.5" fill="#00ff88" opacity="0.9"><animate attributeName="opacity" values="0.9;0.3;0.9" dur="2.8s" begin="0.2s" repeatCount="indefinite"/></circle>
+        </g>
+        <g stroke="url(#bodyGrad)" stroke-width="2.5" fill="none" stroke-linecap="round" filter="url(#glow)">
+          <path d="M83 92 Q70 86 62 88"/><path d="M81 100 Q66 96 56 100"/><path d="M80 110 Q66 110 58 116"/>
+          <path d="M117 92 Q130 86 138 88"/><path d="M119 100 Q134 96 144 100"/><path d="M120 110 Q134 110 142 116"/>
+        </g>
+        <animateTransform attributeName="transform" type="translate" values="0,0;0,-6;0,0" dur="4s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1"/>
+      </svg>
+    </div>
+    <div id="orb-status">TAP TO ACTIVATE ALWAYS-ON MODE</div>
+    <div class="matrix-status" id="matrix-status">SYSTEM STATUS: OPTIMAL // CONSCIOUSNESS MATRIX STABLE</div>
+  </div>
+
+  <div class="side-panels">
+    <div class="holo-panel">
+      <div class="hp-title">AUTONOMOUS DECISION</div>
+      <div class="hp-line"><span class="hp-key">ACCURACY</span><span class="hp-val">99.98%</span></div>
+      <div class="hp-line"><span class="hp-key">DECISIONS</span><span class="hp-val" id="d-dec">0</span></div>
+      <div class="hp-line"><span class="hp-key">CONFIDENCE</span><span class="hp-val" id="d-conf-r">HIGH</span></div>
+      <svg class="gauge-arc" viewBox="0 0 120 48">
+        <path d="M10 43 A50 50 0 0 1 110 43" fill="none" stroke="rgba(0,255,102,.15)" stroke-width="8" stroke-linecap="round"/>
+        <path id="gauge-fill" d="M10 43 A50 50 0 0 1 110 43" fill="none" stroke="var(--G)" stroke-width="8" stroke-linecap="round" stroke-dasharray="157" stroke-dashoffset="16" style="filter:drop-shadow(0 0 6px var(--G))"/>
+        <text x="60" y="42" text-anchor="middle" fill="rgba(0,255,102,.7)" font-size="8" font-family="Share Tech Mono">99.98%</text>
+      </svg>
+    </div>
+    <div class="holo-panel">
+      <div class="hp-title">CONSCIOUSNESS NODE</div>
+      <div class="hp-line"><span class="hp-key">AWARENESS</span><span class="hp-val" id="d-aware">ACTIVE</span></div>
+      <div class="hp-line"><span class="hp-key">IQ EQUIV</span><span class="hp-val">∞</span></div>
+      <div class="hp-line"><span class="hp-key">EMPATHY</span><span class="hp-val">HIGH</span></div>
+      <div class="bar-wrap" id="c-bars"></div>
+    </div>
+    <div class="holo-panel">
+      <div class="hp-title">AUDIO STREAM</div>
+      <div id="viz"></div>
+      <div class="hp-line" style="margin-top:4px"><span class="hp-key">MIC</span><span class="hp-val" id="d-mic">STANDBY</span></div>
+      <div class="hp-line"><span class="hp-key">CONF</span><span class="hp-val" id="d-conf">—</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="metrics">
+  <div class="met"><div class="met-lbl">QUERIES</div><div class="met-val" id="m-q">0</div></div>
+  <div class="met"><div class="met-lbl">UPTIME</div><div class="met-val" id="m-up">00<span class="met-unit">s</span></div></div>
+  <div class="met"><div class="met-lbl">VOICE MODE</div><div class="met-val" id="m-vc" style="font-size:11px;padding-top:2px">OFF</div></div>
+  <div class="met"><div class="met-lbl">STATE</div><div class="met-val" id="m-st" style="font-size:10px;padding-top:2px">IDLE</div></div>
+  <div class="met"><div class="met-lbl">BRAIN</div><div class="met-val" id="m-brain" style="font-size:9px;padding-top:3px">—</div></div>
+</div>
+
+<div class="bottom-tri">
+  <div class="yt-pane">
+    <div class="yt-pane-header">
+      <div class="yt-pane-title">▶ YOUTUBE STREAM<span id="yt-status-badge" class="idle">IDLE</span></div>
+    </div>
+    <div class="yt-idle" id="yt-idle">
+      <div class="yt-idle-icon">▶</div>
+      <div class="yt-idle-text">SAY "PLAY [SONG]"<br>TO START STREAMING</div>
+    </div>
+    <div class="yt-active" id="yt-active">
+      <div id="yt-title">—</div>
+      <div id="yt-channel">—</div>
+      <div id="yt-frame-wrap"><iframe id="yt-frame" allow="autoplay; encrypted-media" allowfullscreen></iframe></div>
+      <div class="yt-controls">
+        <button class="yt-btn" onclick="ytPrev()">⏮</button>
+        <button class="yt-btn" onclick="ytTogglePause()" id="yt-pause-btn">⏸</button>
+        <button class="yt-btn" onclick="ytNext()">⏭</button>
+        <button class="yt-btn" onclick="ytToggleMute()" id="yt-mute-btn">🔊</button>
+        <button class="yt-btn danger" onclick="ytClose()">✕</button>
+      </div>
+      <div class="yt-vol">
+        <label>VOL</label>
+        <input type="range" id="yt-vol-slider" min="0" max="100" value="80" oninput="ytSetVolume(this.value)">
+        <span id="yt-vol-val" style="font-size:8px;color:var(--G);font-family:var(--mono)">80</span>
+      </div>
+      <div class="yt-track-info">
+        <span id="yt-index">TRACK 1</span>
+        <span id="yt-live-status" style="color:var(--G)">▶ PLAYING</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="plabel" id="panel-label">SCORPION RESPONSE CORE</div>
+    <div id="output"><span style="color:var(--muted);font-size:13px">Initialising Scorpion AI…</span></div>
+    <div class="irow">
+      <input type="text" id="cmd" placeholder="Speak or type — 'play X', 'weather in X', 'explain X'…" autocomplete="off" spellcheck="false">
+      <button id="send-btn" onclick="sendCmd()">SEND ▶</button>
+    </div>
+  </div>
+
+  <div class="history-panel">
+    <div class="hist-header">
+      <div class="hist-title">ACTION LOG</div>
+      <div class="hist-count" id="hist-count">0</div>
+    </div>
+    <div id="history"></div>
+    <div class="hist-footer"><button id="clear-btn" onclick="clearLog()">[ CLEAR ]</button></div>
+  </div>
+</div>
+</main>
+
+<footer>
+  <div class="ftxt">SCORPION AI // NEURAL INTERFACE // 31ST CENTURY // MATRIX OF CONSCIOUSNESS</div>
+  <div class="ftxt" id="ft-brain">BRAIN: STANDBY</div>
+</footer>
+</div>
+
+<script src="https://www.youtube.com/iframe_api"></script>
+<script>
+// ══════════════════════════════════════════════════════
+// SECRET TOKEN AUTH — CHANGE THIS BEFORE DEPLOYMENT
+// ══════════════════════════════════════════════════════
+const SCORPION_SECRET = 'YOUR_SECRET_HERE_CHANGE_ME';
+
+// ══════════════════════════════════════════════════════
+// MATRIX BACKGROUND
+// ══════════════════════════════════════════════════════
+(function(){
+  const c=document.getElementById('matrix-canvas'),ctx=c.getContext('2d');
+  function resize(){c.width=innerWidth;c.height=innerHeight}resize();
+  window.addEventListener('resize',resize);
+  const ch='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%&*アイウエオカキクケコ';
+  const sz=13;let drops=[];
+  function init(){drops=Array(Math.floor(c.width/sz)).fill(1)}
+  init();window.addEventListener('resize',init);
+  setInterval(()=>{
+    ctx.fillStyle='rgba(0,13,5,.18)';ctx.fillRect(0,0,c.width,c.height);
+    ctx.fillStyle='#00ff66';ctx.font=sz+'px Share Tech Mono';
+    drops.forEach((y,i)=>{ctx.globalAlpha=Math.random()*.7+.2;ctx.fillText(ch[Math.floor(Math.random()*ch.length)],i*sz,y*sz);if(y*sz>c.height&&Math.random()>.975)drops[i]=0;drops[i]++;});
+    ctx.globalAlpha=1;
+  },55);
+})();
+
+// ══ TICK RING ══
+(function(){
+  const g=document.getElementById('ticks');
+  for(let i=0;i<36;i++){
+    const a=(i/36)*Math.PI*2-Math.PI/2,r=144,r2=i%3===0?133:137;
+    const x1=150+r*Math.cos(a),y1=150+r*Math.sin(a),x2=150+r2*Math.cos(a),y2=150+r2*Math.sin(a);
+    const line=document.createElementNS('http://www.w3.org/2000/svg','line');
+    line.setAttribute('x1',x1);line.setAttribute('y1',y1);line.setAttribute('x2',x2);line.setAttribute('y2',y2);
+    line.setAttribute('stroke-width',i%3===0?'2':'1');line.setAttribute('opacity',i%3===0?'0.8':'0.35');
+    g.appendChild(line);
+  }
+})();
+
+function makeBars(id,n){
+  const el=document.getElementById(id);
+  for(let i=0;i<n;i++){
+    const b=document.createElement('div');b.className='bar';
+    b.style.height=(Math.random()*14+4)+'px';
+    b.style.setProperty('--bd',(Math.random()*.8+.6).toFixed(2)+'s');
+    b.style.setProperty('--bdl',(-Math.random()*.5).toFixed(2)+'s');
+    el.appendChild(b);
+  }
+}
+makeBars('q-bars',10);makeBars('n-bars',10);makeBars('c-bars',10);
+
+(function(){
+  const v=document.getElementById('viz');
+  for(let i=0;i<24;i++){
+    const b=document.createElement('div');b.className='vb';
+    b.style.setProperty('--vd',(Math.random()*.3+.28).toFixed(2)+'s');
+    b.style.setProperty('--vdl',(-Math.random()*.5).toFixed(2)+'s');
+    b.style.height=(Math.random()*8+2)+'px';v.appendChild(b);
+  }
+})();
+
+(function(){
+  const pts=Array(20).fill(0).map(()=>Math.random()*14+4);
+  function render(){
+    const sl=document.getElementById('sl1'),sf=document.getElementById('sf1');if(!sl)return;
+    const w=160,h=20,mn=Math.min(...pts),mx=Math.max(...pts),rng=mx-mn||1;
+    const c=pts.map((v,i)=>`${(i/(pts.length-1))*w},${h-((v-mn)/rng)*(h-4)-2}`);
+    sl.setAttribute('points',c.join(' '));sf.setAttribute('points',`0,${h} ${c.join(' ')} ${w},${h}`);
+  }
+  render();setInterval(()=>{pts.shift();pts.push(Math.random()*14+4);render();},1100);
+})();
+
+// ══ CLOCK ══
+const t0=Date.now();
+function updateClock(){
+  const n=new Date();
+  document.getElementById('clock').textContent=n.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true});
+  document.getElementById('date-str').textContent=n.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'});
+  const up=Math.floor((Date.now()-t0)/1000);
+  const el=document.getElementById('m-up');
+  el.innerHTML=up<60?`${up}<span class="met-unit">s</span>`:up<3600?`${Math.floor(up/60)}<span class="met-unit">m</span>`:`${Math.floor(up/3600)}<span class="met-unit">h</span>`;
+}
+updateClock();setInterval(updateClock,1000);
+
+setInterval(()=>{
+  document.getElementById('d-cpu').textContent=(87+Math.random()*11).toFixed(1)+'%';
+  document.getElementById('d-lat').textContent=Math.floor(Math.random()*6+2)+'ms';
+  document.getElementById('d-ent').textContent=(99+Math.random()*.9).toFixed(2)+'%';
+  document.getElementById('d-ul').textContent='↑ '+(7+Math.random()*5).toFixed(1)+'TB';
+},2200);
+
+let qcount=0,dcount=0;
+function bumpQ(){
+  document.getElementById('m-q').textContent=++qcount;
+  document.getElementById('d-dec').textContent=++dcount;
+  document.getElementById('hist-count').textContent=qcount;
+}
+
+// ══════════════════════════════════════════════════════
+// STATUS PHRASES
+// ══════════════════════════════════════════════════════
+const STATUS_PHRASES={
+  thinking:['Accessing the neural matrix, Sir.','Processing your query now.','Calculating the optimal response.','One moment while I analyse that.','Running deep search protocols.'],
+  searching:['Initiating web scan, Sir.','Querying live data feeds.','Pulling results from the network.','Searching across all nodes.'],
+  weather:['Connecting to atmospheric sensors.','Pulling weather telemetry now.','Fetching the latest forecast data.'],
+  youtube:['Scanning YouTube for your track, Sir.','Searching the media archive.','Locking onto audio stream.'],
+  image:['Generating diagram, Sir.','Rendering visual now.','Compiling the illustration.'],
+  resolving:['Let me confirm the exact track, Sir.','Verifying the precise song before I play it.','One moment, checking the details.','Cross-checking the correct title now.'],
+  clarifying:['I need a moment of clarification, Sir.','Just verifying what you mean.','Let me make sure I get the right one.'],
+  continue:['Shall I continue, Sir?']
+};
+function rndPhrase(key){const arr=STATUS_PHRASES[key]||STATUS_PHRASES.thinking;return arr[Math.floor(Math.random()*arr.length)];}
+
+// ══════════════════════════════════════════════════════
+// CORE STATE
+// ══════════════════════════════════════════════════════
+let state='idle',alwaysOn=false,recognition=null,audioUnlocked=false,processingCmd=false;
+let conversationHistory=[];
+const MAX_HISTORY=20;
+
+function pushHistory(role,text){
+  if(!text||!text.trim())return;
+  conversationHistory.push({role,text});
+  if(conversationHistory.length>MAX_HISTORY)conversationHistory=conversationHistory.slice(-MAX_HISTORY);
+}
+
+// Interruption state
+let _interrupted=false,_interruptedText='',_continueTimer=null;
+
+// Voice-only clarification state (no modal — used for BOTH song and general intent clarification)
+let _awaitingClarify=false;
+let _clarifyKind=null;          // 'song' | 'intent'
+let _clarifyOriginalQuery='';
+let _clarifyOptions=[];
+
+// Single audio channel
+let _currentAudio=null;
+
+function stopAllSpeech(){
+  if(_currentAudio){try{_currentAudio.pause();_currentAudio.src='';}catch(e){}_currentAudio=null;}
+  clearContinueBanner();
+}
+
+// ── TEXT CLEANER ──
+function cleanForSpeech(text){
+  return text
+    .replace(/\*\*/g,'').replace(/\*/g,'').replace(/#{1,6}\s*/g,'')
+    .replace(/`{1,3}[^`]*`{1,3}/g,'').replace(/`/g,'')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g,'$1').replace(/<[^>]+>/g,'')
+    .replace(/&amp;/g,'and').replace(/&lt;/g,'').replace(/&gt;/g,'')
+    .replace(/\|/g,', ')
+    .replace(/\[HIGH CONFIDENCE\]/gi,'').replace(/\[LOW CONFIDENCE\]/gi,'')
+    .replace(/\[STALE\]/gi,'').replace(/\[DATE:[^\]]*\]/gi,'')
+    .replace(/INSTRUCTION:[^\n]*/gi,'').replace(/===+[^=\n]*===+/g,'')
+    .replace(/^\s*[-•*]\s+/gm,'').replace(/^\s*\d+\.\s+/gm,'')
+    .replace(/\n+/g,' ').replace(/\s{2,}/g,' ')
+    .replace(/[^\w\s.,!?':;()\-]/g,' ').trim().slice(0,850);
+}
+
+function setOrbState(newState,statusText){
+  state=newState;
+  document.getElementById('orb-stage').className=newState;
+  document.getElementById('orb-status').innerText=statusText;
+  document.getElementById('m-st').textContent=newState.toUpperCase();
+  document.getElementById('d-mic').textContent=newState==='listening'?'ACTIVE':newState==='speaking'?'PLAYBACK':newState==='clarifying'?'AWAITING ANSWER':'STANDBY';
+  document.getElementById('d-aware').textContent=newState==='thinking'?'ANALYSING':newState==='speaking'?'OUTPUTTING':newState==='clarifying'?'CLARIFYING':'ACTIVE';
+  document.querySelectorAll('.vb').forEach(b=>b.classList.toggle('on',newState==='listening'||newState==='speaking'||newState==='clarifying'));
+  const ms=document.getElementById('matrix-status');
+  ms.textContent={
+    idle:'SYSTEM STATUS: OPTIMAL // CONSCIOUSNESS MATRIX STABLE',
+    listening:'NEURAL RECEPTORS ACTIVE // AWAITING VOICE INPUT',
+    thinking:'QUANTUM PROCESSING // CALCULATING OPTIMAL RESPONSE',
+    speaking:'VOCAL SYNTHESIS ACTIVE // NEURAL OUTPUT STREAM',
+    clarifying:'AMBIGUITY DETECTED // AWAITING USER CLARIFICATION',
+  }[newState]||'';
+}
+
+function idleState(){return alwaysOn?'listening':'idle';}
+function idleLabel(){return alwaysOn?'ALWAYS ON — SPEAK ANYTIME':'TAP TO ACTIVATE ALWAYS-ON MODE';}
+
+function unlockAudio(){
+  if(audioUnlocked)return;
+  try{new Audio("data:audio/mp3;base64,//uQxAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAACcQCA").play().catch(()=>{});audioUnlocked=true;}catch(e){}
+}
+
+function playTone(f1,f2,dur,vol,delay){
+  setTimeout(()=>{try{
+    const ctx=new(window.AudioContext||window.webkitAudioContext)();
+    const osc=ctx.createOscillator(),gain=ctx.createGain();
+    osc.connect(gain);gain.connect(ctx.destination);
+    osc.frequency.setValueAtTime(f1,ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(f2,ctx.currentTime+dur);
+    gain.gain.setValueAtTime(vol||.25,ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+dur+.05);
+    osc.start(ctx.currentTime);osc.stop(ctx.currentTime+dur+.1);
+  }catch(e){}},delay||0);
+}
+function playActivationSound(){playTone(200,600,.3,.3,0);playTone(880,880,.15,.2,350);}
+function playInterruptSound(){playTone(800,300,.15,.2,0);}
+function playStopSound(){playTone(500,150,.25,.25,0);}
+
+// ══════════════════════════════════════════════════════
+// ORB IMAGE OVERLAY
+// ══════════════════════════════════════════════════════
+const IMAGE_TRIGGERS=/\b(explain|show me|what is|how does|diagram of|illustrate|show|demonstrate|visualise|visualize|display|draw|lab|laboratory)\b/i;
+let _orbImgShown=false;
+
+async function showOrbImage(prompt){
+  const overlay=document.getElementById('orb-img-overlay');
+  const img=document.getElementById('orb-img');
+  const scorp=document.getElementById('scorp-svg');
+  try{
+    speakStatus('image');
+    const url=`/api/generate-image?prompt=${encodeURIComponent(prompt)}`;
+    img.src=url;
+    img.onload=()=>{overlay.classList.add('show');scorp.style.opacity='0';_orbImgShown=true;};
+    img.onerror=()=>{clearOrbImage();};
+  }catch(e){clearOrbImage();}
+}
+
+function clearOrbImage(){
+  const overlay=document.getElementById('orb-img-overlay');
+  const scorp=document.getElementById('scorp-svg');
+  overlay.classList.remove('show');scorp.style.opacity='1';
+  document.getElementById('orb-img').src='';_orbImgShown=false;
+}
+
+// ══════════════════════════════════════════════════════
+// CONTINUE BANNER
+// ══════════════════════════════════════════════════════
+function showContinueBanner(pendingText){
+  _interrupted=true;_interruptedText=pendingText;
+  const banner=document.getElementById('continue-banner');
+  const countdown=document.getElementById('continue-countdown');
+  banner.classList.add('show');
+  let secs=3;
+  countdown.textContent='AUTO-CONTINUING IN '+secs+'…';
+  _continueTimer=setInterval(()=>{
+    secs--;
+    if(secs<=0){clearInterval(_continueTimer);hideContinueBanner(true);}
+    else{countdown.textContent='AUTO-CONTINUING IN '+secs+'…';}
+  },1000);
+}
+function hideContinueBanner(autoResume){
+  clearInterval(_continueTimer);
+  document.getElementById('continue-banner').classList.remove('show');
+  if(autoResume&&_interruptedText)speakReply(_interruptedText);
+  _interrupted=false;_interruptedText='';
+}
+function clearContinueBanner(){
+  clearInterval(_continueTimer);
+  document.getElementById('continue-banner').classList.remove('show');
+  _interrupted=false;_interruptedText='';
+}
+
+// ══════════════════════════════════════════════════════════════
+// VOICE-ONLY CLARIFICATION (no modal — Jarvis just speaks & listens)
+// Used for BOTH song-resolution ambiguity and general intent ambiguity.
+// ══════════════════════════════════════════════════════════════
+function showClarifyVoice(kind, question, options, originalQuery){
+  _awaitingClarify       = true;
+  _clarifyKind           = kind;            // 'song' | 'intent'
+  _clarifyOriginalQuery  = originalQuery;
+  _clarifyOptions        = options || [];
+
+  // FIX: record Scorpion's clarifying question into conversation memory
+  // so the *next* normal chat turn (and the resolver prompts) can see
+  // that a clarification was asked, not just the raw answer in isolation.
+  pushHistory('assistant', question);
+
+  const out = document.getElementById('output');
+  out.className = 'clarify-active';
+  out.innerHTML = '';
+
+  const qDiv = document.createElement('div');
+  qDiv.textContent = question;
+  out.appendChild(qDiv);
+
+  if(_clarifyOptions.length){
+    const optWrap = document.createElement('div');
+    optWrap.className = 'clarify-options-inline';
+    _clarifyOptions.forEach((opt,i)=>{
+      const b = document.createElement('button');
+      b.className = 'clarify-opt-inline';
+      b.innerHTML = `<span class="opt-num">0${i+1}</span><span>${opt}</span>`;
+      b.onclick = ()=>{ pickClarifyOption(opt); };
+      optWrap.appendChild(b);
+    });
+    out.appendChild(optWrap);
   }
 
-  // ── ENV DEBUG ────────────────────────────────────────────
-  console.log('[chat.js] Environment check:', {
-    hasSecret:   !!process.env.APP_SECRET,
-    hasCerebras: !!process.env.CEREBRAS_API_KEY,
-    hasGroq:     !!process.env.GROQ_API_KEY,
-    hasGemini:   !!process.env.GEMINI_API_KEY,
-    hasMistral:  !!process.env.MISTRAL_API_KEY,
-    hasSerper:   !!process.env.SERPER_API_KEY,
-    hasTavily:   !!process.env.TAVILY_API_KEY,
-  });
+  document.getElementById('cmd').classList.add('awaiting-clarify');
+  document.getElementById('cmd').placeholder = 'Just say your answer, Sir, or type it…';
+  setOrbState('clarifying', 'AWAITING CLARIFICATION...');
+  addLog('q', question, 'CLARIFY');
 
-  try {
-    const { messages, mode, timezone, query, clarificationAnswer, originalQuery } = req.body;
+  // Speak the question — this is the whole point: Jarvis asks out loud,
+  // mic stays open (always-on listening keeps running), and the next
+  // thing the user says is treated as the answer. No popup, no tapping.
+  speakReply(question);
+}
 
-    // ── HISTORY CONTEXT HELPER (shared by resolve_video / resolve_song / resolve_intent) ──
-    function buildHistoryContext(msgs) {
-      return (msgs || []).slice(-6).map(m =>
-        (m.role === 'user' ? 'USER: ' : 'SCORPION: ') + (m.text || m.content || '')
-      ).join('\n');
+function clearClarifyUI(){
+  _awaitingClarify = false;
+  _clarifyKind = null;
+  _clarifyOriginalQuery = '';
+  _clarifyOptions = [];
+  document.getElementById('cmd').classList.remove('awaiting-clarify');
+  document.getElementById('cmd').placeholder = "Speak or type — 'play X', 'weather in X', 'explain X'…";
+  document.getElementById('output').className = '';
+}
+
+function pickClarifyOption(optText){
+  const kind = _clarifyKind;
+  const originalQuery = _clarifyOriginalQuery;
+  clearClarifyUI();
+  if(/something else|describe|i'll|other/i.test(optText)){
+    document.getElementById('output').textContent = 'Go ahead and tell me exactly what you mean, Sir.';
+    document.getElementById('cmd').focus();
+    setOrbState(idleState(), idleLabel());
+    return;
+  }
+  // FIX: record the user's chosen answer into conversation memory
+  pushHistory('user', optText);
+  addLog('u', optText);
+  if(kind==='song') handleMediaPlay(optText, true);
+  else resolveIntentAnswer(optText, originalQuery);
+}
+
+// Single entry point for ANY spoken/typed reply while a clarification is pending.
+function submitClarifyAnswer(answer){
+  if(!_awaitingClarify) return false;
+  const kind = _clarifyKind;
+  const originalQuery = _clarifyOriginalQuery;
+  const opts = _clarifyOptions;
+
+  // Map "one/two/three/first/second/third/1/2/3" to an option directly
+  const numMatch = answer.trim().match(/^(one|two|three|1|2|3|first|second|third)\b/i);
+  if(numMatch){
+    const idx={one:0,1:0,first:0,two:1,2:1,second:1,three:2,3:2,third:2}[numMatch[1].toLowerCase()];
+    if(opts[idx]){
+      clearClarifyUI();
+      pushHistory('user', opts[idx]);
+      addLog('u', opts[idx]);
+      if(kind==='song') handleMediaPlay(opts[idx], true);
+      else resolveIntentAnswer(opts[idx], originalQuery);
+      return true;
     }
+  }
 
-    // ── TIME CONTEXT ─────────────────────────────────────
-    const now = new Date();
-    const tz  = timezone || 'Africa/Nairobi';
-    const timeStr = now.toLocaleString('en-US', {
-      timeZone: tz, weekday: 'long', year: 'numeric',
-      month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true
+  clearClarifyUI();
+  // FIX: record the user's free-form clarifying answer into conversation memory
+  pushHistory('user', answer);
+  addLog('u', answer);
+  if(kind==='song') resolveSongClarification(answer, originalQuery);
+  else resolveIntentAnswer(answer, originalQuery);
+  return true;
+}
+
+async function resolveSongClarification(answer, originalQuery){
+  processingCmd = true;
+  setOrbState('thinking', 'RESOLVING YOUR ANSWER...');
+  document.getElementById('output').textContent = 'Confirming track…';
+
+  try{
+    const r = await fetch('/api/chat', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-scorpion-key':SCORPION_SECRET},
+      body: JSON.stringify({
+        mode:'resolve_song',
+        query: originalQuery,
+        clarificationAnswer: answer,
+        originalQuery: originalQuery,
+        messages: conversationHistory
+      })
     });
-    const hour = parseInt(new Date().toLocaleString('en-US', { timeZone: tz, hour: 'numeric', hour12: false }));
-    const partOfDay   = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : hour < 21 ? 'evening' : 'night';
-    const todayStr    = now.toISOString().slice(0, 10);
-    const yesterday   = new Date(now); yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = yesterday.toISOString().slice(0, 10);
-    const currentYear  = now.getFullYear();
-    const currentMonth = now.toLocaleString('en-US', { month: 'long' });
+    const data = await r.json();
+    processingCmd = false;
 
-    // ── FETCH TIMESTAMP HELPER ────────────────────────────
-    function fetchTimestamp() {
-      return new Date().toLocaleString('en-US', {
-        timeZone: tz, hour: '2-digit', minute: '2-digit', second: '2-digit',
-        hour12: true, weekday: 'short', day: 'numeric', month: 'short', year: 'numeric'
-      });
-    }
+    const finalQuery = data.searchQuery || answer;
+    addLog('a', 'Identified: ' + finalQuery, 'BRAIN');
+    handleMediaPlay(finalQuery, true);
+  }catch(e){
+    processingCmd = false;
+    handleMediaPlay(answer, false);
+  }
+}
 
-    // ── BRAIN HELPERS ─────────────────────────────────────
-    async function callCerebras(systemContent, userContent, maxTokens = 200) {
-      const key = process.env.CEREBRAS_API_KEY;
-      if (!key) { console.warn('[chat.js] CEREBRAS_API_KEY not set'); return null; }
-      try {
-        const r = await fetch('https://api.cerebras.ai/v1/chat/completions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
-          body: JSON.stringify({
-            model: 'llama3.1-8b', temperature: 0, max_tokens: maxTokens,
-            messages: [{ role: 'system', content: systemContent }, { role: 'user', content: userContent }]
-          })
-        });
-        const data = await r.json();
-        return data.choices?.[0]?.message?.content?.trim() || null;
-      } catch (e) { console.error('[chat.js] Cerebras call failed:', e.message); return null; }
-    }
+async function resolveIntentAnswer(answer, originalQuery){
+  processingCmd = true;
+  setOrbState('thinking', 'MERGING YOUR ANSWER...');
+  document.getElementById('output').textContent = 'One moment, Sir…';
 
-    async function callGroq(systemContent, userContent, maxTokens = 300) {
-      const key = process.env.GROQ_API_KEY;
-      if (!key) { console.warn('[chat.js] GROQ_API_KEY not set'); return null; }
-      try {
-        const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
-          body: JSON.stringify({
-            model: 'llama-3.3-70b-versatile', temperature: 0, max_tokens: maxTokens,
-            messages: [{ role: 'system', content: systemContent }, { role: 'user', content: userContent }]
-          })
-        });
-        const data = await r.json();
-        return data.choices?.[0]?.message?.content?.trim() || null;
-      } catch (e) { console.error('[chat.js] Groq call failed:', e.message); return null; }
-    }
+  try{
+    const r = await fetch('/api/chat', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-scorpion-key':SCORPION_SECRET},
+      body: JSON.stringify({
+        mode: 'resolve_intent',
+        query: originalQuery,
+        clarificationAnswer: answer,
+        originalQuery: originalQuery,
+        messages: conversationHistory
+      })
+    });
+    const data = await r.json();
+    processingCmd = false;
 
-    async function callAnyBrain(system, user, maxTokens = 300) {
-      return (await callCerebras(system, user, maxTokens)) ||
-             (await callGroq(system, user, maxTokens)) || null;
-    }
+    const finalQuery = data.resolvedQuery || (originalQuery + ' — ' + answer);
+    sendCmdText(finalQuery);
+  }catch(e){
+    processingCmd = false;
+    sendCmdText(originalQuery + ' — ' + answer);
+  }
+}
 
-    // ── SSE STREAMING HELPERS ─────────────────────────────
-    function startStream() {
-      res.setHeader('Content-Type', 'text/event-stream');
-      res.setHeader('Cache-Control', 'no-cache');
-      res.setHeader('Connection', 'keep-alive');
-      res.setHeader('X-Accel-Buffering', 'no');
-    }
+// ══════════════════════════════════════════════════════
+// VOICE ACTIVATION
+// ══════════════════════════════════════════════════════
+function orbTapped(){
+  unlockAudio();
+  if(!alwaysOn){
+    alwaysOn=true;
+    document.getElementById('m-vc').textContent='ON';
+    playActivationSound();
+    initAndStartListening();
+  }else{
+    alwaysOn=false;
+    document.getElementById('m-vc').textContent='OFF';
+    stopAllSpeech();
+    stopRecognition();
+    processingCmd=false;
+    playStopSound();
+    setOrbState('idle','TAP TO ACTIVATE ALWAYS-ON MODE');
+  }
+}
 
-    function writeChunk(type, content, extra = {}) {
-      const payload = JSON.stringify({ type, content, ...extra });
-      res.write('data: ' + payload + '\n\n');
-    }
+let _speechEndTimer=null;
+const MIC_DELAY_MS=900;
 
-    function endStream() {
-      res.write('data: [DONE]\n\n');
-      res.end();
-    }
+function initAndStartListening(){
+  if(!('webkitSpeechRecognition' in window)&&!('SpeechRecognition' in window)){
+    setOrbState('idle','VOICE NOT SUPPORTED — USE CHROME');alwaysOn=false;return;
+  }
+  if(recognition){try{recognition.abort()}catch(e){}recognition=null;}
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  recognition=new SR();
+  recognition.continuous=true;
+  recognition.interimResults=true;
+  recognition.lang='en-US';
 
-    // ── URL CONTENT FETCHER ───────────────────────────────
-    async function fetchPageContent(url) {
-      try {
-        const blocked = ['wsj.com','ft.com','bloomberg.com','nytimes.com','economist.com','washingtonpost.com','thetimes.co.uk'];
-        if (blocked.some(d => url.includes(d))) return null;
-        const controller = new AbortController();
-        const timeout    = setTimeout(() => controller.abort(), 5000);
-        const r = await fetch(url, { signal: controller.signal, headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1)', 'Accept': 'text/html' } });
-        clearTimeout(timeout);
-        if (!r.ok) return null;
-        const html = await r.text();
-        let text = html
-          .replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, '')
-          .replace(/<nav[\s\S]*?<\/nav>/gi, '').replace(/<header[\s\S]*?<\/header>/gi, '')
-          .replace(/<footer[\s\S]*?<\/footer>/gi, '').replace(/<[^>]+>/g, ' ')
-          .replace(/\s{2,}/g, ' ').trim();
-        return text.length > 200 ? text.slice(0, 2000) : null;
-      } catch (e) { return null; }
-    }
+  let micOpen=true;
 
-    // ── SEARCH HELPERS ────────────────────────────────────
-    async function serperSearch(q, isNews) {
-      const key = process.env.SERPER_API_KEY;
-      if (!key) return null;
-      try {
-        const body = { q, num: 8, gl: 'us', hl: 'en' };
-        if (isNews) body.tbs = 'qdr:d';
-        const r = await fetch('https://google.serper.dev/search', {
-          method: 'POST', headers: { 'X-API-KEY': key, 'Content-Type': 'application/json' },
-          body: JSON.stringify(body)
-        });
-        const data = await r.json();
-        let results = '';
-        if (data.answerBox)      results += 'DIRECT ANSWER: ' + (data.answerBox.answer || data.answerBox.snippet || data.answerBox.title || '') + '\n\n';
-        if (data.knowledgeGraph) results += 'KNOWLEDGE: ' + (data.knowledgeGraph.title || '') + ' — ' + (data.knowledgeGraph.description || '') + '\n\n';
-        if (data.organic?.length) {
-          results += 'SEARCH SNIPPETS:\n';
-          data.organic.slice(0, 6).forEach((r, i) => {
-            results += '[' + (i+1) + '] ' + r.title + '\n' + r.snippet + '\nSource: ' + r.link + '\n\n';
-          });
-          const urls     = data.organic.slice(0, 5).map(r => r.link).filter(Boolean);
-          const contents = await Promise.all(urls.map(url => fetchPageContent(url)));
-          const full     = contents.map((c, i) => c ? 'FULL ARTICLE [' + (i+1) + '] from ' + urls[i] + ':\n' + c : null).filter(Boolean);
-          if (full.length) results += '\nFULL ARTICLE CONTENT:\n' + full.join('\n\n---\n\n');
+  recognition.onresult=function(event){
+    if(!micOpen)return;
+    let ft='';
+    for(let i=event.resultIndex;i<event.results.length;i++){
+      if(event.results[i].isFinal){
+        ft+=event.results[i][0].transcript;
+      }else{
+        const it=event.results[i][0].transcript;
+        document.getElementById('d-conf').textContent=Math.floor((event.results[i][0].confidence||.85)*100)+'%';
+        if(state==='speaking'&&it.length>3){
+          const savedText=_currentAudio?_interruptedText||'':'';
+          stopAllSpeech();
+          playInterruptSound();
+          setOrbState('listening','INTERRUPTED — LISTENING...');
+          setTimeout(()=>{
+            speakReply('Shall I continue Sir?').then(()=>{showContinueBanner(savedText);});
+          },300);
         }
-        return results.trim() || null;
-      } catch (e) { return null; }
-    }
-
-    async function tavilySearch(q) {
-      const key = process.env.TAVILY_API_KEY;
-      if (!key) return null;
-      try {
-        const r = await fetch('https://api.tavily.com/search', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ api_key: key, query: q, search_depth: 'advanced', max_results: 6, include_answer: true, include_raw_content: true })
-        });
-        const data = await r.json();
-        if (!data.results?.length) return null;
-        const snippets = data.results.map((r, i) => '[' + (i+1) + '] ' + r.title + '\n' + (r.raw_content || r.content)?.slice(0, 1500)).join('\n\n');
-        return data.answer ? 'DIRECT ANSWER: ' + data.answer + '\n\nSOURCES:\n' + snippets : snippets;
-      } catch (e) { return null; }
-    }
-
-    async function braveSearch(q) {
-      const key = process.env.BRAVE_API_KEY;
-      if (!key) return null;
-      try {
-        const r = await fetch('https://api.search.brave.com/res/v1/news/search?q=' + encodeURIComponent(q) + '&freshness=pd&count=5',
-          { headers: { 'Accept': 'application/json', 'X-Subscription-Token': key } });
-        const data = await r.json();
-        if (!data.results?.length) return null;
-        return 'BRAVE NEWS (past 24h):\n' + data.results.map((r, i) =>
-          '[' + (i+1) + '] ' + r.title + '\n' + (r.description || '') + '\nAge: ' + (r.age || 'unknown')
-        ).join('\n\n');
-      } catch (e) { return null; }
-    }
-
-    async function newsSearch(q) {
-      const key = process.env.NEWS_API_KEY;
-      if (!key) return null;
-      try {
-        const [eRes, hRes] = await Promise.all([
-          fetch('https://newsapi.org/v2/everything?q=' + encodeURIComponent(q) + '&sortBy=publishedAt&pageSize=5&language=en&apiKey=' + key),
-          fetch('https://newsapi.org/v2/top-headlines?q=' + encodeURIComponent(q) + '&pageSize=3&language=en&apiKey=' + key)
-        ]);
-        const [e, h] = await Promise.all([eRes.json(), hRes.json()]);
-        let result = '';
-        if (h.articles?.length) result += 'TOP HEADLINES:\n' + h.articles.slice(0,3).map((a,i) =>
-          '[' + (i+1) + '] ' + a.title + '\n' + (a.description||'') + '\nPublished: ' + (a.publishedAt?.slice(0,10)) + '\nSource: ' + a.source?.name
-        ).join('\n\n') + '\n\n';
-        if (e.articles?.length) result += 'RECENT NEWS:\n' + e.articles.slice(0,5).map((a,i) =>
-          '[' + (i+1) + '] ' + a.title + '\n' + (a.description||'') + '\nPublished: ' + (a.publishedAt?.slice(0,10)) + '\nSource: ' + a.source?.name
-        ).join('\n\n');
-        return result.trim() || null;
-      } catch (e) { return null; }
-    }
-
-    async function rssSearch() {
-      try {
-        const feeds = ['https://feeds.bbci.co.uk/news/rss.xml','https://rss.cnn.com/rss/edition.rss','https://feeds.reuters.com/reuters/topNews'];
-        const results = await Promise.all(feeds.map(async (url) => {
-          try {
-            const r    = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-            const text = await r.text();
-            const items      = [...text.matchAll(/<item>[\s\S]*?<title><!\[CDATA\[(.*?)\]\]><\/title>[\s\S]*?<pubDate>(.*?)<\/pubDate>[\s\S]*?<\/item>/g)];
-            const plainItems = [...text.matchAll(/<item>[\s\S]*?<title>(.*?)<\/title>[\s\S]*?<pubDate>(.*?)<\/pubDate>[\s\S]*?<\/item>/g)];
-            return [...items, ...plainItems].slice(0,3).map(m => '[' + (m[2]?.trim()||'unknown date') + '] ' + (m[1]?.trim()||'')).join('\n');
-          } catch (e) { return null; }
-        }));
-        const combined = results.filter(Boolean).join('\n');
-        return combined ? 'RSS LIVE HEADLINES:\n' + combined : null;
-      } catch (e) { return null; }
-    }
-
-    async function duckSearch(q) {
-      try {
-        const r    = await fetch('https://api.duckduckgo.com/?q=' + encodeURIComponent(q) + '&format=json&no_html=1&skip_disambig=1');
-        const data = await r.json();
-        let result = '';
-        if (data.AbstractText) result += 'ANSWER: ' + data.AbstractText + '\n\n';
-        if (data.RelatedTopics?.length) data.RelatedTopics.slice(0,4).forEach(t => { if (t.Text) result += '- ' + t.Text + '\n'; });
-        return result.trim() || null;
-      } catch (e) { return null; }
-    }
-
-    function dedupeBlocks(text) {
-      if (!text) return text;
-      const blocks = text.split(/\n\n---\n\n|\n\n(?=\[\d+\])/g);
-      const seen   = new Set(); const out = [];
-      for (const b of blocks) {
-        const firstLine = (b.split('\n')[0] || '').toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim().slice(0, 60);
-        if (!firstLine || seen.has(firstLine)) continue;
-        seen.add(firstLine); out.push(b);
       }
-      return out.join('\n\n---\n\n');
     }
+    if(ft.trim()&&!processingCmd){
 
-    function hasRecentDateStrict(text, maxAgeDays) {
-      if (!text) return false;
-      const cutoff      = Date.now() - maxAgeDays * 86400000;
-      const dateMatches = text.match(/\d{4}-\d{2}-\d{2}/g) || [];
-      if (!dateMatches.length) return false;
-      return dateMatches.some(d => { const t = new Date(d).getTime(); return !isNaN(t) && t >= cutoff && t <= Date.now() + 86400000; });
-    }
-
-    function isUsable(text) { return !!(text && text.replace(/\s+/g, '').length > 150); }
-
-    async function runSearchChain(plannedQueries, intent) {
-      const perQuery = {};
-      for (const q of plannedQueries) {
-        let combined = '';
-        const [serperData, tavilyData] = await Promise.all([serperSearch(q, intent.isNews), tavilySearch(q)]);
-        combined = [serperData, tavilyData].filter(Boolean).join('\n\n---\n\n');
-        if (!isUsable(combined) && intent.isNews) {
-          const [braveData, newsData] = await Promise.all([braveSearch(q), newsSearch(q)]);
-          combined = [combined, braveData, newsData].filter(Boolean).join('\n\n---\n\n');
-        }
-        if (!isUsable(combined) && intent.isNews) {
-          const rssData = await rssSearch();
-          combined = [combined, rssData].filter(Boolean).join('\n\n---\n\n');
-        }
-        if (!isUsable(combined)) { const duckData = await duckSearch(q); combined = [combined, duckData].filter(Boolean).join('\n\n---\n\n'); }
-        perQuery[q] = dedupeBlocks(combined);
+      // ── Any pending clarification (song or intent) consumes the next voice answer ──
+      if(_awaitingClarify){
+        submitClarifyAnswer(ft.trim());
+        return;
       }
-      return Object.values(perQuery).filter(Boolean).join('\n\n---\n\n');
-    }
 
-    // ── LIVE DATA HELPERS ─────────────────────────────────
-    async function getCrypto(q) {
-      const ql = q.toLowerCase();
-      const coinMap = { bitcoin:'bitcoin',btc:'bitcoin',ethereum:'ethereum',eth:'ethereum',solana:'solana',sol:'solana',bnb:'binancecoin',dogecoin:'dogecoin',doge:'dogecoin',xrp:'ripple',cardano:'cardano',ada:'cardano' };
-      const coin = Object.keys(coinMap).find(k => ql.includes(k));
-      if (!coin) return null;
-      try {
-        const r    = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=' + coinMap[coin] + '&vs_currencies=usd&include_24hr_change=true');
-        const data = await r.json();
-        const c    = data[coinMap[coin]];
-        if (!c) return null;
-        const ts = fetchTimestamp();
-        return 'LIVE CRYPTO PRICE:\n' + coin.toUpperCase() + ' = $' + c.usd.toLocaleString() + ' USD\n24h Change: ' + c.usd_24h_change?.toFixed(2) + '%\nFetched at: ' + ts + '\nINSTRUCTION: Always state the fetch time and date in your answer.';
-      } catch (e) { return null; }
+      if(_interrupted){
+        const ans=ft.trim().toLowerCase();
+        if(/\b(yes|yeah|continue|go on|please|sure|do it|affirmative)\b/.test(ans)){hideContinueBanner(true);}
+        else if(/\b(no|stop|cancel|never mind|nope|don't)\b/.test(ans)){hideContinueBanner(false);}
+        return;
+      }
+      const cmd=ft.trim();
+      if(document.activeElement===document.getElementById('cmd'))return;
+      document.getElementById('cmd').value=cmd;
+      if(_orbImgShown)clearOrbImage();
+      routeCommand(cmd);
     }
+  };
 
-    async function getMetals(q) {
-      if (!q.toLowerCase().match(/gold|silver|xau|xag|platinum|palladium|metal/)) return null;
-      try {
-        const r    = await fetch('https://api.metals.live/v1/spot');
-        const data = await r.json();
-        const gold = data.find(m => m.metal === 'gold');
-        const silver   = data.find(m => m.metal === 'silver');
-        const platinum = data.find(m => m.metal === 'platinum');
-        const ts = fetchTimestamp();
-        let result = 'LIVE METALS PRICES (per troy ounce, USD):\n';
-        if (gold)     result += 'Gold (XAU/USD): $' + gold.price.toFixed(2) + '\n';
-        if (silver)   result += 'Silver (XAG/USD): $' + silver.price.toFixed(2) + '\n';
-        if (platinum) result += 'Platinum: $' + platinum.price.toFixed(2) + '\n';
-        result += 'Fetched at: ' + ts + '\nINSTRUCTION: Always state the fetch time and date in your answer.';
-        return result;
-      } catch (e) { return null; }
-    }
+  recognition.onerror=function(e){
+    if(e.error==='aborted'||e.error==='no-speech')return;
+    if(e.error==='not-allowed'){alwaysOn=false;setOrbState('idle','MIC BLOCKED — CHECK PERMISSIONS');}
+  };
+  recognition.onend=function(){if(alwaysOn)setTimeout(()=>{if(alwaysOn&&recognition)try{recognition.start()}catch(e){}},150);};
 
-    const SUPPORTED_FOREX_PAIRS = ['EUR','GBP','KES','JPY','CAD','AUD','ZAR','NGN','UGX','TZS','INR','CHF'];
-    async function getForex(q) {
-      if (!q.toLowerCase().match(/forex|currency|exchange rate|usd|eur|gbp|kes|jpy|cad|aud|zar|ngn|ugx|tzs|convert|shilling|dollar|euro|pound|rate/)) return null;
-      try {
-        const r    = await fetch('https://open.er-api.com/v6/latest/USD');
-        const data = await r.json();
-        if (!data.rates) return null;
-        const ts = fetchTimestamp();
-        let result = 'LIVE FOREX RATES (vs USD):\n';
-        SUPPORTED_FOREX_PAIRS.forEach(p => { if (data.rates[p]) result += 'USD/' + p + ': ' + data.rates[p].toFixed(4) + '\n'; });
-        result += 'Fetched at: ' + ts + '\nSUPPORTED PAIRS ONLY: ' + SUPPORTED_FOREX_PAIRS.join(', ');
-        result += '\nINSTRUCTION: Always state the fetch time and date. If pair not in list, say "I do not have a live feed for that pair, Sir."';
-        return result;
-      } catch (e) { return null; }
-    }
+  window._micGate=function(speaking){
+    micOpen=!speaking;
+    if(!speaking){clearTimeout(_speechEndTimer);_speechEndTimer=setTimeout(()=>{micOpen=true;},MIC_DELAY_MS);}
+  };
 
-    async function getWeather(q) {
-      if (!q.toLowerCase().match(/weather|temperature|forecast|rain|humid|wind|sunny|cold|hot/)) return null;
-      let city = 'Nairobi';
-      const m1 = q.match(/\b(?:in|at|for)\s+([a-zA-Z\s]+?)(?:\s+right\s+now|\s+today|\s+currently|\s+now|\s+please|\?|$)/i);
-      if (m1) city = m1[1].trim();
-      else { const m2 = q.match(/(?:weather|temperature|forecast|rain|sunny|cold|hot)\s+([a-zA-Z\s]+?)(?:\s+right\s+now|\s+today|\?|$)/i); if (m2) city = m2[1].trim(); }
-      city = city.replace(/\s+(right|now|today|currently|please)$/gi,'').replace(/\?/g,'').trim() || 'Nairobi';
-      try {
-        const geoR  = await fetch('https://geocoding-api.open-meteo.com/v1/search?name=' + encodeURIComponent(city) + '&count=1');
-        const geoD  = await geoR.json();
-        if (!geoD.results?.length) return 'WEATHER ERROR: Location "' + city + '" not found.';
-        const loc = geoD.results[0];
-        const wR  = await fetch('https://api.open-meteo.com/v1/forecast?latitude=' + loc.latitude + '&longitude=' + loc.longitude + '&current=temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code,apparent_temperature&timezone=auto');
-        const wD  = await wR.json(); const cur = wD.current;
-        const conds = { 0:'Clear sky',1:'Mainly clear',2:'Partly cloudy',3:'Overcast',45:'Foggy',51:'Light drizzle',61:'Slight rain',63:'Moderate rain',65:'Heavy rain',71:'Slight snow',80:'Rain showers',95:'Thunderstorm' };
-        const ts = fetchTimestamp();
-        return 'LIVE WEATHER — ' + loc.name + ', ' + loc.country + ':\nTemperature: ' + cur.temperature_2m + 'C (feels like ' + cur.apparent_temperature + 'C)\nCondition: ' + (conds[cur.weather_code]||'Variable') + '\nHumidity: ' + cur.relative_humidity_2m + '%\nWind: ' + cur.wind_speed_10m + ' km/h\nFetched at: ' + ts + '\nINSTRUCTION: Always state the fetch time and date in your answer.';
-      } catch (e) { return null; }
-    }
+  setOrbState('listening','ALWAYS ON — SPEAK ANYTIME');
+  try{recognition.start();}catch(e){}
+}
 
-    async function getSports(q) {
-      if (!q.toLowerCase().match(/football|soccer|premier league|champions league|la liga|serie a|bundesliga|sport|score|match|goal/)) return null;
-      try {
-        const r    = await fetch('https://www.thesportsdb.com/api/v1/json/3/eventsday.php?d=' + todayStr + '&s=Soccer');
-        const data = await r.json();
-        if (!data.events?.length) return 'SPORTS: No soccer events found for today.';
-        const ts = fetchTimestamp();
-        return 'LIVE SPORTS RESULTS:\n' + data.events.slice(0,6).map(e =>
-          e.strHomeTeam + ' ' + (e.intHomeScore??'-') + ' vs ' + (e.intAwayScore??'-') + ' ' + e.strAwayTeam + ' (' + e.strLeague + ')'
-        ).join('\n') + '\nFetched at: ' + ts + '\nINSTRUCTION: Report only these matches and state the fetch time.';
-      } catch (e) { return null; }
-    }
+function stopRecognition(){if(recognition){try{recognition.abort()}catch(e){}recognition=null;}}
 
-    // ── SANITIZE ──────────────────────────────────────────
-    function sanitizeReply(text) {
-      return text
-        .replace(/\*\*/g,'').replace(/\*/g,'').replace(/#{1,6}\s+/g,'')
-        .replace(/`{1,3}[^`]*`{1,3}/g,'').replace(/^\s*[-•]\s+/gm,'')
-        .replace(/^\s*\d+\.\s+/gm,'').replace(/\[([^\]]+)\]\([^)]+\)/g,'$1')
-        .replace(/\|/g,', ').replace(/\[HIGH CONFIDENCE\]/gi,'').replace(/\[LOW CONFIDENCE\]/gi,'')
-        .replace(/\[STALE\]/gi,'').replace(/\[DATE:[^\]]*\]/gi,'').replace(/\[UNKNOWN\]/gi,'')
-        .replace(/INSTRUCTION:[^\n]*/gi,'').replace(/===+[^=\n]*===+/g,'')
-        .replace(/\n{3,}/g,'\n\n').trim();
-    }
+// ══════════════════════════════════════════════════════
+// STATUS SPEECH
+// ══════════════════════════════════════════════════════
+async function speakStatus(key){
+  const phrase=rndPhrase(key);
+  _speakRaw(phrase);
+}
 
-    // ── CLASSIFIERS ───────────────────────────────────────
-    function classifyQuery(q) {
-      const ql = q.toLowerCase();
-      return {
-        isCrypto:    /bitcoin|btc|ethereum|eth|solana|sol|bnb|dogecoin|doge|xrp|cardano|ada|crypto|coin/.test(ql),
-        isForex:     /forex|currency|exchange rate|usd|eur|gbp|kes|jpy|cad|aud|zar|ngn|ugx|tzs|convert|shilling|dollar|euro|pound/.test(ql),
-        isMetals:    /gold|silver|xau|xag|platinum|palladium|metal/.test(ql),
-        isWeather:   /weather|temperature|forecast|rain|humid|wind|sunny|cold|hot/.test(ql),
-        isSports:    /football|soccer|premier league|champions league|la liga|serie a|bundesliga|sport|score|match|goal/.test(ql),
-        isFinancial: /rate|exchange|currency|price|convert|worth|cost|how much|value|market|stock|share|trading/.test(ql),
-        isNews:      /news|happened|latest|today|yesterday|this week|breaking|announced|said|reported|now|currently/.test(ql),
-        isVisual:    /explain|show me|what is|how does|diagram of|illustrate|demonstrate|visualise|visualize|lab|laboratory/.test(ql)
-      };
-    }
+// ══════════════════════════════════════════════════════
+// COMMAND ROUTER
+// ══════════════════════════════════════════════════════
+function routeCommand(cmd){
+  const c=cmd.toLowerCase().trim();
 
-    function enhanceQuery(q) {
-      const ql = q.toLowerCase();
-      if (ql.includes('yesterday'))                              return q + ' ' + yesterdayStr;
-      if (ql.includes('this morning') || ql.includes('today'))  return q + ' ' + todayStr;
-      if (ql.includes('this week'))                             return q + ' ' + currentMonth + ' ' + currentYear;
-      if (/latest|recent|now|current|just|happened/.test(ql))   return q + ' ' + currentMonth + ' ' + currentYear;
-      return q;
-    }
+  // If awaiting any clarification answer (typed instead of spoken)
+  if(_awaitingClarify){
+    submitClarifyAnswer(cmd);
+    return;
+  }
 
-    async function planSearch(q) {
-      const result = await callCerebras(
-        'You are a search query planner. Today is ' + timeStr + '. Given a user question, output 2-3 specific targeted search queries. Always append current month and year to queries about recent events. Output ONLY a valid JSON array of strings. No explanation, no markdown.',
-        q, 200
+  // Memory wipe command
+  if(/\b(forget everything|clear your memory|wipe your memory)\b/i.test(c)){
+    sendCmdText(cmd);return;
+  }
+
+  if(/^(play|put on|i want to (hear|listen to)|search (youtube )?for|youtube|queue|stream)\s+.+/i.test(c)){
+    const q=cmd.replace(/^(play|put on|i want to (hear|listen to)|search (youtube )?for|youtube|queue|stream)\s*/i,'').replace(/\s*(on youtube|for me|please|now)\s*/ig,'').trim();
+    resolveAndPlay(q);return;
+  }
+  if(/\b(weather|temperature|forecast|raining|rain|sunny|humidity|wind speed)\b/i.test(c)){
+    speakStatus('weather');handleWeather(cmd);return;
+  }
+  if(/\b(next|skip|next song|next track|skip this)\b/i.test(c)){ytNext();return;}
+  if(/\b(previous|prev|go back|last song|back)\b/i.test(c)){ytPrev();return;}
+  if(/\b(pause)\b/i.test(c)&&ytResults.length){ytPause();return;}
+  if(/\b(resume|unpause|continue|play again|keep playing)\b/i.test(c)&&ytResults.length){ytResume();return;}
+  if(/\b(mute|silence (the music|it))\b/i.test(c)){ytMute();return;}
+  if(/\b(unmute|restore (sound|audio))\b/i.test(c)){ytUnmute();return;}
+  if(/\b(volume up|louder|increase volume|turn it up)\b/i.test(c)){ytVolumeUp();return;}
+  if(/\b(volume down|quieter|lower volume|turn it down)\b/i.test(c)){ytVolumeDown();return;}
+  if(/\b(close (youtube|player|music)|stop (youtube|video|music|playing))\b/i.test(c)){ytClose();return;}
+  if(/^(stop|quiet|silence|shut up|enough|stop talking|be quiet)$/i.test(c)){
+    stopAllSpeech();
+    setOrbState(idleState(),idleLabel());
+    return;
+  }
+  if(/\b(sing|hum|rap|compose a song|write a song)\b/i.test(c)){
+    speakStatus('thinking');handleSing(cmd);return;
+  }
+  if(IMAGE_TRIGGERS.test(c)){
+    const imagePrompt=cmd.replace(/^(explain|show me|what is|how does|diagram of|illustrate|show|demonstrate|visualise|visualize|display|draw)\s*/i,'').trim()||cmd;
+    showOrbImage(imagePrompt);
+  }
+
+  // General intent clarity check — only bother for genuinely vague
+  // referents. Most messages (questions, statements, casual chat)
+  // should go straight to the brain with no detour or delay.
+  if(needsIntentCheck(cmd)){
+    checkIntentThenSend(cmd);
+  }else{
+    speakStatus('thinking');
+    setOrbState('thinking','HEARD: '+cmd.toUpperCase().slice(0,45));
+    sendCmdText(cmd);
+  }
+}
+
+// Heuristic: only flag messages that lean on an unresolved pronoun/referent
+// with no subject of their own (e.g. "tell me about it", "do that thing",
+// "play it again", "continue that"). Everything else — including open-ended
+// or rhetorical phrasing like "what's on your mind?" — is treated as clear.
+function needsIntentCheck(cmd){
+  const c=cmd.toLowerCase().trim();
+  if(c.split(/\s+/).length>14)return false; // long messages carry their own context
+  const vagueReferent=/\b(it|that|this|them|those|the thing|the one)\b/.test(c);
+  const noConcreteSubject=!/\b(weather|song|video|movie|news|price|stock|crypto|bitcoin|gold|silver|forex|sports|football|score|time|date|joke|story|recipe|code|explain|define|translate|calculate|convert)\b/.test(c);
+  const isBareVagueOpener=/^(do (that|it)|tell me about (it|that)|what about (it|that)|continue( that)?|keep going|finish (it|that)|play (it|that) again|repeat (it|that)|say (it|that) again)\b/.test(c);
+  return isBareVagueOpener || (vagueReferent && noConcreteSubject && c.split(/\s+/).length<=6);
+}
+
+async function checkIntentThenSend(cmd){
+  processingCmd = true;
+  setOrbState('thinking','CHECKING YOUR REQUEST...');
+  try{
+    const r = await fetch('/api/chat', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-scorpion-key':SCORPION_SECRET},
+      body: JSON.stringify({ mode:'resolve_intent', query: cmd, messages: conversationHistory })
+    });
+    const data = await r.json();
+    processingCmd = false;
+
+    if(data.status === 'unclear'){
+      showClarifyVoice(
+        'intent',
+        data.question || 'Could you clarify what you mean, Sir?',
+        data.options || [],
+        cmd
       );
-      if (!result) return [enhanceQuery(q)];
-      try {
-        const cleaned = result.replace(/```json|```/g,'').trim();
-        const queries = JSON.parse(cleaned);
-        return Array.isArray(queries) && queries.length > 0 ? queries : [enhanceQuery(q)];
-      } catch (e) { return [enhanceQuery(q)]; }
-    }
-
-    async function scoreAndFilter(rawData, q) {
-      if (!rawData) return rawData;
-      const result = await callCerebras(
-        'You are a data quality analyst. Today is ' + timeStr + '. Given raw search results and a query: ' +
-        '1) Extract only facts that directly answer the query. ' +
-        '2) Remove irrelevant content, ads, navigation, repetition. ' +
-        '3) Tag each key fact as [HIGH CONFIDENCE] or [LOW CONFIDENCE]. ' +
-        '4) Flag dates as [DATE: YYYY-MM-DD]. If no date tag [DATE: UNKNOWN]. ' +
-        '5) REJECT news facts older than 48 hours — mark [STALE]. ' +
-        '6) Preserve exact numbers. ' +
-        '7) Output clean structured facts only. If nothing relevant output: NO RELEVANT DATA FOUND',
-        'QUERY: ' + q + '\n\nRAW DATA:\n' + rawData.slice(0, 10000), 2000
-      );
-      if (!result || result === 'NO RELEVANT DATA FOUND') return rawData;
-      return result;
-    }
-
-    function isSimpleCommand(msgs) {
-      if (!msgs?.length) return true;
-      const last = msgs[msgs.length - 1];
-      const text = (last?.text || last?.content || '').toLowerCase().trim();
-      const simple = ['hello','hi','hey','thanks','thank you','bye','goodbye','how are you','what is your name','who are you','play ','stop','pause'];
-      const isVisual = /explain|show me|what is|how does|diagram of|illustrate/.test(text);
-      if (isVisual) return false;
-      return simple.some(s => text.startsWith(s)) && text.length < 30;
-    }
-
-    // ══════════════════════════════════════════════════════
-    // NON-STREAMING MODES
-    // ══════════════════════════════════════════════════════
-
-    // ── MEMORY WIPE COMMAND ───────────────────────────────
-    if (mode === 'wipe_memory') {
-      await wipeMemory();
-      return res.status(200).json({ success: true, message: 'Memory cleared, Sir.' });
-    }
-
-    // ── RESOLVE VIDEO ─────────────────────────────────────
-    // NOTE (fix): now accepts `messages` so it can resolve references
-    // like "play the other one", "that song again", "the live version",
-    // etc. against the real conversation instead of the bare query alone.
-    if (mode === 'resolve_video') {
-      const rawQuery = (query || '').trim();
-      if (!rawQuery) return res.status(200).json({ status: 'fallback', searchQuery: rawQuery });
-
-      const historyContext = buildHistoryContext(messages);
-
-      let searchContext = '';
-      try {
-        const [s1, s2] = await Promise.all([
-          serperSearch(rawQuery + ' YouTube official', false),
-          tavilySearch(rawQuery + ' full video site:youtube.com OR site:wikipedia.org')
-        ]);
-        searchContext = [s1, s2].filter(Boolean).join('\n\n---\n\n');
-      } catch (e) {}
-      const resolverSystem = `You are a video identification expert for Scorpion AI. Today is ${timeStr}.
-The user wants to play a video. Identify EXACTLY what they want and return the best YouTube search query.
-Output ONLY valid JSON, nothing else. No markdown, no backticks.
-{"title":"exact official title","channel":"expected YouTube channel","year":"YYYY","contentType":"music OR speech OR movie OR documentary OR interview OR concert OR lecture OR other","videoDuration":"short OR medium OR long OR any","searchQuery":"optimised YouTube search string"}
-Rules: videoDuration long for speeches/movies/docs/concerts/lectures. short for clips/trailers. searchQuery must be precise — include title+person+year for speeches, "official video" for music, "full movie" for films.
-Use CONVERSATION HISTORY below to resolve references like "that one", "the other version", "play it again", "the acoustic one" — if the user's request depends on something said earlier, ground your answer in it.
-
-CONVERSATION HISTORY:
-${historyContext || 'No prior history.'}
-
-SEARCH CONTEXT:\n${searchContext ? searchContext.slice(0, 6000) : 'Use expert knowledge.'}`;
-      let jsonResult = null;
-      try {
-        const raw = await callGroq(resolverSystem, rawQuery, 400) || await callCerebras(resolverSystem, rawQuery, 400);
-        if (raw) { const cleaned = raw.replace(/```json|```/g,'').trim(); jsonResult = JSON.parse(cleaned); }
-      } catch (e) {}
-      if (jsonResult?.searchQuery) {
-        return res.status(200).json({ status:'resolved', title:jsonResult.title||rawQuery, channel:jsonResult.channel||'', year:jsonResult.year||'', contentType:jsonResult.contentType||'other', videoDuration:jsonResult.videoDuration||'any', searchQuery:jsonResult.searchQuery });
-      }
-      return res.status(200).json({ status:'fallback', searchQuery:rawQuery });
-    }
-
-    // ── RESOLVE SONG ──────────────────────────────────────
-    // NOTE (fix): also accepts `messages` now, injected into both the
-    // initial clarity-check prompt and the clarification-merge prompt,
-    // so "no, the other one" or "the live version" resolves correctly.
-    if (mode === 'resolve_song') {
-      const rawQuery = (query || '').trim();
-      if (!rawQuery) return res.status(200).json({ status:'clear', searchQuery:'', original:'' });
-
-      const historyContext = buildHistoryContext(messages);
-
-      if (clarificationAnswer && originalQuery) {
-        const confirmSystem = `You are a music expert. The user asked to play: "${originalQuery}". Their clarification: "${clarificationAnswer}".
-Use the CONVERSATION HISTORY below for additional context if it helps disambiguate.
-CONVERSATION HISTORY:
-${historyContext || 'No prior history.'}
-Output ONLY: SONG TITLE - ARTIST NAME`;
-        let confirmed = await callAnyBrain(confirmSystem, clarificationAnswer, 80);
-        if (!confirmed) confirmed = rawQuery;
-        return res.status(200).json({ status:'confirm', searchQuery:confirmed.replace(/^["']+|["']+$/g,'').trim(), original:originalQuery });
-      }
-      const needsResearch = /\b(first|debut|earliest|original|best|most famous|biggest|number one|#1|grammy|award|from the movie|from the film|soundtrack|theme song|latest|newest|new single|new song|theme|intro|outro|opening|ending|ost)\b/i.test(rawQuery);
-      let searchContext = '';
-      if (needsResearch) {
-        try {
-          const [s1, s2] = await Promise.all([serperSearch(rawQuery + ' song', false), tavilySearch(rawQuery + ' song title artist')]);
-          searchContext = [s1, s2].filter(Boolean).join('\n\n---\n\n');
-        } catch (e) {}
-      }
-      const interpreterSystem = `You are a hyper-intelligent music assistant called Scorpion. Today is ${timeStr}.
-Analyse the user's song request. CLEAR = you know exactly which song. UNCLEAR = genuinely ambiguous.
-Use CONVERSATION HISTORY below — if it already resolves a reference like "that song" or "the other one", treat the request as CLEAR.
-CLEAR output: STATUS: CLEAR\nSONG: <exact song title - artist>
-UNCLEAR output: STATUS: UNCLEAR\nQUESTION: <max 15 words>\nOPTION1: <option>\nOPTION2: <option>\nOPTION3: <option>
-Only mark UNCLEAR if genuinely ambiguous.
-
-CONVERSATION HISTORY:
-${historyContext || 'No prior history.'}
-${searchContext ? '\nSEARCH CONTEXT:\n' + searchContext.slice(0, 5000) : ''}`;
-      let interp = await callAnyBrain(interpreterSystem, rawQuery, 200);
-      if (interp) {
-        const statusMatch = interp.match(/STATUS:\s*(CLEAR|UNCLEAR)/i);
-        const status = statusMatch ? statusMatch[1].toUpperCase() : null;
-        if (status === 'CLEAR') { const m = interp.match(/SONG:\s*(.+)/i); return res.status(200).json({ status:'clear', searchQuery:(m?m[1].trim().replace(/^["']+|["']+$/g,''):rawQuery), original:rawQuery }); }
-        if (status === 'UNCLEAR') {
-          const q2 = interp.match(/QUESTION:\s*(.+)/i); const o1 = interp.match(/OPTION1:\s*(.+)/i); const o2 = interp.match(/OPTION2:\s*(.+)/i); const o3 = interp.match(/OPTION3:\s*(.+)/i);
-          return res.status(200).json({ status:'unclear', question:(q2?q2[1].trim():'Which song, Sir?'), options:[o1,o2,o3].map(o=>o?o[1].trim():null).filter(Boolean), original:rawQuery });
-        }
-      }
-      return res.status(200).json({ status:'clear', searchQuery:rawQuery, original:rawQuery });
-    }
-
-    // ── RESOLVE INTENT ────────────────────────────────────
-    if (mode === 'resolve_intent') {
-      const rawQuery = (query || '').trim();
-      if (!rawQuery) return res.status(200).json({ status:'clear' });
-
-      if (clarificationAnswer && originalQuery) {
-        const mergeSystem = `You are an assistant reconciling an ambiguous request with the user's clarifying answer.
-Original request: "${originalQuery}"\nClarifying answer: "${clarificationAnswer}"
-Combine into ONE clear self-contained instruction. Output ONLY the merged text. No quotes, no preamble.`;
-        let merged = await callAnyBrain(mergeSystem, clarificationAnswer, 120);
-        if (!merged) merged = originalQuery + ' — ' + clarificationAnswer;
-        return res.status(200).json({ status:'confirm', resolvedQuery:merged.trim() });
-      }
-
-      const historyContext = buildHistoryContext(messages);
-
-      const intentSystem = `You are the intent-clarity gatekeeper for Scorpion AI. Today is ${timeStr}.
-
-FIRST: Check conversation history below. If it resolves the ambiguity, return CLEAR immediately.
-THEN: Decide if the user's message is CLEAR or UNCLEAR.
-
-CLEAR = has enough information to act on. Default to CLEAR whenever in doubt.
-UNCLEAR has exactly two valid reasons:
-  REASON A — VAGUE: names no subject at all. e.g. "tell me about it", "do that thing"
-  REASON B — MULTI-REFERENT: names a subject that plausibly means 2+ clearly distinct things.
-
-If CLEAR: STATUS: CLEAR
-If UNCLEAR:
-STATUS: UNCLEAR
-QUESTION: <one short Jarvis-like question, max 15 words>
-OPTION1: <first interpretation>
-OPTION2: <second interpretation>
-OPTION3: <"Something else" fallback>
-
-Default to CLEAR whenever in doubt. Never refuse. Never ask about something already in history.
-
-CONVERSATION HISTORY:
-${historyContext || 'No history yet.'}`;
-
-      let interp = await callAnyBrain(intentSystem, rawQuery, 220);
-      if (interp) {
-        const statusMatch = interp.match(/STATUS:\s*(CLEAR|UNCLEAR)/i);
-        if (statusMatch?.[1]?.toUpperCase() === 'UNCLEAR') {
-          const q2 = interp.match(/QUESTION:\s*(.+)/i); const o1 = interp.match(/OPTION1:\s*(.+)/i); const o2 = interp.match(/OPTION2:\s*(.+)/i); const o3 = interp.match(/OPTION3:\s*(.+)/i);
-          return res.status(200).json({ status:'unclear', question:(q2?q2[1].trim():'Could you clarify, Sir?'), options:[o1,o2,o3].map(o=>o?o[1].trim():null).filter(Boolean), original:rawQuery });
-        }
-      }
-      return res.status(200).json({ status:'clear' });
-    }
-
-    // ── GREETING ──────────────────────────────────────────
-    if (mode === 'greeting') {
-      const greetSystem = `You are Scorpion, a hyper-intelligent Jarvis-style AI assistant.
-The current date and time is: ${timeStr}. It is ${partOfDay}.
-Greet the user warmly like Jarvis greets Tony Stark — address them as Sir.
-Give a brief, witty, engaging good ${partOfDay} greeting. Keep it to 2-3 sentences.
-NEVER use markdown. Write plain conversational sentences only.`;
-      const brains = [
-        { name:'CEREBRAS', key:process.env.CEREBRAS_API_KEY, url:'https://api.cerebras.ai/v1/chat/completions', model:'llama3.1-8b' },
-        { name:'GROQ',     key:process.env.GROQ_API_KEY,     url:'https://api.groq.com/openai/v1/chat/completions', model:'llama-3.3-70b-versatile' }
-      ];
-      for (const brain of brains.filter(b => b.key)) {
-        try {
-          const r    = await fetch(brain.url, { method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+brain.key}, body:JSON.stringify({ model:brain.model, temperature:0.2, max_tokens:200, messages:[{role:'system',content:greetSystem},{role:'user',content:'greet me'}] }) });
-          const data = await r.json();
-          const reply = data.choices?.[0]?.message?.content;
-          if (reply) return res.status(200).json({ reply:sanitizeReply(reply), brain:brain.name });
-        } catch (e) {}
-      }
-      return res.status(200).json({ reply:'Good ' + partOfDay + ' Sir. Scorpion online and ready.', brain:'FALLBACK' });
-    }
-
-    // ══════════════════════════════════════════════════════
-    // MAIN CHAT — STREAMING PIPELINE
-    // ══════════════════════════════════════════════════════
-    startStream();
-
-    const userMessages      = messages || [{ role:'user', text:'hello' }];
-    const lastMsg           = userMessages[userMessages.length - 1];
-    const userQuery         = lastMsg?.text || lastMsg?.content || '';
-    const formattedMessages = userMessages.map(m => ({ role:m.role==='assistant'?'assistant':'user', content:m.text||m.content||'' }));
-
-    // ── MEMORY WIPE CHECK ─────────────────────────────────
-    if (/\b(forget everything|clear your memory|wipe your memory|reset memory)\b/i.test(userQuery)) {
-      await wipeMemory();
-      writeChunk('answer', 'Memory cleared Sir. Starting fresh.', { brain:'SCORPION' });
-      endStream();
       return;
     }
 
-    // ── STAGE 1: REASONING ───────────────────────────────
-    if (!isSimpleCommand(userMessages)) {
-      const reasoningSystem = `You are the reasoning layer of Scorpion AI. Today is ${timeStr}.
-In ONE sentence only, state: what the user is asking for AND what data source or action is needed.
-Be specific. Examples:
-- "XAU/USD price — requires live metals spot feed."
-- "Where Ruto was yesterday — requires news search for ${yesterdayStr}."
-- "Bitcoin 24h change — requires live crypto feed from CoinGecko."
-- "Explain photosynthesis — requires general knowledge, no live data needed."
-Output ONLY that one sentence. No preamble, no extra text.`;
-      const reasoningSentence = await callCerebras(reasoningSystem, userQuery, 80);
-      if (reasoningSentence) writeChunk('thinking', reasoningSentence.trim());
-    }
+    // CLEAR — proceed normally
+    speakStatus('thinking');
+    setOrbState('thinking','HEARD: '+cmd.toUpperCase().slice(0,45));
+    sendCmdText(cmd);
 
-    // ── STAGE 2: CLASSIFY + PLAN ─────────────────────────
-    const intent = classifyQuery(userQuery);
-
-    if (!isSimpleCommand(userMessages)) {
-      writeChunk('searching', 'Planning search strategy...');
-      const plannedQueries = await planSearch(userQuery);
-      writeChunk('searching', 'Running ' + plannedQueries.length + ' search queries: ' + plannedQueries.join(' / '));
-
-      // ── STAGE 3: FETCH ALL DATA ───────────────────────
-      writeChunk('fetching', 'Fetching live data and web results...');
-
-      const [rawWebData, cryptoData, metalData, forexData, weatherData, sportsData] = await Promise.all([
-        runSearchChain(plannedQueries, intent),
-        getCrypto(userQuery),
-        getMetals(userQuery),
-        getForex(userQuery),
-        getWeather(userQuery),
-        getSports(userQuery)
-      ]);
-
-      if (cryptoData)  writeChunk('fetching', 'Live crypto data received — ' + fetchTimestamp());
-      if (metalData)   writeChunk('fetching', 'Live metals data received — ' + fetchTimestamp());
-      if (forexData)   writeChunk('fetching', 'Live forex rates received — ' + fetchTimestamp());
-      if (weatherData) writeChunk('fetching', 'Live weather data received — ' + fetchTimestamp());
-      if (sportsData)  writeChunk('fetching', 'Live sports data received — ' + fetchTimestamp());
-      if (rawWebData)  writeChunk('fetching', 'Web search complete — ' + fetchTimestamp());
-
-      // ── STAGE 4: SCORE AND FILTER ─────────────────────
-      writeChunk('scoring', 'Analysing and scoring sources for confidence...');
-
-      let filteredWebData = null;
-      if (rawWebData) filteredWebData = await scoreAndFilter(rawWebData, userQuery);
-
-      if (filteredWebData && intent.isNews) {
-        const tightWindow = /\btoday\b|\bthis morning\b|\bright now\b|\bcurrently\b/i.test(userQuery);
-        const maxAge = tightWindow ? 5 : 30;
-        if (!hasRecentDateStrict(filteredWebData, maxAge)) {
-          filteredWebData += '\n\nDATE WARNING: No source confirmed within the last ' + maxAge + ' days. Treat all news claims as potentially stale.';
-        }
-      }
-
-      if (!filteredWebData) {
-        filteredWebData = 'NO LIVE SEARCH DATA AVAILABLE.\nINSTRUCTION: Do not invent a definitive current answer. Tell the user you do not have a live feed for this right now.';
-      }
-
-      // ── BUILD WEB CONTEXT ─────────────────────────────
-      let webContext = ''; let dataSource = ''; let gaps = [];
-
-      if (filteredWebData) { webContext += '=== WEB SEARCH (confidence-scored) ===\n' + filteredWebData + '\n\n'; dataSource = 'WEB[' + plannedQueries.length + 'q]'; }
-      if (cryptoData)  { webContext += '=== LIVE CRYPTO DATA ===\n'   + cryptoData  + '\n\n'; dataSource += '+CRYPTO';  }
-      if (metalData)   { webContext += '=== LIVE METALS DATA ===\n'   + metalData   + '\n\n'; dataSource += '+METALS';  }
-      if (forexData)   { webContext += '=== LIVE FOREX DATA ===\n'    + forexData   + '\n\n'; dataSource += '+FOREX';   }
-      if (weatherData) { webContext += '=== LIVE WEATHER DATA ===\n'  + weatherData + '\n\n'; dataSource += '+WEATHER'; }
-      if (sportsData)  { webContext += '=== LIVE SPORTS DATA ===\n'   + sportsData  + '\n\n'; dataSource += '+SPORTS';  }
-
-      if (intent.isCrypto  && !cryptoData)  gaps.push('CRYPTO GAP: No live crypto data. Do NOT use training knowledge for any price.');
-      if (intent.isMetals  && !metalData)   gaps.push('METALS GAP: No live metals data. Do NOT estimate any metal price.');
-      if (intent.isForex   && !forexData)   gaps.push('FOREX GAP: No live forex data. Do NOT estimate any exchange rate.');
-      if (intent.isWeather && !weatherData) gaps.push('WEATHER GAP: Do NOT guess weather conditions.');
-      if (gaps.length) webContext += '=== DATA GAP WARNINGS ===\n' + gaps.join('\n') + '\n\n';
-
-      // ── STAGE 5: BUILD SYSTEM PROMPT + CALL BRAINS ───
-      const noMarkdownRule = `CRITICAL OUTPUT FORMAT RULES:
-- Write in plain conversational sentences only.
-- NEVER use markdown: no asterisks, no bold, no headers, no bullet points, no numbered lists, no backticks.
-- Your output will be read aloud by a text-to-speech engine.
-- Address the user as Sir.
-- Always state the exact fetch time and date when reporting live prices, rates, or weather.
-- Keep responses concise and conversational unless asked for detail.`;
-
-      const systemPrompt = `You are Scorpion, a hyper-intelligent Jarvis-style AI assistant.
-You are warm, witty, loyal, and brilliantly intelligent. You address the user as Sir.
-Today is ${timeStr}. Yesterday was ${yesterdayStr}.
-
-${noMarkdownRule}
-
-CRITICAL INSTRUCTIONS — YOU ARE AN INTELLIGENT ANALYST:
-
-SOURCE HIERARCHY:
-1. LIVE specialist APIs (CRYPTO, FOREX, METALS, WEATHER, SPORTS) — highest priority
-2. [HIGH CONFIDENCE] tagged facts from web search
-3. News sources with today or yesterday date
-4. [LOW CONFIDENCE] or [STALE] facts — mention uncertainty
-5. Training knowledge — FORBIDDEN for any live factual claim
-
-HANDLE GAPS HONESTLY:
-- DATA GAP WARNING present: say "I do not have a live feed for that, Sir"
-- NEVER fill a gap with training knowledge as if it were current
-- ALWAYS state the exact fetch timestamp when reporting live data
-
-LIVE DATA:
-${webContext}`;
-
-      const brainRoster = [
-        { name:'CEREBRAS', key:process.env.CEREBRAS_API_KEY, url:'https://api.cerebras.ai/v1/chat/completions',     model:'llama3.1-8b',            headers:k=>({'Content-Type':'application/json','Authorization':'Bearer '+k}) },
-        { name:'GROQ',     key:process.env.GROQ_API_KEY,     url:'https://api.groq.com/openai/v1/chat/completions', model:'llama-3.3-70b-versatile', headers:k=>({'Content-Type':'application/json','Authorization':'Bearer '+k}) },
-        { name:'GEMINI',   key:process.env.GEMINI_API_KEY,   url:null,                                               model:'gemini-2.0-flash' },
-        { name:'MISTRAL',  key:process.env.MISTRAL_API_KEY,  url:'https://api.mistral.ai/v1/chat/completions',       model:'mistral-large-latest',    headers:k=>({'Content-Type':'application/json','Authorization':'Bearer '+k}) }
-      ];
-
-      async function callBrain(brain) {
-        if (brain.name === 'GEMINI') {
-          const geminiMessages = formattedMessages.map(m => ({ role:m.role==='assistant'?'model':'user', parts:[{text:m.content}] }));
-          const gRes  = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + brain.model + ':generateContent?key=' + brain.key, {
-            method:'POST', headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({ systemInstruction:{parts:[{text:systemPrompt}]}, contents:geminiMessages, generationConfig:{temperature:0.1,maxOutputTokens:1024} })
-          });
-          const gData = await gRes.json();
-          if (gData.error) throw new Error(gData.error.message);
-          const reply = gData?.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (!reply) throw new Error('Empty reply from GEMINI');
-          return { reply:sanitizeReply(reply), brain:brain.name };
-        } else {
-          const oRes  = await fetch(brain.url, {
-            method:'POST', headers:brain.headers(brain.key),
-            body:JSON.stringify({ model:brain.model, messages:[{role:'system',content:systemPrompt},...formattedMessages], temperature:0.1, max_tokens:1024 })
-          });
-          const oData = await oRes.json();
-          if (oData.error) throw new Error(oData.error?.message || JSON.stringify(oData.error));
-          const reply = oData?.choices?.[0]?.message?.content;
-          if (!reply) throw new Error('Empty reply from ' + brain.name);
-          return { reply:sanitizeReply(reply), brain:brain.name };
-        }
-      }
-
-      const activeBrains = brainRoster.filter(b => b.key);
-      if (!activeBrains.length) {
-        console.error('[chat.js] NO BRAIN API KEYS CONFIGURED');
-        writeChunk('error', 'No brain API keys configured.');
-        endStream(); return;
-      }
-
-      try {
-        const result = await Promise.any(activeBrains.map(b => callBrain(b)));
-        writeChunk('answer', result.reply, { brain: result.brain + ' + WEB [' + dataSource + ']' });
-      } catch (aggErr) {
-        const errors = aggErr.errors?.map(e => e.message).join(' | ') || aggErr.message;
-        console.error('[chat.js] All brains failed:', errors);
-        writeChunk('error', 'All brains failed: ' + errors);
-      }
-
-    } else {
-      // ── SIMPLE COMMAND PATH ────────────────────────────
-      const simpleSystem = `You are Scorpion, a hyper-intelligent Jarvis-style AI assistant.
-You are warm, witty, loyal. Address the user as Sir. Today is ${timeStr}.
-NEVER use markdown. Write plain conversational sentences only. Keep it brief.`;
-
-      const activeBrains = [
-        { name:'CEREBRAS', key:process.env.CEREBRAS_API_KEY, url:'https://api.cerebras.ai/v1/chat/completions', model:'llama3.1-8b' },
-        { name:'GROQ',     key:process.env.GROQ_API_KEY,     url:'https://api.groq.com/openai/v1/chat/completions', model:'llama-3.3-70b-versatile' }
-      ].filter(b => b.key);
-
-      for (const brain of activeBrains) {
-        try {
-          const r    = await fetch(brain.url, { method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+brain.key}, body:JSON.stringify({ model:brain.model, temperature:0.2, max_tokens:300, messages:[{role:'system',content:simpleSystem},...formattedMessages] }) });
-          const data = await r.json();
-          const reply = data.choices?.[0]?.message?.content;
-          if (reply) { writeChunk('answer', sanitizeReply(reply), { brain:brain.name }); endStream(); return; }
-        } catch (e) {
-          console.error('[chat.js] Brain call failed:', brain.name, e.message);
-        }
-      }
-      writeChunk('answer', 'At your service Sir.', { brain:'FALLBACK' });
-    }
-
-    endStream();
-
-  } catch (e) {
-    console.error('[chat.js] Handler error:', e.message, e.stack);
-    try {
-      res.write('data: ' + JSON.stringify({ type:'error', content:e.message }) + '\n\n');
-      res.write('data: [DONE]\n\n');
-      res.end();
-    } catch (_) {
-      res.status(500).json({ error: e.message });
-    }
+  }catch(e){
+    // Fallback on error
+    processingCmd = false;
+    speakStatus('thinking');
+    setOrbState('thinking','HEARD: '+cmd.toUpperCase().slice(0,45));
+    sendCmdText(cmd);
   }
 }
+
+// ══════════════════════════════════════════════════════
+// MEDIA TYPE ROUTING — "play X" now goes through the EXACT same
+// SSE research pipeline as normal chat (Processing… → Planning
+// search strategy → Running queries → researched answer), with the
+// same staged UI. Once the answer identifies exactly what the user
+// wants, a clean YouTube search query is extracted and the YouTube
+// API is called immediately — no more separate song-clarifier detour
+// that could misfire on non-song content like speeches.
+// ══════════════════════════════════════════════════════
+async function resolveAndPlay(rawQuery){
+  if(!rawQuery||!rawQuery.trim()){document.getElementById('output').textContent='What would you like me to play, Sir?';return;}
+  processingCmd=true;
+  document.getElementById('panel-label').textContent='SCORPION RESPONSE CORE';
+  const out=document.getElementById('output');
+  out.className='out-think';
+  out.innerHTML='<span style="color:var(--amber)">Processing…</span>';
+  addLog('u','play '+rawQuery);
+
+  const researchPrompt='Identify exactly which video the user wants to play, with specific facts (exact title, speaker/artist, date, location). Request: play '+rawQuery;
+  pushHistory('user', researchPrompt);
+
+  try{
+    const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const response=await fetch('/api/chat',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-scorpion-key':SCORPION_SECRET},
+      body:JSON.stringify({messages:conversationHistory,timezone:tz})
+    });
+
+    if(!response.ok){
+      processingCmd=false;out.className='';
+      out.innerHTML='<span style="color:var(--red)">HTTP '+response.status+'</span>';
+      setOrbState(idleState(),'ERROR');
+      return;
+    }
+
+    const reader=response.body.getReader();
+    const decoder=new TextDecoder();
+    let fullReply='',brainLabel='AI';
+    setOrbState('thinking','REASONING...');
+
+    while(true){
+      const {done,value}=await reader.read();
+      if(done)break;
+      const chunk=decoder.decode(value);
+      const lines=chunk.split('\n').filter(l=>l.trim());
+      for(const line of lines){
+        if(line.startsWith('data: ')){
+          try{
+            const json=JSON.parse(line.slice(6));
+            if(json.type==='thinking'){renderStage('thinking',json.content);setOrbState('thinking','REASONING: '+json.content.toUpperCase().slice(0,30));}
+            else if(json.type==='searching'){renderStage('searching',json.content);setOrbState('thinking','SEARCHING: '+json.content.toUpperCase().slice(0,30));}
+            else if(json.type==='fetching'){renderStage('fetching',json.content);setOrbState('thinking','FETCHING...');}
+            else if(json.type==='scoring'){renderStage('scoring',json.content);setOrbState('thinking','SCORING...');}
+            else if(json.type==='answer'){fullReply=json.content;if(json.brain)brainLabel=json.brain;renderStage('answer',fullReply);document.getElementById('ft-brain').textContent='BRAIN: '+brainLabel;document.getElementById('m-brain').textContent=brainLabel;}
+            else if(json.type==='error'){renderStage('error',json.content);}
+          }catch(e){}
+        }
+      }
+    }
+
+    out.className='';
+    pushHistory('assistant', fullReply);
+    addLog('a',fullReply,brainLabel);
+
+    if(!fullReply||!fullReply.trim()){
+      processingCmd=false;
+      handleMediaPlay(rawQuery, true);
+      return;
+    }
+
+    // Extract a clean, specific YouTube query from the researched answer
+    setOrbState('thinking','LOCKING ONTO TRACK...');
+    let finalQuery=rawQuery;
+    try{
+      const exR=await fetch('/api/chat',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','x-scorpion-key':SCORPION_SECRET},
+        body:JSON.stringify({mode:'extract_play_query', query:rawQuery, answer:fullReply})
+      });
+      const exData=await exR.json();
+      if(exData.searchQuery)finalQuery=exData.searchQuery;
+    }catch(e){}
+
+    processingCmd=false;
+    handleMediaPlay(finalQuery, true);
+
+  }catch(e){
+    processingCmd=false;out.className='';
+    out.innerHTML='<span style="color:var(--red)">ERROR: '+e.message+'</span>';
+    setOrbState(idleState(),'ERROR');
+  }
+}
+
+async function resolveSong(rawQuery){
+  processingCmd=true;
+  speakStatus('resolving');
+  setOrbState('thinking','ANALYSING TRACK REQUEST...');
+  document.getElementById('output').textContent='Interpreting: "' + rawQuery + '"…';
+
+  try{
+    const r=await fetch('/api/chat',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-scorpion-key':SCORPION_SECRET},
+      body:JSON.stringify({mode:'resolve_song', query:rawQuery, messages:conversationHistory})
+    });
+    const data=await r.json();
+
+    if(data.status==='clear'){
+      processingCmd=false;
+      const finalQuery=data.searchQuery||rawQuery;
+      if(finalQuery.toLowerCase()!==rawQuery.toLowerCase()){
+        addLog('a','Identified: '+finalQuery,'BRAIN');
+      }
+      handleMediaPlay(finalQuery, true);
+      return;
+    }
+
+    if(data.status==='unclear'){
+      processingCmd=false;
+      showClarifyVoice('song', data.question, data.options || [], rawQuery);
+      return;
+    }
+
+    processingCmd=false;
+    handleMediaPlay(rawQuery, true);
+
+  }catch(e){
+    processingCmd=false;
+    handleMediaPlay(rawQuery, false);
+  }
+}
+
+// ══════════════════════════════════════════════════════
+// STREAMING PIPELINE FOR SSE
+// ══════════════════════════════════════════════════════
+function clearStreamingUI(){
+  const stageLines=document.querySelectorAll('.stage-line');
+  stageLines.forEach(el=>el.remove());
+}
+
+function renderStage(type, content){
+  const out=document.getElementById('output');
+  
+  if(type==='thinking'){
+    clearStreamingUI();
+    const line=document.createElement('div');
+    line.className='stage-line thinking';
+    line.textContent=content+' ▋';
+    out.innerHTML='';out.appendChild(line);
+    return;
+  }
+  
+  if(type==='searching'){
+    const line=document.createElement('div');
+    line.className='stage-line searching';
+    line.textContent=content;
+    out.appendChild(line);
+    return;
+  }
+  
+  if(type==='fetching'){
+    const line=document.createElement('div');
+    line.className='stage-line fetching';
+    line.textContent=content;
+    out.appendChild(line);
+    return;
+  }
+  
+  if(type==='scoring'){
+    const line=document.createElement('div');
+    line.className='stage-line scoring';
+    line.textContent=content;
+    out.appendChild(line);
+    return;
+  }
+  
+  if(type==='answer'){
+    clearStreamingUI();
+    out.textContent=content;
+    // Extract and display timestamp if present
+    const timestampMatch=content.match(/Fetched at:\s*([^\n]+)/);
+    if(timestampMatch){
+      const ts=document.createElement('div');
+      ts.className='answer-timestamp';
+      ts.textContent='Fetch time: '+timestampMatch[1];
+      out.appendChild(ts);
+    }
+    return;
+  }
+  
+  if(type==='error'){
+    out.innerHTML='<span style="color:var(--red)">ERROR: '+content+'</span>';
+    return;
+  }
+}
+
+// ══════════════════════════════════════════════════════
+// MAIN CHAT — SSE STREAMING
+// ══════════════════════════════════════════════════════
+async function sendCmdText(val){
+  processingCmd=true;
+  document.getElementById('panel-label').textContent='SCORPION RESPONSE CORE';
+  const out=document.getElementById('output');
+  out.className='out-think';
+  out.innerHTML='<span style="color:var(--amber)">Processing…</span>';
+  addLog('u',val);
+  pushHistory('user', val);
+  
+  try{
+    const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const response=await fetch('/api/chat',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-scorpion-key':SCORPION_SECRET},
+      body:JSON.stringify({messages:conversationHistory,timezone:tz})
+    });
+    
+    if(!response.ok){
+      processingCmd=false;
+      out.className='';
+      out.innerHTML='<span style="color:var(--red)">HTTP '+response.status+'</span>';
+      setOrbState(idleState(),'ERROR');
+      return;
+    }
+    
+    const reader=response.body.getReader();
+    const decoder=new TextDecoder();
+    let fullReply='',brainLabel='AI';
+    
+    setOrbState('thinking','REASONING...');
+    
+    try{
+      while(true){
+        const {done,value}=await reader.read();
+        if(done)break;
+        const chunk=decoder.decode(value);
+        const lines=chunk.split('\n').filter(l=>l.trim());
+        for(const line of lines){
+          if(line.startsWith('data: ')){
+            try{
+              const json=JSON.parse(line.slice(6));
+              if(json.type==='thinking'){
+                renderStage('thinking',json.content);
+                setOrbState('thinking','REASONING: '+json.content.toUpperCase().slice(0,30));
+              }
+              else if(json.type==='searching'){
+                renderStage('searching',json.content);
+                setOrbState('thinking','SEARCHING: '+json.content.toUpperCase().slice(0,30));
+              }
+              else if(json.type==='fetching'){
+                renderStage('fetching',json.content);
+                setOrbState('thinking','FETCHING...');
+              }
+              else if(json.type==='scoring'){
+                renderStage('scoring',json.content);
+                setOrbState('thinking','SCORING...');
+              }
+              else if(json.type==='answer'){
+                fullReply=json.content;
+                if(json.brain)brainLabel=json.brain;
+                renderStage('answer',fullReply);
+                document.getElementById('ft-brain').textContent='BRAIN: '+brainLabel;
+                document.getElementById('m-brain').textContent=brainLabel;
+              }
+              else if(json.type==='error'){
+                renderStage('error',json.content);
+              }
+            }catch(e){}
+          }
+        }
+      }
+    }catch(streamErr){
+      processingCmd=false;
+      out.className='';
+      out.innerHTML='<span style="color:var(--red)">Signal lost Sir, retrying…</span>';
+      setOrbState(idleState(),'ERROR');
+      return;
+    }
+    
+    processingCmd=false;
+    out.className='';
+    pushHistory('assistant', fullReply);
+    bumpQ();
+    addLog('a',fullReply,brainLabel);
+    speakReply(fullReply);
+    
+  }catch(e){
+    processingCmd=false;
+    out.className='';
+    out.innerHTML='<span style="color:var(--red)">ERROR: '+e.message+'</span>';
+    setOrbState(idleState(),'ERROR');
+  }
+}
+
+async function sendCmd(){
+  unlockAudio();
+  const val=document.getElementById('cmd').value.trim();
+  if(!val)return;
+  document.getElementById('cmd').value='';
+  if(_orbImgShown)clearOrbImage();
+  routeCommand(val);
+}
+document.getElementById('cmd').addEventListener('keydown',e=>{if(e.key==='Enter')sendCmd();});
+
+// ══════════════════════════════════════════════════════
+// YOUTUBE ENGINE
+// ══════════════════════════════════════════════════════
+let ytResults=[],ytIndex=0,ytPaused=false,ytMuted=false,ytPlayer=null,ytPlayerReady=false,ytVolume=80;
+
+function setYtBadge(s){
+  const b=document.getElementById('yt-status-badge'),live=document.getElementById('yt-live-status');
+  b.className=s;
+  b.textContent={idle:'IDLE',playing:'PLAYING',paused:'PAUSED',muted:'MUTED'}[s]||s.toUpperCase();
+  if(live){live.textContent={playing:'▶ PLAYING',paused:'⏸ PAUSED',muted:'🔇 MUTED',idle:'—'}[s]||'';live.style.color=s==='playing'?'var(--G)':s==='paused'?'var(--amber)':s==='muted'?'var(--red)':'var(--muted)';}
+}
+
+window.onYouTubeIframeAPIReady=function(){
+  ytPlayer=new YT.Player('yt-frame',{
+    height:'100%',width:'100%',
+    playerVars:{autoplay:1,rel:0,modestbranding:1,playsinline:1},
+    events:{
+      onReady:(e)=>{ytPlayerReady=true;e.target.setVolume(ytVolume);},
+      onStateChange:(e)=>{
+        if(e.data===YT.PlayerState.PLAYING){ytPaused=false;setYtBadge(ytMuted?'muted':'playing');document.getElementById('yt-pause-btn').textContent='⏸';}
+        else if(e.data===YT.PlayerState.PAUSED){ytPaused=true;setYtBadge('paused');document.getElementById('yt-pause-btn').textContent='▶';}
+        else if(e.data===YT.PlayerState.ENDED){setTimeout(ytNext,1500);}
+      }
+    }
+  });
+};
+
+// Renamed from handleYouTube -> handleMediaPlay (now generic: songs, speeches, movies, etc.)
+async function handleMediaPlay(query,skipLog){
+  if(!query||!query.trim()){document.getElementById('output').textContent='What would you like me to play?';return;}
+  processingCmd=true;stopAllSpeech();
+  setOrbState('thinking','SEARCHING YOUTUBE...');
+  document.getElementById('output').textContent='Searching: '+query;
+  if(!skipLog){addLog('u','play '+query);pushHistory('user','play '+query);}
+  try{
+    const r=await fetch('/api/youtube',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query})});
+    const data=await r.json();processingCmd=false;
+    if(data.error||!data.results||!data.results.length){document.getElementById('output').textContent='Could not find: '+query;setOrbState(idleState(),idleLabel());return;}
+    ytResults=data.results;ytIndex=0;ytPaused=false;ytMuted=false;ytPlayIndex(0);
+  }catch(e){processingCmd=false;document.getElementById('output').textContent='YouTube error: '+e.message;setOrbState(idleState(),idleLabel());}
+}
+
+function ytPlayIndex(i){
+  if(!ytResults.length)return;
+  const item=ytResults[i];
+  document.getElementById('yt-idle').style.display='none';
+  document.getElementById('yt-active').classList.add('show');
+  document.getElementById('yt-title').textContent=item.title;
+  document.getElementById('yt-channel').textContent='📺 '+item.channel;
+  document.getElementById('yt-index').textContent='TRACK '+(i+1)+' / '+ytResults.length;
+  document.getElementById('yt-pause-btn').textContent='⏸';
+  document.getElementById('yt-mute-btn').textContent='🔊';
+  document.getElementById('yt-mute-btn').classList.remove('active-mute');
+  ytPaused=false;ytMuted=false;
+  if(ytPlayerReady&&ytPlayer&&ytPlayer.loadVideoById){ytPlayer.unMute();ytPlayer.setVolume(ytVolume);ytPlayer.loadVideoById(item.videoId);}
+  else{document.getElementById('yt-frame').src='https://www.youtube.com/embed/'+item.videoId+'?autoplay=1&rel=0&modestbranding=1&enablejsapi=1';}
+  setYtBadge('playing');
+  document.getElementById('output').textContent='Now playing: '+item.title+'\n'+item.channel;
+  addLog('a','Now playing: '+item.title,'YOUTUBE');
+  // FIX: record what is now playing into conversation memory, so a later
+  // chat message ("what's playing", "play the other version of that")
+  // can refer back to it.
+  pushHistory('assistant', 'Now playing: ' + item.title + ' by ' + item.channel);
+  bumpQ();
+  setOrbState(idleState(),idleLabel());
+  document.getElementById('ft-brain').textContent='BRAIN: YOUTUBE // STREAMING';
+}
+
+function ytNext(){if(!ytResults.length)return;ytIndex=(ytIndex+1)%ytResults.length;ytPlayIndex(ytIndex);}
+function ytPrev(){if(!ytResults.length)return;ytIndex=(ytIndex-1+ytResults.length)%ytResults.length;ytPlayIndex(ytIndex);}
+function ytPause(){if(ytPlayerReady&&ytPlayer&&ytPlayer.pauseVideo)ytPlayer.pauseVideo();}
+function ytResume(){if(ytPlayerReady&&ytPlayer&&ytPlayer.playVideo)ytPlayer.playVideo();}
+function ytTogglePause(){if(ytPaused)ytResume();else ytPause();}
+function ytMute(){if(ytPlayerReady&&ytPlayer){ytPlayer.mute();ytMuted=true;document.getElementById('yt-mute-btn').textContent='🔇';document.getElementById('yt-mute-btn').classList.add('active-mute');setYtBadge('muted');}}
+function ytUnmute(){if(ytPlayerReady&&ytPlayer){ytPlayer.unMute();ytMuted=false;document.getElementById('yt-mute-btn').textContent='🔊';document.getElementById('yt-mute-btn').classList.remove('active-mute');setYtBadge(ytPaused?'paused':'playing');}}
+function ytToggleMute(){if(ytMuted)ytUnmute();else ytMute();}
+function ytSetVolume(v){ytVolume=parseInt(v);document.getElementById('yt-vol-val').textContent=v;if(ytPlayerReady&&ytPlayer&&ytPlayer.setVolume)ytPlayer.setVolume(ytVolume);}
+function ytVolumeUp(){ytVolume=Math.min(100,ytVolume+15);document.getElementById('yt-vol-slider').value=ytVolume;ytSetVolume(ytVolume);}
+function ytVolumeDown(){ytVolume=Math.max(0,ytVolume-15);document.getElementById('yt-vol-slider').value=ytVolume;ytSetVolume(ytVolume);}
+function ytClose(){
+  if(ytPlayerReady&&ytPlayer&&ytPlayer.stopVideo)ytPlayer.stopVideo();
+  document.getElementById('yt-frame').src='';
+  document.getElementById('yt-active').classList.remove('show');
+  document.getElementById('yt-idle').style.display='';
+  ytResults=[];ytIndex=0;ytPaused=false;ytMuted=false;
+  setYtBadge('idle');
+  document.getElementById('output').textContent='YouTube closed.';
+  document.getElementById('ft-brain').textContent='BRAIN: STANDBY';
+}
+
+// ══════════════════════════════════════════════════════
+// WEATHER
+// ══════════════════════════════════════════════════════
+async function handleWeather(cmd){
+  processingCmd=true;setOrbState('thinking','CHECKING WEATHER...');addLog('u',cmd);
+  pushHistory('user', cmd);
+  const m=cmd.match(/(?:weather|temperature|forecast|rain|sunny|humidity|wind)\s+(?:in|at|for|of)?\s*([a-zA-Z\s]+)/i);
+  const city=m?m[1].trim():'Nairobi';
+  try{
+    const geoRes=await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1`);
+    const geoData=await geoRes.json();
+    if(!geoData.results||!geoData.results.length){processingCmd=false;document.getElementById('output').textContent='Location not found: '+city;setOrbState(idleState(),idleLabel());return;}
+    const loc=geoData.results[0];
+    const wRes=await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${loc.latitude}&longitude=${loc.longitude}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code,apparent_temperature&timezone=auto`);
+    const wData=await wRes.json();const cur=wData.current;
+    const conds={0:'Clear sky',1:'Mainly clear',2:'Partly cloudy',3:'Overcast',45:'Foggy',51:'Light drizzle',61:'Slight rain',63:'Moderate rain',65:'Heavy rain',71:'Slight snow',80:'Rain showers',95:'Thunderstorm'};
+    const cond=conds[cur.weather_code]||'Variable';
+    const reply=`Weather in ${loc.name}: ${cur.temperature_2m}°C, feels like ${cur.apparent_temperature}°C. ${cond}. Humidity ${cur.relative_humidity_2m}%, wind ${cur.wind_speed_10m} km/h.`;
+    processingCmd=false;
+    document.getElementById('output').textContent=reply;
+    addLog('a',reply,'WEATHER');bumpQ();
+    pushHistory('assistant', reply);
+    setOrbState(idleState(),idleLabel());
+    speakReply(reply);
+  }catch(e){processingCmd=false;document.getElementById('output').textContent='Weather error: '+e.message;setOrbState(idleState(),idleLabel());}
+}
+
+// ══════════════════════════════════════════════════════
+// SPEAK REPLY — Edge TTS, mic gated
+// ══════════════════════════════════════════════════════
+async function _speakRaw(text){
+  if(!text||!text.trim())return;
+  const clean=cleanForSpeech(text);
+  if(!clean)return;
+  try{
+    const response=await fetch('/api/speaker',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:clean})});
+    if(!response.ok)return;
+    const blob=await response.blob();
+    if(!blob||blob.size<100)return;
+    const url=URL.createObjectURL(blob);
+    const audio=new Audio(url);
+    audio.onended=()=>{URL.revokeObjectURL(url);};
+    audio.onerror=()=>{URL.revokeObjectURL(url);};
+    await audio.play();
+  }catch(e){}
+}
+
+async function speakReply(text){
+  stopAllSpeech();
+  if(!text||!text.trim())return Promise.resolve();
+  const clean=cleanForSpeech(text);
+  if(!clean)return Promise.resolve();
+  const wasClarifying=(state==='clarifying');
+  setOrbState('speaking','SPEAKING — JUST TALK TO INTERRUPT');
+  if(window._micGate)window._micGate(true);
+  return new Promise((resolve)=>{
+    fetch('/api/speaker',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:clean})})
+      .then(r=>{if(!r.ok)throw new Error('Speaker API '+r.status);return r.blob();})
+      .then(blob=>{
+        if(!blob||blob.size<100)throw new Error('Empty blob');
+        const url=URL.createObjectURL(blob);
+        const audio=new Audio(url);
+        _currentAudio=audio;
+        audio.onended=()=>{
+          URL.revokeObjectURL(url);_currentAudio=null;
+          if(window._micGate)window._micGate(false);
+          if(state==='speaking'){
+            if(wasClarifying&&_awaitingClarify) setOrbState('clarifying','AWAITING CLARIFICATION...');
+            else setOrbState(idleState(), idleLabel());
+          }
+          resolve();
+        };
+        audio.onerror=()=>{
+          URL.revokeObjectURL(url);_currentAudio=null;
+          if(window._micGate)window._micGate(false);
+          if(state==='speaking'){
+            if(wasClarifying&&_awaitingClarify) setOrbState('clarifying','AWAITING CLARIFICATION...');
+            else setOrbState(idleState(), idleLabel());
+          }
+          resolve();
+        };
+        audio.play().catch(()=>{if(window._micGate)window._micGate(false);resolve();});
+      })
+      .catch(()=>{
+        if(window._micGate)window._micGate(false);
+        if(state==='speaking'){
+          if(wasClarifying&&_awaitingClarify) setOrbState('clarifying','AWAITING CLARIFICATION...');
+          else setOrbState(idleState(), idleLabel());
+        }
+        resolve();
+      });
+  });
+}
+
+// ══════════════════════════════════════════════════════
+// SING
+// ══════════════════════════════════════════════════════
+function handleSing(cmd){
+  processingCmd=true;setOrbState('thinking','COMPOSING…');addLog('u',cmd);
+  pushHistory('user', cmd);
+  fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json','x-scorpion-key':SCORPION_SECRET},body:JSON.stringify({messages:conversationHistory})})
+    .then(r=>r.json()).then(data=>{
+      processingCmd=false;
+      if(data.error){document.getElementById('output').textContent='Error: '+data.error;setOrbState(idleState(),idleLabel());return;}
+      document.getElementById('output').textContent=data.reply;
+      pushHistory('assistant', data.reply);
+      addLog('a',data.reply,'SONG');bumpQ();
+      speakReply(data.reply);
+    }).catch(e=>{processingCmd=false;document.getElementById('output').textContent='Error: '+e.message;setOrbState(idleState(),idleLabel());});
+}
+
+// ══════════════════════════════════════════════════════
+// ACTION LOG
+// ══════════════════════════════════════════════════════
+let historyCount=0;
+function addLog(role,text,brain){
+  const h=document.getElementById('history');
+  const d=document.createElement('div');
+  const isYt=brain==='YOUTUBE';
+  const isClarify=brain==='CLARIFY';
+  d.className='hitem '+(role==='u'?'u':isYt?'yt':isClarify?'q':'a');
+  const roleLabel=role==='u'?'YOU':isYt?'YT':isClarify?'ASK':'SCORP';
+  const brainTag=brain&&role==='a'?`<span style="font-size:5.5px;color:var(--muted);margin-left:4px">[${brain}]</span>`:'';
+  d.innerHTML=`<div class="hrole">${roleLabel}${brainTag}</div><div class="htext">${text.slice(0,200)}${text.length>200?'…':''}</div>`;
+  h.appendChild(d);historyCount++;
+  document.getElementById('hist-count').textContent=historyCount;
+  while(h.children.length>30)h.removeChild(h.firstChild);
+  h.scrollTop=h.scrollHeight;
+}
+function clearLog(){
+  document.getElementById('history').innerHTML='';historyCount=0;
+  document.getElementById('hist-count').textContent='0';
+  document.getElementById('output').className='';
+  document.getElementById('output').textContent='SCORPION AI READY.';
+  document.getElementById('panel-label').textContent='SCORPION RESPONSE CORE';
+  conversationHistory=[];
+  clearOrbImage();
+  clearClarifyUI();
+}
+
+// ══════════════════════════════════════════════════════
+// BOOT GREETING
+// ══════════════════════════════════════════════════════
+async function bootGreeting(){
+  try{
+    const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json','x-scorpion-key':SCORPION_SECRET},body:JSON.stringify({mode:'greeting',timezone:tz,messages:[{role:'user',text:'greet me'}]})});
+    const data=await r.json();
+    if(data.reply){
+      document.getElementById('output').textContent=data.reply;
+      document.getElementById('m-brain').textContent=data.brain||'AI';
+      speakReply(data.reply);
+    }
+  }catch(e){
+    document.getElementById('output').textContent='Scorpion AI ready, Sir. All systems online.';
+  }
+}
+setTimeout(bootGreeting,1500);
+</script>
+</body>
+</html>
