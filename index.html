@@ -571,6 +571,34 @@ function stopAllSpeech(){
   clearContinueBanner();
 }
 
+// ══════════════════════════════════════════════════════
+// TURN COORDINATION — single source of truth for "is this still the
+// current turn?" Every async chain (chat fetch, SSE read loop, TTS
+// chunk loop) is handed a {gen, signal} pair at start and MUST check
+// `turn.gen !== _turnGen` before writing to the DOM, mutating shared
+// state, or starting audio playback. Starting a new turn always:
+//   1. bumps the generation counter (instantly invalidates old turns)
+//   2. aborts the in-flight fetch/SSE request via AbortController
+//   3. stops any speech currently playing or queued
+// This gives real turn-taking / barge-in: a new command (typed,
+// clicked, or spoken — including mid-search, not just mid-speech)
+// always wins over whatever stale work was in flight.
+// ══════════════════════════════════════════════════════
+let _turnGen=0;
+let _turnAbort=null;
+
+function startNewTurn(){
+  _turnGen++;
+  if(_turnAbort){try{_turnAbort.abort();}catch(e){}}
+  _turnAbort=new AbortController();
+  stopAllSpeech();
+  return {gen:_turnGen, signal:_turnAbort.signal};
+}
+
+function isStaleTurn(turn){
+  return !turn || turn.gen!==_turnGen;
+}
+
 // ── TEXT CLEANER ──
 // NOTE: bullet markers ("- ", "• ", "* ") are stripped here ON PURPOSE —
 // this feeds the TTS engine, and we always want spoken output to be
@@ -952,6 +980,14 @@ function initAndStartListening(){
           setTimeout(()=>{
             speakReply('Shall I continue Sir?').then(()=>{showContinueBanner(savedText);});
           },300);
+        }else if(state==='thinking'&&it.length>3&&!_awaitingClarify){
+          // Barge-in while a search/fetch/SSE turn is still in flight —
+          // not just while speaking. Cancels the stale request outright
+          // instead of letting it finish and possibly still get spoken.
+          startNewTurn();
+          processingCmd=false;
+          playInterruptSound();
+          setOrbState('listening','INTERRUPTED — LISTENING...');
         }
       }
     }
@@ -1140,6 +1176,7 @@ async function checkIntentThenSend(cmd){
 // ══════════════════════════════════════════════════════
 async function resolveAndPlay(rawQuery){
   if(!rawQuery||!rawQuery.trim()){document.getElementById('output').textContent='What would you like me to play, Sir?';return;}
+  const turn=startNewTurn();
   processingCmd=true;
   document.getElementById('panel-label').textContent='SCORPION RESPONSE CORE';
   const out=document.getElementById('output');
@@ -1155,8 +1192,11 @@ async function resolveAndPlay(rawQuery){
     const response=await fetch('/api/chat',{
       method:'POST',
       headers:{'Content-Type':'application/json','x-scorpion-key':SCORPION_SECRET},
-      body:JSON.stringify({messages:conversationHistory,timezone:tz})
+      body:JSON.stringify({messages:conversationHistory,timezone:tz}),
+      signal:turn.signal
     });
+
+    if(isStaleTurn(turn))return;
 
     if(!response.ok){
       processingCmd=false;out.className='';
@@ -1172,6 +1212,7 @@ async function resolveAndPlay(rawQuery){
 
     while(true){
       const {done,value}=await reader.read();
+      if(isStaleTurn(turn)){try{reader.cancel();}catch(e){}return;}
       if(done)break;
       const chunk=decoder.decode(value);
       const lines=chunk.split('\n').filter(l=>l.trim());
@@ -1179,6 +1220,7 @@ async function resolveAndPlay(rawQuery){
         if(line.startsWith('data: ')){
           try{
             const json=JSON.parse(line.slice(6));
+            if(isStaleTurn(turn))return;
             if(json.type==='thinking'){renderStage('thinking',json.content);setOrbState('thinking','REASONING: '+json.content.toUpperCase().slice(0,30));}
             else if(json.type==='searching'){renderStage('searching',json.content);setOrbState('thinking','SEARCHING: '+json.content.toUpperCase().slice(0,30));}
             else if(json.type==='fetching'){renderStage('fetching',json.content);setOrbState('thinking','FETCHING...');}
@@ -1190,13 +1232,15 @@ async function resolveAndPlay(rawQuery){
       }
     }
 
+    if(isStaleTurn(turn))return;
+
     out.className='';
     pushHistory('assistant', fullReply);
     addLog('a',fullReply,brainLabel);
 
     if(!fullReply||!fullReply.trim()){
       processingCmd=false;
-      handleMediaPlay(rawQuery, true);
+      handleMediaPlay(rawQuery, true, turn);
       return;
     }
 
@@ -1207,11 +1251,13 @@ async function resolveAndPlay(rawQuery){
       const exR=await fetch('/api/chat',{
         method:'POST',
         headers:{'Content-Type':'application/json','x-scorpion-key':SCORPION_SECRET},
-        body:JSON.stringify({mode:'extract_play_query', query:rawQuery, answer:fullReply})
+        body:JSON.stringify({mode:'extract_play_query', query:rawQuery, answer:fullReply}),
+        signal:turn.signal
       });
       exData=await exR.json();
-    }catch(e){}
+    }catch(e){if(isStaleTurn(turn))return;}
 
+    if(isStaleTurn(turn))return;
     processingCmd=false;
 
     if(exData && exData.status==='choice' && Array.isArray(exData.options) && exData.options.length>=2){
@@ -1224,9 +1270,10 @@ async function resolveAndPlay(rawQuery){
     }
 
     const finalQuery = (exData && exData.searchQuery) || rawQuery;
-    handleMediaPlay(finalQuery, true);
+    handleMediaPlay(finalQuery, true, turn);
 
   }catch(e){
+    if(isStaleTurn(turn)||e.name==='AbortError')return;
     processingCmd=false;out.className='';
     out.innerHTML='<span style="color:var(--red)">ERROR: '+e.message+'</span>';
     setOrbState(idleState(),'ERROR');
@@ -1326,6 +1373,7 @@ function renderStage(type, content){
 // MAIN CHAT — SSE STREAMING
 // ══════════════════════════════════════════════════════
 async function sendCmdText(val){
+  const turn=startNewTurn();
   processingCmd=true;
   document.getElementById('panel-label').textContent='SCORPION RESPONSE CORE';
   const out=document.getElementById('output');
@@ -1339,8 +1387,11 @@ async function sendCmdText(val){
     const response=await fetch('/api/chat',{
       method:'POST',
       headers:{'Content-Type':'application/json','x-scorpion-key':SCORPION_SECRET},
-      body:JSON.stringify({messages:conversationHistory,timezone:tz})
+      body:JSON.stringify({messages:conversationHistory,timezone:tz}),
+      signal:turn.signal
     });
+
+    if(isStaleTurn(turn))return;
 
     if(!response.ok){
       processingCmd=false;
@@ -1359,6 +1410,7 @@ async function sendCmdText(val){
     try{
       while(true){
         const {done,value}=await reader.read();
+        if(isStaleTurn(turn)){try{reader.cancel();}catch(e){}return;}
         if(done)break;
         const chunk=decoder.decode(value);
         const lines=chunk.split('\n').filter(l=>l.trim());
@@ -1366,6 +1418,7 @@ async function sendCmdText(val){
           if(line.startsWith('data: ')){
             try{
               const json=JSON.parse(line.slice(6));
+              if(isStaleTurn(turn))return;
               if(json.type==='thinking'){
                 renderStage('thinking',json.content);
                 setOrbState('thinking','REASONING: '+json.content.toUpperCase().slice(0,30));
@@ -1397,6 +1450,7 @@ async function sendCmdText(val){
         }
       }
     }catch(streamErr){
+      if(isStaleTurn(turn))return; // aborted on purpose by a newer turn — not a real error
       processingCmd=false;
       out.className='';
       out.innerHTML='<span style="color:var(--red)">Signal lost Sir, retrying…</span>';
@@ -1404,14 +1458,17 @@ async function sendCmdText(val){
       return;
     }
 
+    if(isStaleTurn(turn))return;
+
     processingCmd=false;
     out.className='';
     pushHistory('assistant', fullReply);
     bumpQ();
     addLog('a',fullReply,brainLabel);
-    speakReply(fullReply);
+    speakReply(fullReply, turn);
 
   }catch(e){
+    if(isStaleTurn(turn)||e.name==='AbortError')return; // expected when superseded by a newer turn
     processingCmd=false;
     out.className='';
     out.innerHTML='<span style="color:var(--red)">ERROR: '+e.message+'</span>';
@@ -1474,18 +1531,25 @@ window.onYouTubeIframeAPIReady=function(){
 
 // Generic media play (songs, speeches, movies, etc.) — final step after
 // the search query has been resolved by resolveAndPlay/extract_play_query.
-async function handleMediaPlay(query,skipLog){
+async function handleMediaPlay(query,skipLog,turn){
+  if(!turn) turn=startNewTurn();
   if(!query||!query.trim()){document.getElementById('output').textContent='What would you like me to play?';return;}
-  processingCmd=true;stopAllSpeech();
+  processingCmd=true;
+  if(isStaleTurn(turn))return;
   setOrbState('thinking','SEARCHING YOUTUBE...');
   document.getElementById('output').textContent='Searching: '+query;
   if(!skipLog){addLog('u','play '+query);pushHistory('user','play '+query);}
   try{
-    const r=await fetch('/api/youtube',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query})});
-    const data=await r.json();processingCmd=false;
+    const r=await fetch('/api/youtube',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query}),signal:turn.signal});
+    const data=await r.json();
+    if(isStaleTurn(turn))return;
+    processingCmd=false;
     if(data.error||!data.results||!data.results.length){document.getElementById('output').textContent='Could not find: '+query;setOrbState(idleState(),idleLabel());return;}
     ytResults=data.results;ytIndex=0;ytPaused=false;ytMuted=false;ytPlayIndex(0);
-  }catch(e){processingCmd=false;document.getElementById('output').textContent='YouTube error: '+e.message;setOrbState(idleState(),idleLabel());}
+  }catch(e){
+    if(isStaleTurn(turn)||e.name==='AbortError')return;
+    processingCmd=false;document.getElementById('output').textContent='YouTube error: '+e.message;setOrbState(idleState(),idleLabel());
+  }
 }
 
 function ytPlayIndex(i){
@@ -1609,8 +1673,9 @@ function _playBlob(blob){
   });
 }
 
-async function speakReply(text){
-  stopAllSpeech();
+async function speakReply(text, turn){
+  if(!turn) turn=startNewTurn();
+  else if(isStaleTurn(turn)) return Promise.resolve();
   _speechQueueAbort=false;
   if(!text||!text.trim())return Promise.resolve();
   const clean=cleanForSpeech(text);
@@ -1619,6 +1684,7 @@ async function speakReply(text){
   const chunks=chunkForSpeech(clean,550);
   if(!chunks.length)return Promise.resolve();
 
+  if(isStaleTurn(turn))return Promise.resolve();
   setOrbState('speaking','SPEAKING — JUST TALK TO INTERRUPT');
   if(window._micGate)window._micGate(true);
   _speechQueueActive=true;
@@ -1628,9 +1694,9 @@ async function speakReply(text){
   let nextBlobPromise = _fetchChunkBlob(chunks[0]).catch(()=>null);
 
   for(let i=0;i<chunks.length;i++){
-    if(_speechQueueAbort)break;
+    if(_speechQueueAbort||isStaleTurn(turn))break;
     const blob = await nextBlobPromise;
-    if(_speechQueueAbort)break;
+    if(_speechQueueAbort||isStaleTurn(turn))break;
 
     // Kick off the fetch for the NEXT chunk immediately — it runs in
     // parallel with the current chunk's playback below instead of
@@ -1639,13 +1705,13 @@ async function speakReply(text){
       nextBlobPromise = _fetchChunkBlob(chunks[i+1]).catch(()=>null);
     }
 
-    if(blob) await _playBlob(blob);
-    if(_speechQueueAbort)break;
+    if(blob && !isStaleTurn(turn)) await _playBlob(blob);
+    if(_speechQueueAbort||isStaleTurn(turn))break;
   }
 
   _speechQueueActive=false;
   if(window._micGate)window._micGate(false);
-  if(!_speechQueueAbort && state==='speaking'){
+  if(!_speechQueueAbort && !isStaleTurn(turn) && state==='speaking'){
     if(wasClarifying&&_awaitingClarify) setOrbState('clarifying','AWAITING CLARIFICATION...');
     else setOrbState(idleState(), idleLabel());
   }
