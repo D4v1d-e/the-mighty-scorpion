@@ -1,13 +1,19 @@
 // ============================================================
-// CHAT API HANDLER — SCORPION AI BRAIN v5.0.3
+// CHAT API HANDLER — SCORPION AI BRAIN v5.0.4
 // ============================================================
+// v5.0.4 Fixes:
+//   - resolve_video and resolve_song now receive conversationHistory
+//     so "play the other version", "that one again", etc. resolve
+//     correctly against prior turns instead of being evaluated blind.
+//   - Both prompts now include CONVERSATION HISTORY context block.
+//
 // v5.0.3 Fixes:
 //   - Removed memory.mjs dependency entirely
 //   - Memory functions replaced with silent no-op stubs
 //   - No KV / Redis required
 //
 // Author  : Dr. Davie Mwangi
-// Version : 5.0.3
+// Version : 5.0.4
 // ============================================================
 
 const readMemory  = async () => '';
@@ -44,6 +50,13 @@ export default async function handler(req, res) {
 
   try {
     const { messages, mode, timezone, query, clarificationAnswer, originalQuery } = req.body;
+
+    // ── HISTORY CONTEXT HELPER (shared by resolve_video / resolve_song / resolve_intent) ──
+    function buildHistoryContext(msgs) {
+      return (msgs || []).slice(-6).map(m =>
+        (m.role === 'user' ? 'USER: ' : 'SCORPION: ') + (m.text || m.content || '')
+      ).join('\n');
+    }
 
     // ── TIME CONTEXT ─────────────────────────────────────
     const now = new Date();
@@ -464,9 +477,15 @@ export default async function handler(req, res) {
     }
 
     // ── RESOLVE VIDEO ─────────────────────────────────────
+    // NOTE (fix): now accepts `messages` so it can resolve references
+    // like "play the other one", "that song again", "the live version",
+    // etc. against the real conversation instead of the bare query alone.
     if (mode === 'resolve_video') {
       const rawQuery = (query || '').trim();
       if (!rawQuery) return res.status(200).json({ status: 'fallback', searchQuery: rawQuery });
+
+      const historyContext = buildHistoryContext(messages);
+
       let searchContext = '';
       try {
         const [s1, s2] = await Promise.all([
@@ -480,6 +499,11 @@ The user wants to play a video. Identify EXACTLY what they want and return the b
 Output ONLY valid JSON, nothing else. No markdown, no backticks.
 {"title":"exact official title","channel":"expected YouTube channel","year":"YYYY","contentType":"music OR speech OR movie OR documentary OR interview OR concert OR lecture OR other","videoDuration":"short OR medium OR long OR any","searchQuery":"optimised YouTube search string"}
 Rules: videoDuration long for speeches/movies/docs/concerts/lectures. short for clips/trailers. searchQuery must be precise — include title+person+year for speeches, "official video" for music, "full movie" for films.
+Use CONVERSATION HISTORY below to resolve references like "that one", "the other version", "play it again", "the acoustic one" — if the user's request depends on something said earlier, ground your answer in it.
+
+CONVERSATION HISTORY:
+${historyContext || 'No prior history.'}
+
 SEARCH CONTEXT:\n${searchContext ? searchContext.slice(0, 6000) : 'Use expert knowledge.'}`;
       let jsonResult = null;
       try {
@@ -493,11 +517,21 @@ SEARCH CONTEXT:\n${searchContext ? searchContext.slice(0, 6000) : 'Use expert kn
     }
 
     // ── RESOLVE SONG ──────────────────────────────────────
+    // NOTE (fix): also accepts `messages` now, injected into both the
+    // initial clarity-check prompt and the clarification-merge prompt,
+    // so "no, the other one" or "the live version" resolves correctly.
     if (mode === 'resolve_song') {
       const rawQuery = (query || '').trim();
       if (!rawQuery) return res.status(200).json({ status:'clear', searchQuery:'', original:'' });
+
+      const historyContext = buildHistoryContext(messages);
+
       if (clarificationAnswer && originalQuery) {
-        const confirmSystem = `You are a music expert. The user asked to play: "${originalQuery}". Their clarification: "${clarificationAnswer}". Output ONLY: SONG TITLE - ARTIST NAME`;
+        const confirmSystem = `You are a music expert. The user asked to play: "${originalQuery}". Their clarification: "${clarificationAnswer}".
+Use the CONVERSATION HISTORY below for additional context if it helps disambiguate.
+CONVERSATION HISTORY:
+${historyContext || 'No prior history.'}
+Output ONLY: SONG TITLE - ARTIST NAME`;
         let confirmed = await callAnyBrain(confirmSystem, clarificationAnswer, 80);
         if (!confirmed) confirmed = rawQuery;
         return res.status(200).json({ status:'confirm', searchQuery:confirmed.replace(/^["']+|["']+$/g,'').trim(), original:originalQuery });
@@ -512,9 +546,14 @@ SEARCH CONTEXT:\n${searchContext ? searchContext.slice(0, 6000) : 'Use expert kn
       }
       const interpreterSystem = `You are a hyper-intelligent music assistant called Scorpion. Today is ${timeStr}.
 Analyse the user's song request. CLEAR = you know exactly which song. UNCLEAR = genuinely ambiguous.
+Use CONVERSATION HISTORY below — if it already resolves a reference like "that song" or "the other one", treat the request as CLEAR.
 CLEAR output: STATUS: CLEAR\nSONG: <exact song title - artist>
 UNCLEAR output: STATUS: UNCLEAR\nQUESTION: <max 15 words>\nOPTION1: <option>\nOPTION2: <option>\nOPTION3: <option>
-Only mark UNCLEAR if genuinely ambiguous. ${searchContext ? 'SEARCH CONTEXT:\n' + searchContext.slice(0, 5000) : ''}`;
+Only mark UNCLEAR if genuinely ambiguous.
+
+CONVERSATION HISTORY:
+${historyContext || 'No prior history.'}
+${searchContext ? '\nSEARCH CONTEXT:\n' + searchContext.slice(0, 5000) : ''}`;
       let interp = await callAnyBrain(interpreterSystem, rawQuery, 200);
       if (interp) {
         const statusMatch = interp.match(/STATUS:\s*(CLEAR|UNCLEAR)/i);
@@ -542,9 +581,7 @@ Combine into ONE clear self-contained instruction. Output ONLY the merged text. 
         return res.status(200).json({ status:'confirm', resolvedQuery:merged.trim() });
       }
 
-      const historyContext = (messages || []).slice(-6).map(m =>
-        (m.role === 'user' ? 'USER: ' : 'SCORPION: ') + (m.text || m.content || '')
-      ).join('\n');
+      const historyContext = buildHistoryContext(messages);
 
       const intentSystem = `You are the intent-clarity gatekeeper for Scorpion AI. Today is ${timeStr}.
 
