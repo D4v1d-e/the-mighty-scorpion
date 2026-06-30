@@ -172,7 +172,6 @@ main{flex:1;overflow:hidden;display:flex;flex-direction:column;gap:6px;padding:6
 footer{border-top:1px solid var(--border);padding:5px 0;display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
 .ftxt{font-size:7px;letter-spacing:.18em;color:var(--muted);font-family:var(--mono)}
 
-/* ── CONTINUE PROMPT BANNER ── */
 #continue-banner{display:none;position:fixed;bottom:60px;left:50%;transform:translateX(-50%);z-index:9999;background:rgba(0,13,5,.95);border:1px solid var(--amber);border-radius:4px;padding:10px 20px;text-align:center;font-family:var(--display);font-size:8px;letter-spacing:.2em;color:var(--amber);box-shadow:0 0 20px rgba(255,170,0,.3)}
 #continue-banner.show{display:block}
 #continue-countdown{color:var(--G);font-size:10px;margin-top:4px}
@@ -194,7 +193,6 @@ footer{border-top:1px solid var(--border);padding:5px 0;display:flex;justify-con
 <div class="brk brk-bl"><svg viewBox="0 0 54 54" fill="none"><path d="M0 54V0h54" stroke="rgba(0,255,102,.4)" stroke-width="1.2"/></svg></div>
 <div class="brk brk-br"><svg viewBox="0 0 54 54" fill="none"><path d="M0 54V0h54" stroke="rgba(0,255,102,.4)" stroke-width="1.2"/></svg></div>
 
-<!-- INTERRUPT BANNER -->
 <div id="continue-banner">
   SHALL I CONTINUE, SIR?<br>
   <span id="continue-countdown">AUTO-CONTINUING IN 3…</span>
@@ -218,7 +216,7 @@ footer{border-top:1px solid var(--border);padding:5px 0;display:flex;justify-con
     </svg>
     <div>
       <div class="logo-main">THE MIGHTY SCORPION</div>
-      <div class="logo-sub">NEURAL CORE v4.4.0 // JARVIS INTELLIGENCE MATRIX</div>
+      <div class="logo-sub">NEURAL CORE v4.5.0 // JARVIS INTELLIGENCE MATRIX</div>
     </div>
   </div>
   <div class="hdr-right">
@@ -538,10 +536,6 @@ function pushHistory(role,text){
 // Tracks a pending "would you like me to play X?" offer made by the AI in
 // a normal chat answer, so that a simple "yes" afterwards actually triggers
 // real YouTube playback instead of just generating more text pretending to play.
-// FIX: this state is now actually populated (see end of sendCmdText) and
-// actually consumed (see triggerPendingPlay), closing the loop that was
-// previously broken — the offer used to be made, checked for, but never
-// recorded or acted on, so confirmations silently fell through to plain chat.
 let _pendingPlayOffer=null; // { query: string, answer: string }
 const PLAY_OFFER_REGEX=/\b(would you like me to play|shall i play|want me to play|like me to play it|should i play|do you want me to play)\b/i;
 const PLAY_AFFIRM_REGEX=/^(yes|yeah|yep|yup|sure|please|go ahead|do it|play it|affirmative|sounds good|do that|please do)\b/i;
@@ -556,9 +550,12 @@ let _clarifyKind=null;          // 'song' | 'intent' | 'play_choice'
 let _clarifyOriginalQuery='';
 let _clarifyOptions=[];
 
-// Maps option labels -> ready-to-play YouTube search queries when the
-// "play X" research pipeline itself surfaces multiple distinct real
-// candidates (see resolveAndPlay / extract_play_query backend mode).
+// Maps option labels -> ready-to-play YouTube search queries/videoIds when
+// the "play X" research pipeline itself surfaces multiple distinct real
+// candidates (see resolveAndPlay / extract_play_query backend mode) OR
+// when the local YouTube result-confidence check (see _pickBestYtMatch /
+// handleMediaPlay) can't confidently pick one of the results it already
+// has in hand.
 let _playChoiceMap=[];
 
 // Single audio channel + speech queue (see speakReply / chunked playback)
@@ -576,17 +573,7 @@ function stopAllSpeech(){
 }
 
 // ══════════════════════════════════════════════════════
-// TURN COORDINATION — single source of truth for "is this still the
-// current turn?" Every async chain (chat fetch, SSE read loop, TTS
-// chunk loop) is handed a {gen, signal} pair at start and MUST check
-// `turn.gen !== _turnGen` before writing to the DOM, mutating shared
-// state, or starting audio playback. Starting a new turn always:
-//   1. bumps the generation counter (instantly invalidates old turns)
-//   2. aborts the in-flight fetch/SSE request via AbortController
-//   3. stops any speech currently playing or queued
-// This gives real turn-taking / barge-in: a new command (typed,
-// clicked, or spoken — including mid-search, not just mid-speech)
-// always wins over whatever stale work was in flight.
+// TURN COORDINATION
 // ══════════════════════════════════════════════════════
 let _turnGen=0;
 let _turnAbort=null;
@@ -604,10 +591,6 @@ function isStaleTurn(turn){
 }
 
 // ── TEXT CLEANER ──
-// NOTE: bullet markers ("- ", "• ", "* ") are stripped here ON PURPOSE —
-// this feeds the TTS engine, and we always want spoken output to be
-// natural flowing prose even when the on-screen panel shows a bulleted
-// list (see renderStage's 'answer' branch below for the visual list).
 function cleanForSpeech(text){
   return text
     .replace(/\*\*/g,'').replace(/\*/g,'').replace(/#{1,6}\s*/g,'')
@@ -623,9 +606,6 @@ function cleanForSpeech(text){
     .replace(/[^\w\s.,!?':;()\-]/g,' ').trim();
 }
 
-// Splits cleaned text into sentence-aware chunks so the speaker API
-// (and Edge TTS underneath it) never receives an overly long single
-// request, while nothing in the reply gets dropped.
 function chunkForSpeech(text,maxLen){
   maxLen=maxLen||550;
   if(!text)return[];
@@ -738,9 +718,6 @@ function clearContinueBanner(){
 
 // ══════════════════════════════════════════════════════════════
 // VOICE-ONLY CLARIFICATION (no modal — Jarvis just speaks & listens)
-// Used for song-resolution, general intent ambiguity, AND for the
-// "play" pipeline when research itself turns up multiple distinct
-// real candidates (kind: 'play_choice').
 // ══════════════════════════════════════════════════════════════
 function showClarifyVoice(kind, question, options, originalQuery){
   _awaitingClarify       = true;
@@ -748,14 +725,8 @@ function showClarifyVoice(kind, question, options, originalQuery){
   _clarifyOriginalQuery  = originalQuery;
   _clarifyOptions        = options || [];
 
-  // A clarification flow is starting — any stale "would you like me to
-  // play it" offer from a previous unrelated turn must not survive into
-  // this new context.
   _pendingPlayOffer = null;
 
-  // Record Scorpion's clarifying question into conversation memory
-  // so the *next* normal chat turn (and the resolver prompts) can see
-  // that a clarification was asked, not just the raw answer in isolation.
   pushHistory('assistant', question);
 
   const out = document.getElementById('output');
@@ -766,7 +737,6 @@ function showClarifyVoice(kind, question, options, originalQuery){
   qDiv.textContent = question;
   out.appendChild(qDiv);
 
-  // options can be plain strings (song/intent) OR {label,searchQuery} objects (play_choice)
   const labels = _clarifyOptions.map(o => (typeof o === 'string') ? o : o.label);
 
   if(labels.length){
@@ -787,9 +757,6 @@ function showClarifyVoice(kind, question, options, originalQuery){
   setOrbState('clarifying', 'AWAITING CLARIFICATION...');
   addLog('q', question, 'CLARIFY');
 
-  // Speak the question — this is the whole point: Jarvis asks out loud,
-  // mic stays open (always-on listening keeps running), and the next
-  // thing the user says is treated as the answer. No popup, no tapping.
   speakReply(question);
 }
 
@@ -803,12 +770,31 @@ function clearClarifyUI(){
   document.getElementById('output').className = '';
 }
 
-// Resolves a play_choice label back to its ready-to-play searchQuery.
-function _resolvePlayChoiceQuery(optText){
+// ── FIX: _playChoiceMap entries may now hold EITHER a raw 11-char
+// YouTube videoId (when the choice came from results we already have
+// in `ytResults` — see handleMediaPlay's low-confidence branch) OR a
+// text search query (when the choice came from the backend's
+// extract_play_query / play-research pipeline). This resolves a label
+// back to whichever the entry actually is.
+function _resolvePlayChoiceEntry(optText){
   const exact = _playChoiceMap.find(o => o.label === optText);
   if(exact) return exact.searchQuery;
   const fuzzy = _playChoiceMap.find(o => o.label.toLowerCase().includes(String(optText).toLowerCase()) || String(optText).toLowerCase().includes(o.label.toLowerCase()));
   return fuzzy ? fuzzy.searchQuery : optText;
+}
+
+// Plays an entry that's confirmed to be a raw YouTube videoId from the
+// CURRENT ytResults list (no re-search needed — we already have it).
+// Returns true if it handled playback, false if the entry wasn't a
+// recognized videoId in the current result set (caller should then
+// fall back to a fresh search via handleMediaPlay).
+function _playFromKnownVideoId(entry){
+  if(!/^[A-Za-z0-9_-]{11}$/.test(String(entry)))return false;
+  const found=ytResults.find(v=>v.videoId===entry);
+  if(!found)return false;
+  ytIndex=ytResults.indexOf(found);
+  ytPlayIndex(ytIndex);
+  return true;
 }
 
 function pickClarifyOption(optText){
@@ -821,27 +807,25 @@ function pickClarifyOption(optText){
     setOrbState(idleState(), idleLabel());
     return;
   }
-  // Record the user's chosen answer into conversation memory
   pushHistory('user', optText);
   addLog('u', optText);
   if(kind==='play_choice'){
-    const sq=_resolvePlayChoiceQuery(optText);
+    const entry=_resolvePlayChoiceEntry(optText);
     _playChoiceMap=[];
-    handleMediaPlay(sq, true);
+    if(_playFromKnownVideoId(entry))return;
+    handleMediaPlay(entry, true);
     return;
   }
   if(kind==='song') handleMediaPlay(optText, true);
   else resolveIntentAnswer(optText, originalQuery);
 }
 
-// Single entry point for ANY spoken/typed reply while a clarification is pending.
 function submitClarifyAnswer(answer){
   if(!_awaitingClarify) return false;
   const kind = _clarifyKind;
   const originalQuery = _clarifyOriginalQuery;
   const opts = _clarifyOptions;
 
-  // Map "one/two/three/first/second/third/1/2/3" to an option directly
   const numMatch = answer.trim().match(/^(one|two|three|1|2|3|first|second|third)\b/i);
   if(numMatch){
     const idx={one:0,1:0,first:0,two:1,2:1,second:1,three:2,3:2,third:2}[numMatch[1].toLowerCase()];
@@ -852,9 +836,10 @@ function submitClarifyAnswer(answer){
       pushHistory('user', label);
       addLog('u', label);
       if(kind==='play_choice'){
-        const sq=(_playChoiceMap[idx]&&_playChoiceMap[idx].searchQuery)||_resolvePlayChoiceQuery(label);
+        const entry=(_playChoiceMap[idx]&&_playChoiceMap[idx].searchQuery)||_resolvePlayChoiceEntry(label);
         _playChoiceMap=[];
-        handleMediaPlay(sq, true);
+        if(_playFromKnownVideoId(entry))return true;
+        handleMediaPlay(entry, true);
         return true;
       }
       if(kind==='song') handleMediaPlay(label, true);
@@ -864,13 +849,13 @@ function submitClarifyAnswer(answer){
   }
 
   clearClarifyUI();
-  // Record the user's free-form clarifying answer into conversation memory
   pushHistory('user', answer);
   addLog('u', answer);
   if(kind==='play_choice'){
-    const sq=_resolvePlayChoiceQuery(answer);
+    const entry=_resolvePlayChoiceEntry(answer);
     _playChoiceMap=[];
-    handleMediaPlay(sq, true);
+    if(_playFromKnownVideoId(entry))return true;
+    handleMediaPlay(entry, true);
     return true;
   }
   if(kind==='song') resolveSongClarification(answer, originalQuery);
@@ -990,9 +975,6 @@ function initAndStartListening(){
             speakReply('Shall I continue Sir?').then(()=>{showContinueBanner(savedText);});
           },300);
         }else if(state==='thinking'&&it.length>3&&!_awaitingClarify){
-          // Barge-in while a search/fetch/SSE turn is still in flight —
-          // not just while speaking. Cancels the stale request outright
-          // instead of letting it finish and possibly still get spoken.
           startNewTurn();
           processingCmd=false;
           playInterruptSound();
@@ -1002,7 +984,6 @@ function initAndStartListening(){
     }
     if(ft.trim()&&!processingCmd){
 
-      // ── Any pending clarification (song / intent / play_choice) consumes the next voice answer ──
       if(_awaitingClarify){
         submitClarifyAnswer(ft.trim());
         return;
@@ -1053,29 +1034,21 @@ async function speakStatus(key){
 function routeCommand(cmd){
   const c=cmd.toLowerCase().trim();
 
-  // If awaiting any clarification answer (typed instead of spoken)
   if(_awaitingClarify){
     submitClarifyAnswer(cmd);
     return;
   }
 
-  // If the AI just offered to play something and the user is confirming —
-  // actually trigger playback instead of letting it fall through to chat.
   if(_pendingPlayOffer && PLAY_AFFIRM_REGEX.test(c)){
     triggerPendingPlay(cmd);
     return;
   }
-  // Any other command clears a stale pending offer so it can't misfire later.
   if(_pendingPlayOffer)_pendingPlayOffer=null;
 
-  // Memory wipe command
   if(/\b(forget everything|clear your memory|wipe your memory)\b/i.test(c)){
     sendCmdText(cmd);return;
   }
 
-  // Long pasted text or explicit "analyze/summarize this" requests skip
-  // ALL media/weather/etc routing below and go straight to chat, where
-  // the backend (chat.js) also skips web search for these (see isAnalyzeRequest).
   const isLikelyAnalyze = cmd.length > 400 || /\b(analy[sz]e|summar[iz]e|review this|what does this (mean|say))\b/i.test(c);
   if(isLikelyAnalyze){
     speakStatus('thinking');
@@ -1113,9 +1086,6 @@ function routeCommand(cmd){
     showOrbImage(imagePrompt);
   }
 
-  // General intent clarity check — only bother for genuinely vague
-  // referents. Most messages (questions, statements, casual chat)
-  // should go straight to the brain with no detour or delay.
   if(needsIntentCheck(cmd)){
     checkIntentThenSend(cmd);
   }else{
@@ -1125,13 +1095,9 @@ function routeCommand(cmd){
   }
 }
 
-// Heuristic: only flag messages that lean on an unresolved pronoun/referent
-// with no subject of their own (e.g. "tell me about it", "do that thing",
-// "play it again", "continue that"). Everything else — including open-ended
-// or rhetorical phrasing like "what's on your mind?" — is treated as clear.
 function needsIntentCheck(cmd){
   const c=cmd.toLowerCase().trim();
-  if(c.split(/\s+/).length>14)return false; // long messages carry their own context
+  if(c.split(/\s+/).length>14)return false;
   const vagueReferent=/\b(it|that|this|them|those|the thing|the one)\b/.test(c);
   const noConcreteSubject=!/\b(weather|song|video|movie|news|price|stock|crypto|bitcoin|gold|silver|forex|sports|football|score|time|date|joke|story|recipe|code|explain|define|translate|calculate|convert)\b/.test(c);
   const isBareVagueOpener=/^(do (that|it)|tell me about (it|that)|what about (it|that)|continue( that)?|keep going|finish (it|that)|play (it|that) again|repeat (it|that)|say (it|that) again)\b/.test(c);
@@ -1160,13 +1126,11 @@ async function checkIntentThenSend(cmd){
       return;
     }
 
-    // CLEAR — proceed normally
     speakStatus('thinking');
     setOrbState('thinking','HEARD: '+cmd.toUpperCase().slice(0,45));
     sendCmdText(cmd);
 
   }catch(e){
-    // Fallback on error
     processingCmd = false;
     speakStatus('thinking');
     setOrbState('thinking','HEARD: '+cmd.toUpperCase().slice(0,45));
@@ -1175,16 +1139,10 @@ async function checkIntentThenSend(cmd){
 }
 
 // ══════════════════════════════════════════════════════
-// PLAY-OFFER CONFIRMATION — triggers actual playback when the user
-// confirms ("yes" / "play it" / etc.) after a normal chat answer ended
-// with "Would you like me to play it, Sir?" (see PLAY_OFFER_REGEX and
-// the bottom of sendCmdText, which populates _pendingPlayOffer).
-//
-// We reuse the backend's existing 'extract_play_query' mode rather than
-// re-running full research: the offer's answer text already contains
-// the verified YouTube title/channel (see music role prompt +
-// youtubeSearch() in chat.js), so extract_play_query can pull a precise
-// search query (or a multi-option choice) straight out of it.
+// PLAY-OFFER CONFIRMATION
+// FIX: now also handles a "unknown" status returned by extract_play_query
+// (backend refuses to guess) by telling the user instead of silently
+// falling back to a blind search on the raw offer query.
 // ══════════════════════════════════════════════════════
 async function triggerPendingPlay(confirmText){
   const offer = _pendingPlayOffer;
@@ -1214,28 +1172,30 @@ async function triggerPendingPlay(confirmText){
       return;
     }
 
+    if(data.status==='unknown'){
+      const reason = data.reason || 'I could not confirm an exact match, Sir. Could you name it more specifically?';
+      document.getElementById('output').textContent = reason;
+      addLog('a', reason, 'YOUTUBE-UNKNOWN');
+      setOrbState(idleState(), idleLabel());
+      speakReply(reason);
+      return;
+    }
+
     const finalQuery = data.searchQuery || offer.query;
     handleMediaPlay(finalQuery, true);
   }catch(e){
     processingCmd = false;
-    // Even on a resolver failure, still attempt to play using the
-    // original query rather than silently dropping the confirmation.
     handleMediaPlay(offer.query, true);
   }
 }
 
 // ══════════════════════════════════════════════════════
-// MEDIA TYPE ROUTING — "play X" goes through the EXACT same SSE
-// research pipeline as normal chat (Processing… → Planning search
-// strategy → Running queries → Fetching → researched answer), with
-// the same staged UI. Once the answer identifies exactly what the
-// user wants, extract_play_query (backend) decides CLEAR (play
-// immediately) or CHOICE (genuinely distinct candidates found in the
-// research — surfaced inline, same mechanism as intent-clarify).
+// MEDIA TYPE ROUTING
+// FIX: resolveAndPlay now also handles the "unknown" status from
+// extract_play_query (backend genuinely can't identify a real video)
+// by surfacing that to the user instead of silently playing rawQuery.
 // ══════════════════════════════════════════════════════
 async function resolveAndPlay(rawQuery){
-  // An explicit, unambiguous "play X" command always supersedes any
-  // stale offer from an earlier unrelated turn.
   _pendingPlayOffer = null;
 
   if(!rawQuery||!rawQuery.trim()){document.getElementById('output').textContent='What would you like me to play, Sir?';return;}
@@ -1307,7 +1267,6 @@ async function resolveAndPlay(rawQuery){
       return;
     }
 
-    // Decide: play immediately (CLEAR), or surface real found candidates (CHOICE)
     setOrbState('thinking','LOCKING ONTO TRACK...');
     let exData=null;
     try{
@@ -1324,11 +1283,18 @@ async function resolveAndPlay(rawQuery){
     processingCmd=false;
 
     if(exData && exData.status==='choice' && Array.isArray(exData.options) && exData.options.length>=2){
-      // Real candidates surfaced by research itself — show inline,
-      // same UI as intent clarify, no separate "speech or song" gate.
       _playChoiceMap = exData.options; // [{label, searchQuery}]
       const labels = exData.options.map(o=>o.label);
       showClarifyVoice('play_choice', exData.question || 'Which one, Sir?', labels, rawQuery);
+      return;
+    }
+
+    if(exData && exData.status==='unknown'){
+      const reason = exData.reason || ('I could not confirm an exact match for "'+rawQuery+'", Sir. Could you name it more specifically?');
+      document.getElementById('output').textContent = reason;
+      addLog('a', reason, 'YOUTUBE-UNKNOWN');
+      setOrbState(idleState(), idleLabel());
+      speakReply(reason);
       return;
     }
 
@@ -1352,10 +1318,6 @@ function clearStreamingUI(){
   stageLines.forEach(el=>el.remove());
 }
 
-// renderStage('answer', ...) now detects "- " bulleted lines (sent by
-// the backend when the user asked for point-form / notes / outline —
-// see isListRequest in chat.js) and renders them as a real <ul> list
-// instead of flat text. Non-bulleted replies render exactly as before.
 function renderStage(type, content){
   const out=document.getElementById('output');
 
@@ -1416,7 +1378,6 @@ function renderStage(type, content){
     }else{
       out.textContent=content;
     }
-    // Extract and display timestamp if present
     const timestampMatch=content.match(/Fetched at:\s*([^\n]+)/);
     if(timestampMatch){
       const ts=document.createElement('div');
@@ -1514,7 +1475,7 @@ async function sendCmdText(val){
         }
       }
     }catch(streamErr){
-      if(isStaleTurn(turn))return; // aborted on purpose by a newer turn — not a real error
+      if(isStaleTurn(turn))return;
       processingCmd=false;
       out.className='';
       out.innerHTML='<span style="color:var(--red)">Signal lost Sir, retrying…</span>';
@@ -1530,16 +1491,12 @@ async function sendCmdText(val){
     bumpQ();
     addLog('a',fullReply,brainLabel);
 
-    // FIX: actually record a "play offer" so a follow-up "yes" can act on
-    // it (see triggerPendingPlay / routeCommand). Previously this state
-    // was checked for but never set, so confirmations always fell through
-    // to plain chat instead of triggering playback.
     _pendingPlayOffer = PLAY_OFFER_REGEX.test(fullReply) ? { query: val, answer: fullReply } : null;
 
     speakReply(fullReply, turn);
 
   }catch(e){
-    if(isStaleTurn(turn)||e.name==='AbortError')return; // expected when superseded by a newer turn
+    if(isStaleTurn(turn)||e.name==='AbortError')return;
     processingCmd=false;
     out.className='';
     out.innerHTML='<span style="color:var(--red)">ERROR: '+e.message+'</span>';
@@ -1557,8 +1514,6 @@ async function sendCmd(){
   routeCommand(val);
 }
 
-// ── INPUT BOX: textarea so pasted multi-line text survives intact.
-// Enter sends; Shift+Enter inserts a newline (for multi-line paste/edit).
 const _cmdEl=document.getElementById('cmd');
 function autoSizeCmd(){
   _cmdEl.style.height='auto';
@@ -1600,12 +1555,6 @@ window.onYouTubeIframeAPIReady=function(){
   });
 };
 
-// Generic media play (songs, speeches, movies, etc.) — final step after
-// the search query has been resolved by resolveAndPlay/extract_play_query.
-// Pulls the most identifying phrase out of a research answer — prefers
-// a quoted exact title ("..."), falls back to the first capitalized
-// run of words — so we have something concrete to match real YouTube
-// search results against, instead of trusting result[0] blindly.
 function _extractExpectedVideoSignature(text){
   if(!text) return '';
   const quoted = text.match(/["“]([^"”]{4,120})["”]/);
@@ -1618,9 +1567,6 @@ function _normalizeForMatch(s){
   return (s||'').toLowerCase().replace(/[^\w\s]/g,' ').replace(/\s+/g,' ').trim();
 }
 
-// Scores a YouTube result's title+channel against the expected
-// signature via simple token overlap (cheap, no extra API calls,
-// good enough to break ties when multiple plausible videos exist).
 function _scoreYtResult(result, expectedSignature){
   if(!expectedSignature) return 0;
   const expTokens = new Set(_normalizeForMatch(expectedSignature).split(' ').filter(t=>t.length>2));
@@ -1631,19 +1577,24 @@ function _scoreYtResult(result, expectedSignature){
   return hits/expTokens.size;
 }
 
+// ── FIX (core bug): this used to silently fall back to index 0 when
+// no result confidently matched, which is exactly why unrelated videos
+// (Michael Jackson short, 2008 Obama clip, etc.) kept auto-playing.
+// Now it returns BOTH the best index AND whether that match is actually
+// trustworthy, so the caller can ask instead of guess.
 function _pickBestYtMatch(results, expectedSignature){
-  if(!expectedSignature || results.length<=1) return 0;
+  if(!expectedSignature || results.length<=1) return {idx:0, confident:true};
   let bestIdx=0, bestScore=-1;
   results.forEach((r,i)=>{
     const score=_scoreYtResult(r, expectedSignature);
     if(score>bestScore){bestScore=score;bestIdx=i;}
   });
-  // Only trust the match if it actually shares meaningful overlap —
-  // otherwise fall back to the search engine's own top result rather
-  // than confidently picking a low-overlap wrong video.
-  return bestScore>=0.34 ? bestIdx : 0;
+  return {idx: bestScore>=0.34 ? bestIdx : 0, confident: bestScore>=0.34};
 }
 
+// ── FIX: when expectedSignature is provided but no result confidently
+// matches it, this now surfaces the top candidates as a clarify choice
+// (same UX already used elsewhere) instead of silently playing result[0].
 async function handleMediaPlay(query,skipLog,turn,expectedSignature){
   if(!turn) turn=startNewTurn();
   if(!query||!query.trim()){document.getElementById('output').textContent='What would you like me to play?';return;}
@@ -1659,9 +1610,21 @@ async function handleMediaPlay(query,skipLog,turn,expectedSignature){
     processingCmd=false;
     if(data.error||!data.results||!data.results.length){document.getElementById('output').textContent='Could not find: '+query;setOrbState(idleState(),idleLabel());return;}
     ytResults=data.results;ytIndex=0;ytPaused=false;ytMuted=false;
-    const bestIdx=_pickBestYtMatch(ytResults, expectedSignature);
-    ytIndex=bestIdx;
-    ytPlayIndex(bestIdx);
+
+    const match=_pickBestYtMatch(ytResults, expectedSignature);
+
+    if(expectedSignature && !match.confident && ytResults.length>1){
+      // Don't guess — surface the top candidates and let the user pick.
+      _playChoiceMap = ytResults.slice(0,3).map(v=>({label: v.title+' — '+v.channel, searchQuery: v.videoId}));
+      showClarifyVoice('play_choice',
+        "I'm not fully confident which of these is the right match, Sir — which one?",
+        _playChoiceMap.map(o=>o.label),
+        query);
+      return;
+    }
+
+    ytIndex=match.idx;
+    ytPlayIndex(match.idx);
   }catch(e){
     if(isStaleTurn(turn)||e.name==='AbortError')return;
     processingCmd=false;document.getElementById('output').textContent='YouTube error: '+e.message;setOrbState(idleState(),idleLabel());
@@ -1685,9 +1648,6 @@ function ytPlayIndex(i){
   setYtBadge('playing');
   document.getElementById('output').textContent='Now playing: '+item.title+'\n'+item.channel;
   addLog('a','Now playing: '+item.title,'YOUTUBE');
-  // Record what is now playing into conversation memory, so a later
-  // chat message ("what's playing", "play the other version of that")
-  // can refer back to it.
   pushHistory('assistant', 'Now playing: ' + item.title + ' by ' + item.channel);
   bumpQ();
   setOrbState(idleState(),idleLabel());
@@ -1744,15 +1704,7 @@ async function handleWeather(cmd){
 }
 
 // ══════════════════════════════════════════════════════
-// SPEAK REPLY — Edge TTS, mic gated, chunked + PIPELINED queue.
-//
-// FIX (delay between chunks): the previous version awaited the fetch
-// for chunk N+1 only AFTER chunk N finished playing, so every chunk
-// boundary had a dead silence equal to the /api/speaker round-trip
-// time. Now the next chunk's audio is prefetched in the background
-// the moment the current chunk STARTS playing, so by the time chunk N
-// ends, chunk N+1's blob is usually already sitting ready — gaps
-// shrink to roughly the natural pause between sentences.
+// SPEAK REPLY — Edge TTS, mic gated, chunked + pipelined queue
 // ══════════════════════════════════════════════════════
 async function _speakRaw(text){
   if(!text||!text.trim())return;
@@ -1809,7 +1761,7 @@ function _playBlob(blob){
         _pendingAutoplayResumes.push(()=>{
           audio.play().catch(cleanup);
         });
-        resolve(); // don't block the chunk queue on a gesture that may never come
+        resolve();
       }else{
         cleanup();
       }
@@ -1833,8 +1785,6 @@ async function speakReply(text, turn){
   if(window._micGate)window._micGate(true);
   _speechQueueActive=true;
 
-  // Prefetch the FIRST chunk before the loop starts, so there's no
-  // extra delay before anything plays at all.
   let nextBlobPromise = _fetchChunkBlob(chunks[0]).catch(()=>null);
 
   for(let i=0;i<chunks.length;i++){
@@ -1842,9 +1792,6 @@ async function speakReply(text, turn){
     const blob = await nextBlobPromise;
     if(_speechQueueAbort||isStaleTurn(turn))break;
 
-    // Kick off the fetch for the NEXT chunk immediately — it runs in
-    // parallel with the current chunk's playback below instead of
-    // waiting for it to finish first.
     if(i+1<chunks.length){
       nextBlobPromise = _fetchChunkBlob(chunks[i+1]).catch(()=>null);
     }
@@ -1912,10 +1859,6 @@ function clearLog(){
 
 // ══════════════════════════════════════════════════════
 // BOOT GREETING
-// FIX: the greeting is now pushed into conversationHistory and the
-// Action Log, so when the greeting asks a question, your next answer
-// is resolved against it instead of the brain having no memory of
-// having asked anything.
 // ══════════════════════════════════════════════════════
 async function bootGreeting(){
   try{
@@ -1923,10 +1866,6 @@ async function bootGreeting(){
     const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json','x-scorpion-key':SCORPION_SECRET},body:JSON.stringify({mode:'greeting',timezone:tz,messages:[{role:'user',text:'greet me'}]})});
     const data=await r.json();
     if(data.reply){
-      // Text + speech fire in the same tick: paint the reply, then
-      // immediately kick off the TTS fetch (speakReply) before any of
-      // the secondary bookkeeping below, so there's no artificial gap
-      // between the greeting appearing and audio starting.
       document.getElementById('output').textContent=data.reply;
       document.getElementById('m-brain').textContent=data.brain||'AI';
       speakReply(data.reply);
