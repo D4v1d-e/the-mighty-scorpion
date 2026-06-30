@@ -120,6 +120,9 @@ main{flex:1;overflow:hidden;display:flex;flex-direction:column;gap:6px;padding:6
 #output::-webkit-scrollbar{width:3px}
 #output::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
 #output img{max-width:100%;border-radius:4px;margin:6px 0;border:1px solid var(--border)}
+#output ul{padding-left:18px;margin:6px 0}
+#output ul li{margin-bottom:4px;color:var(--text)}
+#output ul li::marker{color:var(--G)}
 .stage-line{font-size:11px;margin-bottom:4px;transition:opacity .3s;font-family:var(--mono)}
 .stage-line.thinking{color:var(--amber);opacity:.7;font-style:italic}
 .stage-line.searching{color:var(--cyan);opacity:.7}
@@ -215,7 +218,7 @@ footer{border-top:1px solid var(--border);padding:5px 0;display:flex;justify-con
     </svg>
     <div>
       <div class="logo-main">THE MIGHTY SCORPION</div>
-      <div class="logo-sub">NEURAL CORE v4.3.0 // JARVIS INTELLIGENCE MATRIX</div>
+      <div class="logo-sub">NEURAL CORE v4.4.0 // JARVIS INTELLIGENCE MATRIX</div>
     </div>
   </div>
   <div class="hdr-right">
@@ -569,9 +572,10 @@ function stopAllSpeech(){
 }
 
 // ── TEXT CLEANER ──
-// NOTE (fix): no longer hard-truncates with .slice(); full replies are now
-// split into chunks and played sequentially by speakReply() instead of
-// being silently cut off after ~850 characters.
+// NOTE: bullet markers ("- ", "• ", "* ") are stripped here ON PURPOSE —
+// this feeds the TTS engine, and we always want spoken output to be
+// natural flowing prose even when the on-screen panel shows a bulleted
+// list (see renderStage's 'answer' branch below for the visual list).
 function cleanForSpeech(text){
   return text
     .replace(/\*\*/g,'').replace(/\*/g,'').replace(/#{1,6}\s*/g,'')
@@ -1237,6 +1241,10 @@ function clearStreamingUI(){
   stageLines.forEach(el=>el.remove());
 }
 
+// renderStage('answer', ...) now detects "- " bulleted lines (sent by
+// the backend when the user asked for point-form / notes / outline —
+// see isListRequest in chat.js) and renders them as a real <ul> list
+// instead of flat text. Non-bulleted replies render exactly as before.
 function renderStage(type, content){
   const out=document.getElementById('output');
 
@@ -1275,7 +1283,28 @@ function renderStage(type, content){
 
   if(type==='answer'){
     clearStreamingUI();
-    out.textContent=content;
+    const bulletLineCount=(content.match(/^\s*-\s+.+/gm)||[]).length;
+    if(bulletLineCount>=2){
+      out.innerHTML='';
+      let ul=null;
+      content.split('\n').forEach(line=>{
+        const m=line.match(/^\s*-\s+(.*)/);
+        if(m){
+          if(!ul){ul=document.createElement('ul');out.appendChild(ul);}
+          const li=document.createElement('li');
+          li.textContent=m[1];
+          ul.appendChild(li);
+        }else if(line.trim()){
+          ul=null;
+          const p=document.createElement('div');
+          p.style.marginBottom='4px';
+          p.textContent=line;
+          out.appendChild(p);
+        }
+      });
+    }else{
+      out.textContent=content;
+    }
     // Extract and display timestamp if present
     const timestampMatch=content.match(/Fetched at:\s*([^\n]+)/);
     if(timestampMatch){
@@ -1535,8 +1564,15 @@ async function handleWeather(cmd){
 }
 
 // ══════════════════════════════════════════════════════
-// SPEAK REPLY — Edge TTS, mic gated, chunked queue so long
-// replies are read in full instead of being cut off.
+// SPEAK REPLY — Edge TTS, mic gated, chunked + PIPELINED queue.
+//
+// FIX (delay between chunks): the previous version awaited the fetch
+// for chunk N+1 only AFTER chunk N finished playing, so every chunk
+// boundary had a dead silence equal to the /api/speaker round-trip
+// time. Now the next chunk's audio is prefetched in the background
+// the moment the current chunk STARTS playing, so by the time chunk N
+// ends, chunk N+1's blob is usually already sitting ready — gaps
+// shrink to roughly the natural pause between sentences.
 // ══════════════════════════════════════════════════════
 async function _speakRaw(text){
   if(!text||!text.trim())return;
@@ -1555,21 +1591,21 @@ async function _speakRaw(text){
   }catch(e){}
 }
 
-function _playOneChunk(chunkText){
+function _fetchChunkBlob(chunkText){
+  return fetch('/api/speaker',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:chunkText})})
+    .then(r=>{if(!r.ok)throw new Error('Speaker API '+r.status);return r.blob();})
+    .then(blob=>{if(!blob||blob.size<100)throw new Error('Empty blob');return blob;});
+}
+
+function _playBlob(blob){
   return new Promise((resolve)=>{
-    fetch('/api/speaker',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:chunkText})})
-      .then(r=>{if(!r.ok)throw new Error('Speaker API '+r.status);return r.blob();})
-      .then(blob=>{
-        if(!blob||blob.size<100)throw new Error('Empty blob');
-        const url=URL.createObjectURL(blob);
-        const audio=new Audio(url);
-        _currentAudio=audio;
-        const cleanup=()=>{URL.revokeObjectURL(url);if(_currentAudio===audio)_currentAudio=null;resolve();};
-        audio.onended=cleanup;
-        audio.onerror=cleanup;
-        audio.play().catch(cleanup);
-      })
-      .catch(()=>resolve());
+    const url=URL.createObjectURL(blob);
+    const audio=new Audio(url);
+    _currentAudio=audio;
+    const cleanup=()=>{URL.revokeObjectURL(url);if(_currentAudio===audio)_currentAudio=null;resolve();};
+    audio.onended=cleanup;
+    audio.onerror=cleanup;
+    audio.play().catch(cleanup);
   });
 }
 
@@ -1581,14 +1617,32 @@ async function speakReply(text){
   if(!clean)return Promise.resolve();
   const wasClarifying=(state==='clarifying');
   const chunks=chunkForSpeech(clean,550);
+  if(!chunks.length)return Promise.resolve();
+
   setOrbState('speaking','SPEAKING — JUST TALK TO INTERRUPT');
   if(window._micGate)window._micGate(true);
   _speechQueueActive=true;
-  for(const chunk of chunks){
+
+  // Prefetch the FIRST chunk before the loop starts, so there's no
+  // extra delay before anything plays at all.
+  let nextBlobPromise = _fetchChunkBlob(chunks[0]).catch(()=>null);
+
+  for(let i=0;i<chunks.length;i++){
     if(_speechQueueAbort)break;
-    await _playOneChunk(chunk);
+    const blob = await nextBlobPromise;
+    if(_speechQueueAbort)break;
+
+    // Kick off the fetch for the NEXT chunk immediately — it runs in
+    // parallel with the current chunk's playback below instead of
+    // waiting for it to finish first.
+    if(i+1<chunks.length){
+      nextBlobPromise = _fetchChunkBlob(chunks[i+1]).catch(()=>null);
+    }
+
+    if(blob) await _playBlob(blob);
     if(_speechQueueAbort)break;
   }
+
   _speechQueueActive=false;
   if(window._micGate)window._micGate(false);
   if(!_speechQueueAbort && state==='speaking'){
