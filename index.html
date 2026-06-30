@@ -1034,61 +1034,96 @@ async function checkIntentThenSend(cmd){
 }
 
 // ══════════════════════════════════════════════════════
-// MEDIA TYPE ROUTING — "play X" can mean song, speech, movie,
-// documentary, sports clip, etc. Ask the brain what kind it is
-// first (via mode:'resolve_video' which already exists server-side),
-// then route to the right resolver. Songs additionally go through
-// the song-clarity resolver so ambiguous tracks still get a
-// "did you mean X or Y" voice check before playing.
-//
-// FIX: "play X" requests now go through conversation memory the
-// same way normal chat messages do — pushed into conversationHistory
-// before the resolver call, and conversationHistory is sent along
-// with every resolve_video/resolve_song request, so the AI can
-// follow up on its own previous responses (e.g. "play the other
-// version of that", "no, the one you mentioned earlier").
+// MEDIA TYPE ROUTING — "play X" now goes through the EXACT same
+// SSE research pipeline as normal chat (Processing… → Planning
+// search strategy → Running queries → researched answer), with the
+// same staged UI. Once the answer identifies exactly what the user
+// wants, a clean YouTube search query is extracted and the YouTube
+// API is called immediately — no more separate song-clarifier detour
+// that could misfire on non-song content like speeches.
 // ══════════════════════════════════════════════════════
 async function resolveAndPlay(rawQuery){
   if(!rawQuery||!rawQuery.trim()){document.getElementById('output').textContent='What would you like me to play, Sir?';return;}
   processingCmd=true;
-  setOrbState('thinking','IDENTIFYING MEDIA TYPE...');
-  document.getElementById('output').textContent='Working out what you mean by "' + rawQuery + '"…';
+  document.getElementById('panel-label').textContent='SCORPION RESPONSE CORE';
+  const out=document.getElementById('output');
+  out.className='out-think';
+  out.innerHTML='<span style="color:var(--amber)">Processing…</span>';
   addLog('u','play '+rawQuery);
 
-  // FIX: record this play request in conversation memory before resolving,
-  // exactly like sendCmdText does for normal chat messages.
-  pushHistory('user', 'play ' + rawQuery);
+  const researchPrompt='Identify exactly which video the user wants to play, with specific facts (exact title, speaker/artist, date, location). Request: play '+rawQuery;
+  pushHistory('user', researchPrompt);
 
   try{
-    const r=await fetch('/api/chat',{
+    const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const response=await fetch('/api/chat',{
       method:'POST',
       headers:{'Content-Type':'application/json','x-scorpion-key':SCORPION_SECRET},
-      body:JSON.stringify({mode:'resolve_video', query:rawQuery, messages:conversationHistory})
+      body:JSON.stringify({messages:conversationHistory,timezone:tz})
     });
-    const data=await r.json();
 
-    const isSongLike = data.status==='resolved' && data.contentType==='music';
-
-    if(isSongLike){
-      // Route through the dedicated song-clarity resolver, which can
-      // ask "did you mean X or Y" before playing.
-      resolveSong(rawQuery);
+    if(!response.ok){
+      processingCmd=false;out.className='';
+      out.innerHTML='<span style="color:var(--red)">HTTP '+response.status+'</span>';
+      setOrbState(idleState(),'ERROR');
       return;
     }
 
-    if(data.status==='resolved' && data.searchQuery){
+    const reader=response.body.getReader();
+    const decoder=new TextDecoder();
+    let fullReply='',brainLabel='AI';
+    setOrbState('thinking','REASONING...');
+
+    while(true){
+      const {done,value}=await reader.read();
+      if(done)break;
+      const chunk=decoder.decode(value);
+      const lines=chunk.split('\n').filter(l=>l.trim());
+      for(const line of lines){
+        if(line.startsWith('data: ')){
+          try{
+            const json=JSON.parse(line.slice(6));
+            if(json.type==='thinking'){renderStage('thinking',json.content);setOrbState('thinking','REASONING: '+json.content.toUpperCase().slice(0,30));}
+            else if(json.type==='searching'){renderStage('searching',json.content);setOrbState('thinking','SEARCHING: '+json.content.toUpperCase().slice(0,30));}
+            else if(json.type==='fetching'){renderStage('fetching',json.content);setOrbState('thinking','FETCHING...');}
+            else if(json.type==='scoring'){renderStage('scoring',json.content);setOrbState('thinking','SCORING...');}
+            else if(json.type==='answer'){fullReply=json.content;if(json.brain)brainLabel=json.brain;renderStage('answer',fullReply);document.getElementById('ft-brain').textContent='BRAIN: '+brainLabel;document.getElementById('m-brain').textContent=brainLabel;}
+            else if(json.type==='error'){renderStage('error',json.content);}
+          }catch(e){}
+        }
+      }
+    }
+
+    out.className='';
+    pushHistory('assistant', fullReply);
+    addLog('a',fullReply,brainLabel);
+
+    if(!fullReply||!fullReply.trim()){
       processingCmd=false;
-      addLog('a','Identified ('+data.contentType+'): '+data.title,'BRAIN');
-      handleMediaPlay(data.searchQuery, true);
+      handleMediaPlay(rawQuery, true);
       return;
     }
 
-    // Fallback — try the song resolver, then plain search
-    resolveSong(rawQuery);
+    // Extract a clean, specific YouTube query from the researched answer
+    setOrbState('thinking','LOCKING ONTO TRACK...');
+    let finalQuery=rawQuery;
+    try{
+      const exR=await fetch('/api/chat',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','x-scorpion-key':SCORPION_SECRET},
+        body:JSON.stringify({mode:'extract_play_query', query:rawQuery, answer:fullReply})
+      });
+      const exData=await exR.json();
+      if(exData.searchQuery)finalQuery=exData.searchQuery;
+    }catch(e){}
+
+    processingCmd=false;
+    handleMediaPlay(finalQuery, true);
 
   }catch(e){
-    processingCmd=false;
-    handleMediaPlay(rawQuery, false);
+    processingCmd=false;out.className='';
+    out.innerHTML='<span style="color:var(--red)">ERROR: '+e.message+'</span>';
+    setOrbState(idleState(),'ERROR');
   }
 }
 
