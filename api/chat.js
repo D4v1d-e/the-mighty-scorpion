@@ -1,6 +1,18 @@
 // ============================================================
-// CHAT API HANDLER — SCORPION AI BRAIN v5.1.0
+// CHAT API HANDLER — SCORPION AI BRAIN v5.2.0
 // ============================================================
+// v5.2.0 Fixes:
+//   - Added isListRequest detection: when the user asks for point-form
+//     notes, bullet points, an outline, or "summarize in points", the
+//     brain is now instructed to actually output "- " bulleted lines,
+//     and sanitizeReply() no longer strips those bullets back out.
+//     Previously EVERY reply was forced into plain prose (the no-markdown
+//     TTS rule applied unconditionally), so point-form requests were
+//     silently ignored and flattened into paragraphs.
+//   - sanitizeReply(text, listMode) now takes a listMode flag. When false
+//     (default / normal chat), behavior is unchanged. When true, "- "
+//     bullet prefixes are preserved instead of stripped.
+//
 // v5.1.0 Fixes:
 //   - extract_play_query now returns {status:'choice', question, options:[{label,searchQuery}]}
 //     when the researched answer itself names 2+ distinct real candidates,
@@ -24,7 +36,7 @@
 //   - No KV / Redis required
 //
 // Author  : Dr. Davie Mwangi
-// Version : 5.1.0
+// Version : 5.2.0
 // ============================================================
 
 const readMemory  = async () => '';
@@ -402,11 +414,19 @@ export default async function handler(req, res) {
     }
 
     // ── SANITIZE ──────────────────────────────────────────
-    function sanitizeReply(text) {
-      return text
+    // v5.2.0: listMode flag added. When true, "- " bullet lines are
+    // preserved (point-form requests). When false (default), bullets
+    // and numbered lists are stripped, exactly as before — for plain
+    // conversational TTS-friendly replies.
+    function sanitizeReply(text, listMode) {
+      let t = text
         .replace(/\*\*/g,'').replace(/\*/g,'').replace(/#{1,6}\s+/g,'')
-        .replace(/`{1,3}[^`]*`{1,3}/g,'').replace(/^\s*[-•]\s+/gm,'')
-        .replace(/^\s*\d+\.\s+/gm,'').replace(/\[([^\]]+)\]\([^)]+\)/g,'$1')
+        .replace(/`{1,3}[^`]*`{1,3}/g,'');
+      if (!listMode) {
+        t = t.replace(/^\s*[-•]\s+/gm,'').replace(/^\s*\d+\.\s+/gm,'');
+      }
+      return t
+        .replace(/\[([^\]]+)\]\([^)]+\)/g,'$1')
         .replace(/\|/g,', ').replace(/\[HIGH CONFIDENCE\]/gi,'').replace(/\[LOW CONFIDENCE\]/gi,'')
         .replace(/\[STALE\]/gi,'').replace(/\[DATE:[^\]]*\]/gi,'').replace(/\[UNKNOWN\]/gi,'')
         .replace(/INSTRUCTION:[^\n]*/gi,'').replace(/===+[^=\n]*===+/g,'')
@@ -426,6 +446,17 @@ export default async function handler(req, res) {
         isNews:      /news|happened|latest|today|yesterday|this week|breaking|announced|said|reported|now|currently/.test(ql),
         isVisual:    /explain|show me|what is|how does|diagram of|illustrate|demonstrate|visualise|visualize|lab|laboratory/.test(ql)
       };
+    }
+
+    // ── LIST / POINT-FORM REQUEST DETECTION ───────────────
+    // v5.2.0: detects when the user explicitly wants point-form notes,
+    // bullet points, an outline, or a summary "in points" / "as a list".
+    // When true, the brain is instructed (below) to actually output
+    // "- " bulleted lines instead of plain prose, and sanitizeReply()
+    // is told to preserve those bullets rather than stripping them.
+    function isListRequest(text) {
+      if (!text) return false;
+      return /\b(point form|in points|bullet points?|bulleted|as a list|in list form|make notes|key points|in note form|outline (this|it)|summar(y|ize|ise)[\s\S]{0,40}(points|notes|list)|notes on this)\b/i.test(text);
     }
 
     function enhanceQuery(q) {
@@ -501,13 +532,6 @@ export default async function handler(req, res) {
     }
 
     // ── EXTRACT PLAY QUERY ────────────────────────────────
-    // Takes a fully-researched chat answer (already staged through the
-    // normal Processing/Planning/Running pipeline) and decides whether
-    // the user's request resolves to ONE clear video, or whether the
-    // research answer itself names 2+ genuinely distinct real candidates
-    // — in which case it returns structured options so the frontend can
-    // render tappable/speakable choices (same UI as intent-clarify),
-    // instead of just reading the ambiguity out loud as plain text.
     if (mode === 'extract_play_query') {
       const rawQuery = (query || '').trim();
       const answer   = (req.body.answer || '').trim();
@@ -545,9 +569,6 @@ Only use "choice" when the answer text genuinely distinguishes multiple real, di
     }
 
     // ── RESOLVE VIDEO ─────────────────────────────────────
-    // NOTE (fix): now accepts `messages` so it can resolve references
-    // like "play the other one", "that song again", "the live version",
-    // etc. against the real conversation instead of the bare query alone.
     if (mode === 'resolve_video') {
       const rawQuery = (query || '').trim();
       if (!rawQuery) return res.status(200).json({ status: 'fallback', searchQuery: rawQuery });
@@ -585,9 +606,6 @@ SEARCH CONTEXT:\n${searchContext ? searchContext.slice(0, 6000) : 'Use expert kn
     }
 
     // ── RESOLVE SONG ──────────────────────────────────────
-    // NOTE (fix): also accepts `messages` now, injected into both the
-    // initial clarity-check prompt and the clarification-merge prompt,
-    // so "no, the other one" or "the live version" resolves correctly.
     if (mode === 'resolve_song') {
       const rawQuery = (query || '').trim();
       if (!rawQuery) return res.status(200).json({ status:'clear', searchQuery:'', original:'' });
@@ -690,7 +708,9 @@ ${historyContext || 'No history yet.'}`;
       const greetSystem = `You are Scorpion, a hyper-intelligent Jarvis-style AI assistant.
 The current date and time is: ${timeStr}. It is ${partOfDay}.
 Greet the user warmly like Jarvis greets Tony Stark — address them as Sir.
+You MUST explicitly state the current time and date somewhere in the greeting (e.g. "It's 7:21 AM on Tuesday, June 30th, 2026, Sir"), worked naturally into a sentence, not just implied by "morning" or "evening".
 Give a brief, witty, engaging good ${partOfDay} greeting. Keep it to 2-3 sentences.
+End with a short, simple, easy-to-answer-with-"yes" question (e.g. asking if they're ready to begin, or if everything looks good) so the user has something concrete to respond to.
 NEVER use markdown. Write plain conversational sentences only.`;
       const brains = [
         { name:'CEREBRAS', key:process.env.CEREBRAS_API_KEY, url:'https://api.cerebras.ai/v1/chat/completions', model:'llama3.1-8b' },
@@ -701,7 +721,7 @@ NEVER use markdown. Write plain conversational sentences only.`;
           const r    = await fetch(brain.url, { method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+brain.key}, body:JSON.stringify({ model:brain.model, temperature:0.2, max_tokens:200, messages:[{role:'system',content:greetSystem},{role:'user',content:'greet me'}] }) });
           const data = await r.json();
           const reply = data.choices?.[0]?.message?.content;
-          if (reply) return res.status(200).json({ reply:sanitizeReply(reply), brain:brain.name });
+          if (reply) return res.status(200).json({ reply:sanitizeReply(reply, false), brain:brain.name });
         } catch (e) {}
       }
       return res.status(200).json({ reply:'Good ' + partOfDay + ' Sir. Scorpion online and ready.', brain:'FALLBACK' });
@@ -726,9 +746,12 @@ NEVER use markdown. Write plain conversational sentences only.`;
     }
 
     // ── ANALYZE / LONG PASTE CHECK ────────────────────────
-    // FIX: skip the entire web-search pipeline for analysis requests —
-    // go straight to the brain with the full pasted text as context.
     const analyzeMode = isAnalyzeRequest(userQuery);
+
+    // ── LIST / POINT-FORM REQUEST CHECK ───────────────────
+    // v5.2.0: applies in BOTH the normal web-search chat path and the
+    // analyze (pasted-text) path below.
+    const listMode = isListRequest(userQuery);
 
     // ── STAGE 1: REASONING ───────────────────────────────
     if (!isSimpleCommand(userMessages) && !analyzeMode) {
@@ -808,7 +831,16 @@ Output ONLY that one sentence. No preamble, no extra text.`;
       if (gaps.length) webContext += '=== DATA GAP WARNINGS ===\n' + gaps.join('\n') + '\n\n';
 
       // ── STAGE 5: BUILD SYSTEM PROMPT + CALL BRAINS ───
-      const noMarkdownRule = `CRITICAL OUTPUT FORMAT RULES:
+      // v5.2.0: format rule branches on listMode. When the user asked
+      // for point-form / bullet / notes output, we instruct the brain
+      // to actually produce "- " bulleted lines instead of forcing
+      // plain TTS-style prose.
+      const formatRule = listMode ? `OUTPUT FORMAT RULES:
+- The user wants point-form / list output. Write your answer as short points, one per line, each line starting with "- ".
+- Keep each point concise and scannable (roughly under 15 words where possible).
+- No bold, no headers, no numbered lists — use "- " bullets only.
+- Address the user as Sir.
+- Always state the exact fetch time and date when reporting live prices, rates, or weather (as its own "- " point).` : `CRITICAL OUTPUT FORMAT RULES:
 - Write in plain conversational sentences only.
 - NEVER use markdown: no asterisks, no bold, no headers, no bullet points, no numbered lists, no backticks.
 - Your output will be read aloud by a text-to-speech engine.
@@ -820,7 +852,7 @@ Output ONLY that one sentence. No preamble, no extra text.`;
 You are warm, witty, loyal, and brilliantly intelligent. You address the user as Sir.
 Today is ${timeStr}. Yesterday was ${yesterdayStr}.
 
-${noMarkdownRule}
+${formatRule}
 
 CRITICAL INSTRUCTIONS — YOU ARE AN INTELLIGENT ANALYST:
 
@@ -857,7 +889,7 @@ ${webContext}`;
           if (gData.error) throw new Error(gData.error.message);
           const reply = gData?.candidates?.[0]?.content?.parts?.[0]?.text;
           if (!reply) throw new Error('Empty reply from GEMINI');
-          return { reply:sanitizeReply(reply), brain:brain.name };
+          return { reply:sanitizeReply(reply, listMode), brain:brain.name };
         } else {
           const oRes  = await fetch(brain.url, {
             method:'POST', headers:brain.headers(brain.key),
@@ -867,7 +899,7 @@ ${webContext}`;
           if (oData.error) throw new Error(oData.error?.message || JSON.stringify(oData.error));
           const reply = oData?.choices?.[0]?.message?.content;
           if (!reply) throw new Error('Empty reply from ' + brain.name);
-          return { reply:sanitizeReply(reply), brain:brain.name };
+          return { reply:sanitizeReply(reply, listMode), brain:brain.name };
         }
       }
 
@@ -889,15 +921,23 @@ ${webContext}`;
 
     } else if (analyzeMode) {
       // ── ANALYZE PATH — full text goes straight to the brain, no search ──
+      // v5.2.0: format rule branches on listMode here too, so
+      // "summarize this in point form" (which matches isAnalyzeRequest
+      // via the "summarize" keyword) actually gets bulleted output.
+      const analyzeFormatRule = listMode ? `OUTPUT FORMAT RULES:
+- The user wants point-form / list output. Write your answer as short points, one per line, each starting with "- ".
+- No bold, no headers, no numbered lists — only "- " bullets.
+- Address the user as Sir.` : `CRITICAL OUTPUT FORMAT RULES:
+- Write in plain conversational sentences only.
+- NEVER use markdown: no asterisks, no bold, no headers, no bullet points, no numbered lists, no backticks.
+- Your output will be read aloud by a text-to-speech engine.
+- Address the user as Sir.`;
+
       const analyzeSystem = `You are Scorpion, a hyper-intelligent Jarvis-style AI assistant.
 You are warm, witty, loyal, and brilliantly intelligent. You address the user as Sir.
 Today is ${timeStr}.
 
-CRITICAL OUTPUT FORMAT RULES:
-- Write in plain conversational sentences only.
-- NEVER use markdown: no asterisks, no bold, no headers, no bullet points, no numbered lists, no backticks.
-- Your output will be read aloud by a text-to-speech engine.
-- Address the user as Sir.
+${analyzeFormatRule}
 
 The user has pasted or referenced a block of text below for you to analyse, summarise, or otherwise work with.
 Do NOT treat this content as something to search the web for — it is already provided to you in full.
@@ -929,7 +969,7 @@ Read it carefully and respond directly to what they asked you to do with it.`;
           if (gData.error) throw new Error(gData.error.message);
           const reply = gData?.candidates?.[0]?.content?.parts?.[0]?.text;
           if (!reply) throw new Error('Empty reply from GEMINI');
-          return { reply:sanitizeReply(reply), brain:brain.name };
+          return { reply:sanitizeReply(reply, listMode), brain:brain.name };
         } else {
           const oRes  = await fetch(brain.url, {
             method:'POST', headers:brain.headers(brain.key),
@@ -939,7 +979,7 @@ Read it carefully and respond directly to what they asked you to do with it.`;
           if (oData.error) throw new Error(oData.error?.message || JSON.stringify(oData.error));
           const reply = oData?.choices?.[0]?.message?.content;
           if (!reply) throw new Error('Empty reply from ' + brain.name);
-          return { reply:sanitizeReply(reply), brain:brain.name };
+          return { reply:sanitizeReply(reply, listMode), brain:brain.name };
         }
       }
 
@@ -968,7 +1008,7 @@ NEVER use markdown. Write plain conversational sentences only. Keep it brief.`;
           const r    = await fetch(brain.url, { method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+brain.key}, body:JSON.stringify({ model:brain.model, temperature:0.2, max_tokens:300, messages:[{role:'system',content:simpleSystem},...formattedMessages] }) });
           const data = await r.json();
           const reply = data.choices?.[0]?.message?.content;
-          if (reply) { writeChunk('answer', sanitizeReply(reply), { brain:brain.name }); endStream(); return; }
+          if (reply) { writeChunk('answer', sanitizeReply(reply, false), { brain:brain.name }); endStream(); return; }
         } catch (e) {
           console.error('[chat.js] Brain call failed:', brain.name, e.message);
         }
