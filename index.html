@@ -538,6 +538,10 @@ function pushHistory(role,text){
 // Tracks a pending "would you like me to play X?" offer made by the AI in
 // a normal chat answer, so that a simple "yes" afterwards actually triggers
 // real YouTube playback instead of just generating more text pretending to play.
+// FIX: this state is now actually populated (see end of sendCmdText) and
+// actually consumed (see triggerPendingPlay), closing the loop that was
+// previously broken — the offer used to be made, checked for, but never
+// recorded or acted on, so confirmations silently fell through to plain chat.
 let _pendingPlayOffer=null; // { query: string, answer: string }
 const PLAY_OFFER_REGEX=/\b(would you like me to play|shall i play|want me to play|like me to play it|should i play|do you want me to play)\b/i;
 const PLAY_AFFIRM_REGEX=/^(yes|yeah|yep|yup|sure|please|go ahead|do it|play it|affirmative|sounds good|do that|please do)\b/i;
@@ -743,6 +747,11 @@ function showClarifyVoice(kind, question, options, originalQuery){
   _clarifyKind           = kind;            // 'song' | 'intent' | 'play_choice'
   _clarifyOriginalQuery  = originalQuery;
   _clarifyOptions        = options || [];
+
+  // A clarification flow is starting — any stale "would you like me to
+  // play it" offer from a previous unrelated turn must not survive into
+  // this new context.
+  _pendingPlayOffer = null;
 
   // Record Scorpion's clarifying question into conversation memory
   // so the *next* normal chat turn (and the resolver prompts) can see
@@ -1166,6 +1175,56 @@ async function checkIntentThenSend(cmd){
 }
 
 // ══════════════════════════════════════════════════════
+// PLAY-OFFER CONFIRMATION — triggers actual playback when the user
+// confirms ("yes" / "play it" / etc.) after a normal chat answer ended
+// with "Would you like me to play it, Sir?" (see PLAY_OFFER_REGEX and
+// the bottom of sendCmdText, which populates _pendingPlayOffer).
+//
+// We reuse the backend's existing 'extract_play_query' mode rather than
+// re-running full research: the offer's answer text already contains
+// the verified YouTube title/channel (see music role prompt +
+// youtubeSearch() in chat.js), so extract_play_query can pull a precise
+// search query (or a multi-option choice) straight out of it.
+// ══════════════════════════════════════════════════════
+async function triggerPendingPlay(confirmText){
+  const offer = _pendingPlayOffer;
+  _pendingPlayOffer = null;
+  if(!offer) return;
+
+  addLog('u', confirmText);
+  pushHistory('user', confirmText);
+
+  processingCmd = true;
+  setOrbState('thinking','LOCKING ONTO TRACK...');
+  document.getElementById('output').textContent = 'Confirming track…';
+
+  try{
+    const r = await fetch('/api/chat', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-scorpion-key':SCORPION_SECRET},
+      body: JSON.stringify({ mode:'extract_play_query', query: offer.query, answer: offer.answer })
+    });
+    const data = await r.json();
+    processingCmd = false;
+
+    if(data.status==='choice' && Array.isArray(data.options) && data.options.length>=2){
+      _playChoiceMap = data.options;
+      const labels = data.options.map(o=>o.label);
+      showClarifyVoice('play_choice', data.question || 'Which one, Sir?', labels, offer.query);
+      return;
+    }
+
+    const finalQuery = data.searchQuery || offer.query;
+    handleMediaPlay(finalQuery, true);
+  }catch(e){
+    processingCmd = false;
+    // Even on a resolver failure, still attempt to play using the
+    // original query rather than silently dropping the confirmation.
+    handleMediaPlay(offer.query, true);
+  }
+}
+
+// ══════════════════════════════════════════════════════
 // MEDIA TYPE ROUTING — "play X" goes through the EXACT same SSE
 // research pipeline as normal chat (Processing… → Planning search
 // strategy → Running queries → Fetching → researched answer), with
@@ -1175,6 +1234,10 @@ async function checkIntentThenSend(cmd){
 // research — surfaced inline, same mechanism as intent-clarify).
 // ══════════════════════════════════════════════════════
 async function resolveAndPlay(rawQuery){
+  // An explicit, unambiguous "play X" command always supersedes any
+  // stale offer from an earlier unrelated turn.
+  _pendingPlayOffer = null;
+
   if(!rawQuery||!rawQuery.trim()){document.getElementById('output').textContent='What would you like me to play, Sir?';return;}
   const turn=startNewTurn();
   processingCmd=true;
@@ -1466,6 +1529,13 @@ async function sendCmdText(val){
     pushHistory('assistant', fullReply);
     bumpQ();
     addLog('a',fullReply,brainLabel);
+
+    // FIX: actually record a "play offer" so a follow-up "yes" can act on
+    // it (see triggerPendingPlay / routeCommand). Previously this state
+    // was checked for but never set, so confirmations always fell through
+    // to plain chat instead of triggering playback.
+    _pendingPlayOffer = PLAY_OFFER_REGEX.test(fullReply) ? { query: val, answer: fullReply } : null;
+
     speakReply(fullReply, turn);
 
   }catch(e){
@@ -1835,6 +1905,7 @@ function clearLog(){
   document.getElementById('panel-label').textContent='SCORPION RESPONSE CORE';
   conversationHistory=[];
   _playChoiceMap=[];
+  _pendingPlayOffer=null;
   clearOrbImage();
   clearClarifyUI();
 }
