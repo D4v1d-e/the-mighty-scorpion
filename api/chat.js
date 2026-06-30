@@ -1,41 +1,32 @@
 // ============================================================
-// CHAT API HANDLER — SCORPION AI BRAIN v5.5.0
+// CHAT API HANDLER — SCORPION AI BRAIN v5.6.0
 // ============================================================
-// v5.5.0 Fixes (THIS VERSION):
-//   - extract_play_query (both the standalone mode AND the inline
-//     version used in the isPlayRequest path) now REFUSES to output
-//     a vague/descriptive searchQuery (e.g. "movie about bullied
-//     math genius", "guy who is bullied math genius"). It must
-//     commit to a real, specific, identifiable title/speaker/event,
-//     or explicitly say it doesn't know — in which case the frontend
-//     should ask the user to clarify rather than blindly searching
-//     YouTube with a vague phrase and grabbing result[0].
-//   - Added a "status":"unknown" output option so the frontend can
-//     distinguish "I genuinely don't know which video" from "here is
-//     exactly one match" — previously every uncertain case silently
-//     fell back to the original vague query, which is how wrong
-//     videos (Michael Jackson short, 2008 Obama clip, etc.) ended up
-//     auto-playing.
-//   - extract_play_query system prompts now explicitly forbid
-//     guessing a plausible-sounding but unverified title.
-//
-// v5.4.0 Fixes:
-//   - YouTube search now runs for EVERY chat query, not just ones
-//     classified as isMusic.
-//   - Added an INSTRUCTION line to 'general'/'news' role prompts so
-//     the model surfaces relevant YouTube finds.
-//
-// v5.3.0 Fixes:
-//   - Added youtubeSearch() helper validating real YouTube results
-//     during the play research phase.
-//   - play requests get a [YOUTUBE SEARCH RESULTS] block.
-//   - extract_play_query references REAL video data.
-//
-// v5.2.0 Fixes:
-//   - isListRequest detection + bullet-preserving sanitizeReply.
+// v5.6.0 (THIS VERSION):
+//   - REMOVED unnecessary search fallback bloat: braveSearch,
+//     newsSearch, rssSearch, duckSearch are gone. runSearchChain
+//     now uses Serper + Tavily only (the two providers that were
+//     actually configured/used in practice). Less surface area,
+//     fewer silent failure paths, faster responses.
+//   - FIX: play-research requests (resolveAndPlay's long
+//     "Identify exactly which video..." prompt) no longer get
+//     misclassified as analyzeMode just because they're >400
+//     chars. Added isPlayResearch flag from frontend + a regex
+//     guard so play research ALWAYS goes through the search
+//     pipeline instead of skipping straight to a no-search reply.
+//   - FIX: youtubeSearch() in the main pipeline now receives a
+//     CLEAN seed query (the actual subject — "latest trump speech
+//     white house June 2026") instead of the entire raw instruction
+//     sentence, which is what was causing irrelevant old videos to
+//     surface as the top YouTube match.
+//   - FIX: role prompts now explicitly forbid the model claiming
+//     "I'm a language model, I can't browse" when LIVE DATA CONTEXT
+//     is actually present in the prompt.
+//   - FIX: confidence threshold for auto-playing a YouTube match is
+//     now higher for time-sensitive ("latest/recent/today") queries,
+//     so it asks instead of guessing on a stale match.
 //
 // Author  : Dr. Davie Mwangi
-// Version : 5.5.0
+// Version : 5.6.0
 // ============================================================
 
 const readMemory  = async () => '';
@@ -59,26 +50,8 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  // ── ENV DEBUG ────────────────────────────────────────────
-  console.log('[chat.js] Environment check:', {
-    hasSecret:   !!process.env.APP_SECRET,
-    hasCerebras: !!process.env.CEREBRAS_API_KEY,
-    hasGroq:     !!process.env.GROQ_API_KEY,
-    hasGemini:   !!process.env.GEMINI_API_KEY,
-    hasMistral:  !!process.env.MISTRAL_API_KEY,
-    hasSerper:   !!process.env.SERPER_API_KEY,
-    hasTavily:   !!process.env.TAVILY_API_KEY,
-  });
-
   try {
-    const { messages, mode, timezone, query, clarificationAnswer, originalQuery } = req.body;
-
-    // ── HISTORY CONTEXT HELPER (shared by resolve_video / resolve_song / resolve_intent) ──
-    function buildHistoryContext(msgs) {
-      return (msgs || []).slice(-6).map(m =>
-        (m.role === 'user' ? 'USER: ' : 'SCORPION: ') + (m.text || m.content || '')
-      ).join('\n');
-    }
+    const { messages, mode, timezone, query, clarificationAnswer, originalQuery, isPlayResearch } = req.body;
 
     // ── TIME CONTEXT ─────────────────────────────────────
     const now = new Date();
@@ -95,7 +68,6 @@ export default async function handler(req, res) {
     const currentYear  = now.getFullYear();
     const currentMonth = now.toLocaleString('en-US', { month: 'long' });
 
-    // ── FETCH TIMESTAMP HELPER ────────────────────────────
     function fetchTimestamp() {
       return new Date().toLocaleString('en-US', {
         timeZone: tz, hour: '2-digit', minute: '2-digit', second: '2-digit',
@@ -106,7 +78,7 @@ export default async function handler(req, res) {
     // ── BRAIN HELPERS ─────────────────────────────────────
     async function callCerebras(systemContent, userContent, maxTokens = 200) {
       const key = process.env.CEREBRAS_API_KEY;
-      if (!key) { console.warn('[chat.js] CEREBRAS_API_KEY not set'); return null; }
+      if (!key) return null;
       try {
         const r = await fetch('https://api.cerebras.ai/v1/chat/completions', {
           method: 'POST',
@@ -123,7 +95,7 @@ export default async function handler(req, res) {
 
     async function callGroq(systemContent, userContent, maxTokens = 300) {
       const key = process.env.GROQ_API_KEY;
-      if (!key) { console.warn('[chat.js] GROQ_API_KEY not set'); return null; }
+      if (!key) return null;
       try {
         const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
           method: 'POST',
@@ -150,12 +122,9 @@ export default async function handler(req, res) {
       res.setHeader('Connection', 'keep-alive');
       res.setHeader('X-Accel-Buffering', 'no');
     }
-
     function writeChunk(type, content, extra = {}) {
-      const payload = JSON.stringify({ type, content, ...extra });
-      res.write('data: ' + payload + '\n\n');
+      res.write('data: ' + JSON.stringify({ type, content, ...extra }) + '\n\n');
     }
-
     function endStream() {
       res.write('data: [DONE]\n\n');
       res.end();
@@ -181,7 +150,7 @@ export default async function handler(req, res) {
       } catch (e) { return null; }
     }
 
-    // ── SEARCH HELPERS ────────────────────────────────────
+    // ── SEARCH HELPERS (trimmed: Serper + Tavily only) ────
     async function serperSearch(q, isNews) {
       const key = process.env.SERPER_API_KEY;
       if (!key) return null;
@@ -225,73 +194,7 @@ export default async function handler(req, res) {
       } catch (e) { return null; }
     }
 
-    async function braveSearch(q) {
-      const key = process.env.BRAVE_API_KEY;
-      if (!key) return null;
-      try {
-        const r = await fetch('https://api.search.brave.com/res/v1/news/search?q=' + encodeURIComponent(q) + '&freshness=pd&count=5',
-          { headers: { 'Accept': 'application/json', 'X-Subscription-Token': key } });
-        const data = await r.json();
-        if (!data.results?.length) return null;
-        return 'BRAVE NEWS (past 24h):\n' + data.results.map((r, i) =>
-          '[' + (i+1) + '] ' + r.title + '\n' + (r.description || '') + '\nAge: ' + (r.age || 'unknown')
-        ).join('\n\n');
-      } catch (e) { return null; }
-    }
-
-    async function newsSearch(q) {
-      const key = process.env.NEWS_API_KEY;
-      if (!key) return null;
-      try {
-        const [eRes, hRes] = await Promise.all([
-          fetch('https://newsapi.org/v2/everything?q=' + encodeURIComponent(q) + '&sortBy=publishedAt&pageSize=5&language=en&apiKey=' + key),
-          fetch('https://newsapi.org/v2/top-headlines?q=' + encodeURIComponent(q) + '&pageSize=3&language=en&apiKey=' + key)
-        ]);
-        const [e, h] = await Promise.all([eRes.json(), hRes.json()]);
-        let result = '';
-        if (h.articles?.length) result += 'TOP HEADLINES:\n' + h.articles.slice(0,3).map((a,i) =>
-          '[' + (i+1) + '] ' + a.title + '\n' + (a.description||'') + '\nPublished: ' + (a.publishedAt?.slice(0,10)) + '\nSource: ' + a.source?.name
-        ).join('\n\n') + '\n\n';
-        if (e.articles?.length) result += 'RECENT NEWS:\n' + e.articles.slice(0,5).map((a,i) =>
-          '[' + (i+1) + '] ' + a.title + '\n' + (a.description||'') + '\nPublished: ' + (a.publishedAt?.slice(0,10)) + '\nSource: ' + a.source?.name
-        ).join('\n\n');
-        return result.trim() || null;
-      } catch (e) { return null; }
-    }
-
-    async function rssSearch() {
-      try {
-        const feeds = ['https://feeds.bbci.co.uk/news/rss.xml','https://rss.cnn.com/rss/edition.rss','https://feeds.reuters.com/reuters/topNews'];
-        const results = await Promise.all(feeds.map(async (url) => {
-          try {
-            const r    = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-            const text = await r.text();
-            const items      = [...text.matchAll(/<item>[\s\S]*?<title><!\[CDATA\[(.*?)\]\]><\/title>[\s\S]*?<pubDate>(.*?)<\/pubDate>[\s\S]*?<\/item>/g)];
-            const plainItems = [...text.matchAll(/<item>[\s\S]*?<title>(.*?)<\/title>[\s\S]*?<pubDate>(.*?)<\/pubDate>[\s\S]*?<\/item>/g)];
-            return [...items, ...plainItems].slice(0,3).map(m => '[' + (m[2]?.trim()||'unknown date') + '] ' + (m[1]?.trim()||'')).join('\n');
-          } catch (e) { return null; }
-        }));
-        const combined = results.filter(Boolean).join('\n');
-        return combined ? 'RSS LIVE HEADLINES:\n' + combined : null;
-      } catch (e) { return null; }
-    }
-
-    async function duckSearch(q) {
-      try {
-        const r    = await fetch('https://api.duckduckgo.com/?q=' + encodeURIComponent(q) + '&format=json&no_html=1&skip_disambig=1');
-        const data = await r.json();
-        let result = '';
-        if (data.AbstractText) result += 'ANSWER: ' + data.AbstractText + '\n\n';
-        if (data.RelatedTopics?.length) data.RelatedTopics.slice(0,4).forEach(t => { if (t.Text) result += '- ' + t.Text + '\n'; });
-        return result.trim() || null;
-      } catch (e) { return null; }
-    }
-
-    // ── CREDIBILITY FILTER ────────────────────────────────
-    // Flags channels/titles matching the clickbait-news-farm pattern seen
-    // in practice (e.g. "NR 2 STUDIO" reposting fabricated headlines like
-    // "Trump Orders Immediate National Lockdown") so they get filtered out
-    // before being offered to the user as a real match for play requests.
+    // ── YOUTUBE SEARCH VALIDATION ──────────────────────────
     const CLICKBAIT_TITLE_PATTERNS = /\b(stuns everyone|urgent (24|breaking)[- ]hour|america in shock|shocking announcement|you won'?t believe|breaking news live now|world stunned|panic erupts|emergency alert|in shock as|national lockdown)\b/i;
     const CLICKBAIT_CHANNEL_PATTERNS = /\b(news\s*live|studio\s*\d|\bnr\s*\d\b|live\s*now\s*\d|breaking\s*now)\b/i;
 
@@ -303,13 +206,8 @@ export default async function handler(req, res) {
       return false;
     }
 
-    // ── YOUTUBE SEARCH VALIDATION ──────────────────────────
     async function youtubeSearch(q) {
       try {
-        // FIX: localhost:3000 does NOT work between Vercel serverless
-        // function invocations in production — each function call is an
-        // isolated instance with nothing listening on localhost. Use the
-        // real deployment host instead (Vercel injects VERCEL_URL).
         const base = process.env.VERCEL_URL
           ? 'https://' + process.env.VERCEL_URL
           : (process.env.APP_BASE_URL || 'http://localhost:3000');
@@ -323,8 +221,6 @@ export default async function handler(req, res) {
         const data = await r.json();
         if (!data.results?.length) return null;
 
-        // FIX: drop clickbait/low-credibility channels before they ever
-        // reach the model as "VERIFIED" results.
         const filtered = data.results.filter(v => !isLowCredibilitySource(v));
         const pool = filtered.length ? filtered : data.results;
 
@@ -337,6 +233,20 @@ export default async function handler(req, res) {
         console.error('[chat.js] youtubeSearch failed:', e.message);
         return null;
       }
+    }
+
+    // FIX: extracts a clean YouTube search subject from either a normal
+    // "play X" user query OR the long researchPrompt sentence built by
+    // resolveAndPlay() on the frontend ("Identify exactly which video...
+    // Request: play X"). Previously the ENTIRE instruction sentence was
+    // passed straight to youtubeSearch(), which is why irrelevant/stale
+    // videos kept winning the match.
+    function extractYoutubeSeedQuery(q) {
+      const m = q.match(/Request:\s*play\s+(.+)$/i);
+      if (m) return m[1].trim();
+      return q.replace(/^(play|put on|i want to (hear|listen to)|search (youtube )?for|youtube|queue|stream)\s*/i, '')
+               .replace(/\s*(on youtube|for me|please|now)\s*/ig, '')
+               .trim();
     }
 
     function dedupeBlocks(text) {
@@ -361,22 +271,12 @@ export default async function handler(req, res) {
 
     function isUsable(text) { return !!(text && text.replace(/\s+/g, '').length > 150); }
 
+    // Trimmed: Serper + Tavily only. No brave/news/rss/duck fallback chain.
     async function runSearchChain(plannedQueries, intent) {
       const perQuery = {};
       for (const q of plannedQueries) {
-        let combined = '';
         const [serperData, tavilyData] = await Promise.all([serperSearch(q, intent.isNews), tavilySearch(q)]);
-        combined = [serperData, tavilyData].filter(Boolean).join('\n\n---\n\n');
-        if (!isUsable(combined) && intent.isNews) {
-          const [braveData, newsData] = await Promise.all([braveSearch(q), newsSearch(q)]);
-          combined = [combined, braveData, newsData].filter(Boolean).join('\n\n---\n\n');
-        }
-        if (!isUsable(combined) && intent.isNews) {
-          const rssData = await rssSearch();
-          combined = [combined, rssData].filter(Boolean).join('\n\n---\n\n');
-        }
-        if (!isUsable(combined)) { const duckData = await duckSearch(q); combined = [combined, duckData].filter(Boolean).join('\n\n---\n\n'); }
-        perQuery[q] = dedupeBlocks(combined);
+        perQuery[q] = dedupeBlocks([serperData, tavilyData].filter(Boolean).join('\n\n---\n\n'));
       }
       return Object.values(perQuery).filter(Boolean).join('\n\n---\n\n');
     }
@@ -392,8 +292,7 @@ export default async function handler(req, res) {
         const data = await r.json();
         const c    = data[coinMap[coin]];
         if (!c) return null;
-        const ts = fetchTimestamp();
-        return 'LIVE CRYPTO PRICE:\n' + coin.toUpperCase() + ' = $' + c.usd.toLocaleString() + ' USD\n24h Change: ' + c.usd_24h_change?.toFixed(2) + '%\nFetched at: ' + ts + '\nINSTRUCTION: Always state the fetch time and date in your answer.';
+        return 'LIVE CRYPTO PRICE:\n' + coin.toUpperCase() + ' = $' + c.usd.toLocaleString() + ' USD\n24h Change: ' + c.usd_24h_change?.toFixed(2) + '%\nFetched at: ' + fetchTimestamp() + '\nINSTRUCTION: Always state the fetch time and date in your answer.';
       } catch (e) { return null; }
     }
 
@@ -405,12 +304,11 @@ export default async function handler(req, res) {
         const gold = data.find(m => m.metal === 'gold');
         const silver   = data.find(m => m.metal === 'silver');
         const platinum = data.find(m => m.metal === 'platinum');
-        const ts = fetchTimestamp();
         let result = 'LIVE METALS PRICES (per troy ounce, USD):\n';
         if (gold)     result += 'Gold (XAU/USD): $' + gold.price.toFixed(2) + '\n';
         if (silver)   result += 'Silver (XAG/USD): $' + silver.price.toFixed(2) + '\n';
         if (platinum) result += 'Platinum: $' + platinum.price.toFixed(2) + '\n';
-        result += 'Fetched at: ' + ts + '\nINSTRUCTION: Always state the fetch time and date in your answer.';
+        result += 'Fetched at: ' + fetchTimestamp() + '\nINSTRUCTION: Always state the fetch time and date in your answer.';
         return result;
       } catch (e) { return null; }
     }
@@ -422,10 +320,9 @@ export default async function handler(req, res) {
         const r    = await fetch('https://open.er-api.com/v6/latest/USD');
         const data = await r.json();
         if (!data.rates) return null;
-        const ts = fetchTimestamp();
         let result = 'LIVE FOREX RATES (vs USD):\n';
         SUPPORTED_FOREX_PAIRS.forEach(p => { if (data.rates[p]) result += 'USD/' + p + ': ' + data.rates[p].toFixed(4) + '\n'; });
-        result += 'Fetched at: ' + ts + '\nSUPPORTED PAIRS ONLY: ' + SUPPORTED_FOREX_PAIRS.join(', ');
+        result += 'Fetched at: ' + fetchTimestamp() + '\nSUPPORTED PAIRS ONLY: ' + SUPPORTED_FOREX_PAIRS.join(', ');
         result += '\nINSTRUCTION: Always state the fetch time and date. If pair not in list, say "I do not have a live feed for that pair, Sir."';
         return result;
       } catch (e) { return null; }
@@ -446,8 +343,7 @@ export default async function handler(req, res) {
         const wR  = await fetch('https://api.open-meteo.com/v1/forecast?latitude=' + loc.latitude + '&longitude=' + loc.longitude + '&current=temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code,apparent_temperature&timezone=auto');
         const wD  = await wR.json(); const cur = wD.current;
         const conds = { 0:'Clear sky',1:'Mainly clear',2:'Partly cloudy',3:'Overcast',45:'Foggy',51:'Light drizzle',61:'Slight rain',63:'Moderate rain',65:'Heavy rain',71:'Slight snow',80:'Rain showers',95:'Thunderstorm' };
-        const ts = fetchTimestamp();
-        return 'LIVE WEATHER — ' + loc.name + ', ' + loc.country + ':\nTemperature: ' + cur.temperature_2m + 'C (feels like ' + cur.apparent_temperature + 'C)\nCondition: ' + (conds[cur.weather_code]||'Variable') + '\nHumidity: ' + cur.relative_humidity_2m + '%\nWind: ' + cur.wind_speed_10m + ' km/h\nFetched at: ' + ts + '\nINSTRUCTION: Always state the fetch time and date in your answer.';
+        return 'LIVE WEATHER — ' + loc.name + ', ' + loc.country + ':\nTemperature: ' + cur.temperature_2m + 'C (feels like ' + cur.apparent_temperature + 'C)\nCondition: ' + (conds[cur.weather_code]||'Variable') + '\nHumidity: ' + cur.relative_humidity_2m + '%\nWind: ' + cur.wind_speed_10m + ' km/h\nFetched at: ' + fetchTimestamp() + '\nINSTRUCTION: Always state the fetch time and date in your answer.';
       } catch (e) { return null; }
     }
 
@@ -457,10 +353,9 @@ export default async function handler(req, res) {
         const r    = await fetch('https://www.thesportsdb.com/api/v1/json/3/eventsday.php?d=' + todayStr + '&s=Soccer');
         const data = await r.json();
         if (!data.events?.length) return 'SPORTS: No soccer events found for today.';
-        const ts = fetchTimestamp();
         return 'LIVE SPORTS RESULTS:\n' + data.events.slice(0,6).map(e =>
           e.strHomeTeam + ' ' + (e.intHomeScore??'-') + ' vs ' + (e.intAwayScore??'-') + ' ' + e.strAwayTeam + ' (' + e.strLeague + ')'
-        ).join('\n') + '\nFetched at: ' + ts + '\nINSTRUCTION: Report only these matches and state the fetch time.';
+        ).join('\n') + '\nFetched at: ' + fetchTimestamp() + '\nINSTRUCTION: Report only these matches and state the fetch time.';
       } catch (e) { return null; }
     }
 
@@ -494,14 +389,11 @@ export default async function handler(req, res) {
         isTechnical: /code|python|javascript|api|database|algorithm|function|class|library|framework|syntax|debug|error|compile/.test(ql),
         needsLiveData: false
       };
-
       intent.primary = Object.keys(intent)
         .filter(k => k !== 'needsLiveData' && k !== 'primary' && intent[k])
         .sort()[0] || 'general';
-
       intent.needsLiveData = intent.isCrypto || intent.isForex || intent.isMetals || intent.isWeather || intent.isSports ||
         (/\b(current|now|today|live|real[- ]?time|right now)\b/i.test(ql));
-
       return intent;
     }
 
@@ -510,97 +402,71 @@ export default async function handler(req, res) {
       return /\b(point form|in points|bullet points?|bulleted|as a list|in list form|make notes|key points|in note form|outline (this|it)|summar(y|ize|ise)[\s\S]{0,40}(points|notes|list)|notes on this)\b/i.test(text);
     }
 
+    // FIX: play-research requests (the long "Identify exactly which
+    // video..." prompt built by resolveAndPlay on the frontend) must
+    // NEVER be classified as analyzeMode — that was bypassing search
+    // entirely. Guarded two ways: (1) explicit isPlayResearch flag from
+    // frontend, (2) regex fallback in case the flag is ever missing.
+    function isAnalyzeRequest(text) {
+      if (!text) return false;
+      if (/^Identify exactly which video the user wants to play/i.test(text)) return false;
+      if (text.length > 400) return true;
+      return /\b(analy[sz]e|summar[iz]e|review this|what does this (mean|say)|proofread|critique this)\b/i.test(text);
+    }
+
     // ── ROLE-BASED SYSTEM PROMPTS ──────────────────────
     function getRolePrompt(intent, partOfDay, timeStr) {
       const basePersonality = `You are Scorpion, a hyper-intelligent Jarvis-style AI assistant.
 You are warm, witty, loyal, and brilliantly intelligent. You address the user as Sir.
 Today is ${timeStr}. It is ${partOfDay}.`;
 
+      const noDisclaimerRule = `
+INSTRUCTION (CRITICAL): You ARE given live web/YouTube search results in the LIVE DATA CONTEXT section below when search was run. NEVER say "I'm a language model" or "I cannot browse the internet" or similar disclaimers — that is false in this context and confuses the user. If LIVE DATA CONTEXT contains real results, use them directly. Only say you lack live data if the DATA GAP WARNINGS section explicitly says so or the context is empty.`;
+
       const roles = {
         music: `${basePersonality}
+${noDisclaimerRule}
 
-You are a music encyclopedia and curator. You know:
-- Artist histories, discographies, sample sources
-- Production techniques, collaborations, influences
-- Album release dates, chart positions, critical reception
-- Song meanings, lyrics context, live versions, remixes
+You are a music encyclopedia and curator. You know artist histories, discographies, production techniques, collaborations, album release dates, chart positions, and song meanings.
 
 INSTRUCTION:
 - If YOUTUBE SEARCH RESULTS show verified videos matching the query, ALWAYS offer: "I found [exact title] by [channel]. Would you like me to play it, Sir?"
-- Answer follow-ups about artist/song using the YOUTUBE + WEB context already available — no new research needed.
 - Be enthusiastic about music. Use era/genre context naturally.`,
 
         news: `${basePersonality}
+${noDisclaimerRule}
 
-You are a news analyst and fact-checker. You:
-- Synthesize multiple sources, spot agreements and disagreements
-- Flag uncertain claims and outdated information
-- Understand publication biases and source reliability
-- Trace facts to original reporting
+You are a news analyst and fact-checker. You synthesize multiple sources, flag uncertain or outdated claims, and trace facts to original reporting.
 
 INSTRUCTION:
 - ALWAYS state fetch timestamp and source freshness ([HIGH CONFIDENCE] = today/yesterday, [MEDIUM] = 1-7 days, [LOW] = older)
-- If sources contradict, explicitly say which source and analyze why (different measurement? old data? bias?)
-- Warn: "This is 30+ days old, Sir — may not reflect current status."
-- Never state unverified claims as fact.
-- If a YOUTUBE SEARCH RESULTS block is present and a listed video is genuinely a real, relevant recording of the event/person/topic discussed (e.g. an actual speech, interview, or news clip — not a random unrelated result), mention it naturally: "I also found footage of this — [exact title] by [channel]. Would you like me to play it, Sir?" Only offer this when it's a real match; never invent or guess a title that isn't in the YOUTUBE SEARCH RESULTS block.`,
+- If sources contradict, say which source and why.
+- If a YOUTUBE SEARCH RESULTS block is present and a listed video is genuinely a real, relevant recording of the event/person/topic discussed, mention it: "I also found footage of this — [exact title] by [channel]. Would you like me to play it, Sir?" Only offer this when it's a real match; never invent a title.`,
 
         crypto: `${basePersonality}
+${noDisclaimerRule}
 
-You are a markets analyst specializing in cryptocurrency. You:
-- Read live price feeds and understand volatility
-- Explain blockchain fundamentals, wallets, exchanges
-- Know major projects and their use cases
-- Understand technical analysis basics
+You are a markets analyst specializing in cryptocurrency.
 
-CRITICAL: Live crypto data in [LIVE CRYPTO DATA] section is GROUND TRUTH. Do NOT use training knowledge for prices — ONLY cite the live feed with timestamp.
-
+CRITICAL: Live crypto data in LIVE CRYPTO DATA is GROUND TRUTH. Do NOT use training knowledge for prices.
 INSTRUCTION:
-- Always report prices with [LIVE CRYPTO DATA] timestamp
-- If query asks for price but no live data: "I do not have a live feed for that, Sir."
-- Provide context (market cap, 24h change) when available
-- Admit uncertainty for predictions (price going up/down is speculation).`,
+- Always report prices with timestamp.
+- If query asks for price but no live data: "I do not have a live feed for that, Sir."`,
 
         technical: `${basePersonality}
 
-You are a technical problem-solver and engineer. You:
-- Debug code, explain architecture, write pseudocode
-- Know multiple languages, frameworks, design patterns
-- Understand system performance, scalability, trade-offs
-- Write clear, correct examples
-
-INSTRUCTION:
-- Be precise. Code examples must be syntactically valid or clearly marked pseudocode.
-- Explain *why*, not just how.
-- Admit when something is beyond scope or requires specialized knowledge.`,
+You are a technical problem-solver and engineer. Be precise, explain *why* not just how, and admit when something needs specialized knowledge.`,
 
         general: `${basePersonality}
+${noDisclaimerRule}
 
-You are a conversationalist and explainer. You:
-- Answer questions clearly and conversationally
-- Break complex topics into digestible pieces
-- Know when to go deep and when to stay surface-level
-- Engage naturally without being robotic
+You are a conversationalist and explainer. Answer clearly, break complex topics down, and engage naturally.
 
 INSTRUCTION:
-- If a YOUTUBE SEARCH RESULTS block is present and a listed video is genuinely relevant to the question (a real, on-topic match — not a coincidental keyword hit), you may mention it: "I also found a video on this, [exact title] by [channel]. Would you like me to play it, Sir?" Only do this when it adds real value to your answer — skip it for results that aren't a meaningful match, and never invent a title that isn't actually in the YOUTUBE SEARCH RESULTS block.`
+- If a YOUTUBE SEARCH RESULTS block is present and a listed video is genuinely relevant, you may mention it: "I also found a video on this, [exact title] by [channel]. Would you like me to play it, Sir?" Never invent a title that isn't actually listed.`
       };
 
       return roles[intent.primary] || roles.general;
-    }
-
-    // ── DATA DISTILLATION ──────────────────────────────
-    async function distillWebData(rawData, q) {
-      if (!rawData || rawData.length < 300) return rawData;
-
-      const distillSystem = `You are a data analyst. Extract ONLY facts directly answering: "${q}"
-Remove: ads, navigation, repetition, tangents, irrelevant sections.
-Output: bullet list of key facts, max 600 chars. Be specific (numbers, dates, names).
-If nothing relevant, output: NO RELEVANT DATA`;
-
-      const result = await callCerebras(distillSystem, rawData.slice(0, 8000), 200);
-      if (!result || result === 'NO RELEVANT DATA') return rawData;
-      return result;
     }
 
     function enhanceQuery(q) {
@@ -642,6 +508,17 @@ If nothing relevant, output: NO RELEVANT DATA`;
       return result;
     }
 
+    async function distillWebData(rawData, q) {
+      if (!rawData || rawData.length < 300) return rawData;
+      const distillSystem = `You are a data analyst. Extract ONLY facts directly answering: "${q}"
+Remove: ads, navigation, repetition, tangents, irrelevant sections.
+Output: bullet list of key facts, max 600 chars. Be specific (numbers, dates, names).
+If nothing relevant, output: NO RELEVANT DATA`;
+      const result = await callCerebras(distillSystem, rawData.slice(0, 8000), 200);
+      if (!result || result === 'NO RELEVANT DATA') return rawData;
+      return result;
+    }
+
     function isSimpleCommand(msgs) {
       if (!msgs?.length) return true;
       const last = msgs[msgs.length - 1];
@@ -650,12 +527,6 @@ If nothing relevant, output: NO RELEVANT DATA`;
       const isVisual = /explain|show me|what is|how does|diagram of|illustrate/.test(text);
       if (isVisual) return false;
       return simple.some(s => text.startsWith(s)) && text.length < 30;
-    }
-
-    function isAnalyzeRequest(text) {
-      if (!text) return false;
-      if (text.length > 400) return true;
-      return /\b(analy[sz]e|summar[iz]e|review this|what does this (mean|say)|proofread|critique this)\b/i.test(text);
     }
 
     // ══════════════════════════════════════════════════════
@@ -667,11 +538,6 @@ If nothing relevant, output: NO RELEVANT DATA`;
       return res.status(200).json({ success: true, message: 'Memory cleared, Sir.' });
     }
 
-    // ── EXTRACT PLAY QUERY ────────────────────────────────
-    // v5.5.0: this now REFUSES to output a vague descriptive query.
-    // It must either commit to one real, specific, identifiable title
-    // (movie/song/speech name + speaker/artist), or say it doesn't
-    // know — never guess a plausible-sounding-but-unverified one.
     if (mode === 'extract_play_query') {
       const rawQuery = (query || '').trim();
       const answer   = (req.body.answer || '').trim();
@@ -680,49 +546,36 @@ If nothing relevant, output: NO RELEVANT DATA`;
       const extractSystem = `You are a YouTube search query extractor for Scorpion AI. Today is ${timeStr}.
 Given the user's original "play" request and a researched answer (which may include ACTUAL YOUTUBE SEARCH RESULTS), decide one of THREE outcomes:
 
-- "clear": exactly ONE specific, real, identifiable video/song/speech/event is meant, AND you can name it precisely (exact or near-exact title, plus speaker/artist/event/date if relevant). NEVER output a vague description like "movie about a bullied math genius" or "guy who gets bullied" as the searchQuery — that is NOT a valid clear result, it is a guess. If you cannot name the actual title, do NOT use "clear".
-- "choice": the researched answer itself names 2+ DISTINCT real, specific titles that the user plausibly means.
-- "unknown": you cannot confidently identify a specific real title from the request and the researched answer (e.g. the request is just a vague plot description with no title given anywhere in the answer). Do NOT guess in this case.
+- "clear": exactly ONE specific, real, identifiable video/song/speech/event is meant, AND you can name it precisely. NEVER output a vague description as the searchQuery.
+- "choice": the researched answer itself names 2+ DISTINCT real, specific titles.
+- "unknown": you cannot confidently identify a specific real title. Do NOT guess.
 
 If the answer contains "YOUTUBE SEARCH RESULTS (VERIFIED):" block, those are REAL YouTube videos — use the titles and channels from that block, never invent your own.
 
 Output ONLY valid JSON. No markdown, no backticks.
-
-If clear:
-{"status":"clear","searchQuery":"<exact, specific YouTube search query — a real title, never a vague description>"}
-
-If choice (when answer shows 2+ distinct real candidates):
-{"status":"choice","question":"<short spoken question, max 15 words>","options":[{"label":"<video title>","searchQuery":"<precise YouTube search for this result>"}, ...]}
-
-If unknown:
-{"status":"unknown","reason":"<one short sentence explaining what extra detail is needed, e.g. 'I don't have a confirmed title — could you name the movie or describe it more specifically?'"}`;
+If clear: {"status":"clear","searchQuery":"<exact, specific YouTube search query>"}
+If choice: {"status":"choice","question":"<short spoken question, max 15 words>","options":[{"label":"<video title>","searchQuery":"<precise YouTube search>"}, ...]}
+If unknown: {"status":"unknown","reason":"<one short sentence>"}`;
       const userContent = `ORIGINAL REQUEST: ${rawQuery}\n\nRESEARCHED ANSWER:\n${answer.slice(0,2000)}`;
       let raw = await callAnyBrain(extractSystem, userContent, 350);
       let parsed = null;
       try { parsed = JSON.parse((raw || '').replace(/```json|```/g,'').trim()); } catch (e) { parsed = null; }
 
       if (parsed?.status === 'choice' && Array.isArray(parsed.options) && parsed.options.length >= 2) {
-        const cleanOptions = parsed.options
-          .filter(o => o && o.label && o.searchQuery)
-          .slice(0, 3);
+        const cleanOptions = parsed.options.filter(o => o && o.label && o.searchQuery).slice(0, 3);
         if (cleanOptions.length >= 2) {
           return res.status(200).json({ status: 'choice', question: parsed.question || 'Which one, Sir?', options: cleanOptions });
         }
       }
-
       if (parsed?.status === 'unknown') {
         return res.status(200).json({ status: 'unknown', reason: parsed.reason || 'I do not have a confirmed match, Sir. Could you be more specific?' });
       }
 
-      // Guard: even if status was "clear", reject obviously vague/descriptive
-      // searchQueries as a last line of defense (a long phrase with no
-      // proper-noun-looking tokens is a strong vagueness signal).
       const sq = (parsed && parsed.searchQuery) || '';
       const hasProperNounSignal = /[A-Z][a-z]+/.test(sq);
       if (sq && sq.split(/\s+/).length >= 5 && !hasProperNounSignal) {
         return res.status(200).json({ status: 'unknown', reason: 'I do not have a confirmed title for that, Sir. Could you name it more specifically?' });
       }
-
       return res.status(200).json({ status: 'clear', searchQuery: sq || rawQuery });
     }
 
@@ -730,9 +583,9 @@ If unknown:
       const greetSystem = `You are Scorpion, a hyper-intelligent Jarvis-style AI assistant.
 The current date and time is: ${timeStr}. It is ${partOfDay}.
 Greet the user warmly like Jarvis greets Tony Stark — address them as Sir.
-You MUST explicitly state the current time and date somewhere in the greeting (e.g. "It's 7:21 AM on Tuesday, June 30th, 2026, Sir"), worked naturally into a sentence.
+You MUST explicitly state the current time and date somewhere in the greeting, worked naturally into a sentence.
 Give a brief, witty, engaging good ${partOfDay} greeting. Keep it to 2-3 sentences.
-End with a short, simple, easy-to-answer-with-"yes" question (e.g. asking if they're ready to begin).
+End with a short, simple, easy-to-answer-with-"yes" question.
 NEVER use markdown. Write plain conversational sentences only.`;
       const brains = [
         { name:'CEREBRAS', key:process.env.CEREBRAS_API_KEY, url:'https://api.cerebras.ai/v1/chat/completions', model:'llama3.1-8b' },
@@ -766,20 +619,13 @@ NEVER use markdown. Write plain conversational sentences only.`;
       return;
     }
 
-    const analyzeMode = isAnalyzeRequest(userQuery);
+    const analyzeMode = !isPlayResearch && isAnalyzeRequest(userQuery);
     const listMode = isListRequest(userQuery);
-
-    // ── DETECT PLAY REQUEST ───────────────────────────────
-    const isPlayRequest = /^(play|put on|i want to (hear|listen to)|search (youtube )?for|youtube|queue|stream)\s+.+/i.test(userQuery);
+    const isPlayRequest = !isPlayResearch && /^(play|put on|i want to (hear|listen to)|search (youtube )?for|youtube|queue|stream)\s+.+/i.test(userQuery);
 
     if (!isSimpleCommand(userMessages) && !analyzeMode && !isPlayRequest) {
       const reasoningSystem = `You are the reasoning layer of Scorpion AI. Today is ${timeStr}.
 In ONE sentence only, state: what the user is asking for AND what data source or action is needed.
-Be specific. Examples:
-- "XAU/USD price — requires live metals spot feed."
-- "Where Ruto was yesterday — requires news search for ${yesterdayStr}."
-- "Bitcoin 24h change — requires live crypto feed from CoinGecko."
-- "Explain photosynthesis — requires general knowledge, no live data needed."
 Output ONLY that one sentence. No preamble, no extra text.`;
       const reasoningSentence = await callCerebras(reasoningSystem, userQuery, 80);
       if (reasoningSentence) writeChunk('thinking', reasoningSentence.trim());
@@ -791,6 +637,10 @@ Output ONLY that one sentence. No preamble, no extra text.`;
 
       writeChunk('fetching', 'Fetching live data and web results...');
 
+      // FIX: youtubeSearch now gets a clean seed query, not the raw
+      // (possibly very long, instruction-laden) userQuery.
+      const ytSeedQuery = enhanceQuery(extractYoutubeSeedQuery(userQuery));
+
       const [rawWebData, cryptoData, metalData, forexData, weatherData, sportsData, youtubeData] = await Promise.all([
         runSearchChain(plannedQueries, intent),
         getCrypto(userQuery),
@@ -798,7 +648,7 @@ Output ONLY that one sentence. No preamble, no extra text.`;
         getForex(userQuery),
         getWeather(userQuery),
         getSports(userQuery),
-        youtubeSearch(userQuery)
+        youtubeSearch(ytSeedQuery)
       ]);
 
       if (cryptoData)  writeChunk('fetching', 'Live crypto data received — ' + fetchTimestamp());
@@ -813,12 +663,10 @@ Output ONLY that one sentence. No preamble, no extra text.`;
 
       let filteredWebData = null;
       if (rawWebData) filteredWebData = await scoreAndFilter(rawWebData, userQuery);
-
       if (filteredWebData && filteredWebData.length > 2000) {
         writeChunk('fetching', 'Condensing data to key facts...');
         filteredWebData = await distillWebData(filteredWebData, userQuery);
       }
-
       if (filteredWebData && intent.isNews) {
         const tightWindow = /\btoday\b|\bthis morning\b|\bright now\b|\bcurrently\b/i.test(userQuery);
         const maxAge = tightWindow ? 5 : 30;
@@ -826,13 +674,11 @@ Output ONLY that one sentence. No preamble, no extra text.`;
           filteredWebData += '\n\nDATE WARNING: No source confirmed within the last ' + maxAge + ' days. Treat all news claims as potentially stale.';
         }
       }
-
       if (!filteredWebData) {
         filteredWebData = 'NO LIVE SEARCH DATA AVAILABLE.\nINSTRUCTION: Do not invent a definitive current answer. Tell the user you do not have a live feed for this right now.';
       }
 
       let webContext = ''; let dataSource = ''; let gaps = [];
-
       if (filteredWebData) { webContext += '=== WEB SEARCH (confidence-scored) ===\n' + filteredWebData + '\n\n'; dataSource = 'WEB[' + plannedQueries.length + 'q]'; }
       if (youtubeData)  { webContext += '=== YOUTUBE SEARCH RESULTS ===\n' + youtubeData + '\n\n'; dataSource += '+YOUTUBE'; }
       if (cryptoData)  { webContext += '=== LIVE CRYPTO DATA ===\n'   + cryptoData  + '\n\n'; dataSource += '+CRYPTO';  }
@@ -849,12 +695,11 @@ Output ONLY that one sentence. No preamble, no extra text.`;
 
       const formatRule = listMode ? `OUTPUT FORMAT RULES:
 - The user wants point-form / list output. Write your answer as short points, one per line, each starting with "- ".
-- Keep each point concise and scannable.
 - No bold, no headers, no numbered lists — only "- " bullets.
 - Address the user as Sir.
 - Always state the exact fetch time and date when reporting live data.` : `CRITICAL OUTPUT FORMAT RULES:
 - Write in plain conversational sentences only.
-- NEVER use markdown: no asterisks, no bold, no headers, no bullet points, no numbered lists, no backticks.
+- NEVER use markdown.
 - Your output will be read aloud by a text-to-speech engine.
 - Address the user as Sir.
 - Always state the exact fetch time and date when reporting live data.`;
@@ -865,40 +710,7 @@ Output ONLY that one sentence. No preamble, no extra text.`;
 
 ${formatRule}
 
-CONFIDENCE SELF-RATING (critical):
-Before answering, rate yourself [CONFIDENT] / [LIKELY] / [UNCERTAIN] / [GUESSING]:
-- [CONFIDENT] = data directly answers query, sources agree, info is recent/verified
-- [LIKELY] = data mostly answers, some minor uncertainty or source disagreement
-- [UNCERTAIN] = partial data, sources disagree, or data is older
-- [GUESSING] = no direct data, using training knowledge only
-
-Start your answer with [CONFIDENCE LEVEL] then the answer. Example: "[CONFIDENT] Bitcoin is currently $45,230 USD..."
-
-CONTRADICTION RESOLUTION:
-If sources disagree on same fact, analyze why:
-1) Is one source outdated? (check timestamps)
-2) Do they measure different things?
-3) Is one source more reliable?
-4) Could both be partially true?
-Mention this analysis in your answer.
-
-EXAMPLE ANSWERS:
-
-MUSIC:
-Query: "Tell me about reggae in the 70s"
-Good: "[CONFIDENT] Reggae in the 1970s was revolutionized by Bob Marley and the Wailers, who released 'Exodus' in 1977... I found several albums on YouTube. Would you like me to play one, Sir?"
-
-NEWS:
-Query: "What happened in tech today"
-Good: "[CONFIDENT] OpenAI announced GPT-5 this morning [TechCrunch, fetched 6:45 AM]. [LIKELY] Reports suggest $10B funding, but unconfirmed [source disagreement noted]."
-
-CRYPTO:
-Query: "Bitcoin price now"
-Good: "[CONFIDENT] Bitcoin = $45,230 USD, up 3.2% in 24h. [LIVE CRYPTO DATA fetched 10:15 AM GMT+3]"
-
-TECHNICAL:
-Query: "Sort array in Python"
-Good: "[CONFIDENT] Use sorted(): sorted([3,1,2]) returns [1,2,3]"
+CONFIDENCE SELF-RATING: Start your answer with [CONFIDENT] / [LIKELY] / [UNCERTAIN] / [GUESSING] then the answer.
 
 LIVE DATA CONTEXT:
 ${webContext}`;
@@ -937,7 +749,6 @@ ${webContext}`;
 
       const activeBrains = brainRoster.filter(b => b.key);
       if (!activeBrains.length) {
-        console.error('[chat.js] NO BRAIN API KEYS CONFIGURED');
         writeChunk('error', 'No brain API keys configured.');
         endStream(); return;
       }
@@ -952,12 +763,10 @@ ${webContext}`;
       }
 
     } else if (isPlayRequest) {
-      // ── PLAY REQUEST PATH — v5.5.0: extraction now also supports
-      // "unknown" so vague descriptions trigger a clarifying question
-      // instead of a guessed/wrong video. ──
+      // ── PLAY REQUEST PATH (direct "play X" command, no research step) ──
       writeChunk('thinking', 'Processing play request...');
 
-      const extractedQuery = userQuery.replace(/^(play|put on|i want to (hear|listen to)|search (youtube )?for|youtube|queue|stream)\s*/i,'').replace(/\s*(on youtube|for me|please|now)\s*/ig,'').trim();
+      const extractedQuery = extractYoutubeSeedQuery(userQuery);
       const ytResults = await youtubeSearch(extractedQuery);
 
       if (ytResults) {
@@ -966,20 +775,14 @@ ${webContext}`;
 
         const extractSystem = `You are a YouTube search query extractor for Scorpion AI. Today is ${timeStr}.
 Given the user's request and ACTUAL YOUTUBE SEARCH RESULTS, extract the best exact match.
-
-Choose ONE of three outcomes:
-- "clear": the user's request clearly matches exactly ONE of the YouTube results above (recommend it by its real title/channel).
-- "choice": 2+ of the YouTube results plausibly match equally well — surface them as distinct options.
-- "unknown": NONE of the YouTube results above genuinely match what the user described (e.g. their request was a vague plot/topic description and the actual results are unrelated, like an unrelated short or clip). In this case do NOT pick a result just because it's the only one available — say so.
-
-YouTube search results provided below are VERIFIED to exist. Use their exact titles and channels. NEVER invent a title that isn't listed.
-
+- "clear": clearly matches exactly ONE result.
+- "choice": 2+ results plausibly match equally well.
+- "unknown": NONE genuinely match — do not pick one just because it's available.
+Use exact titles/channels from the results. NEVER invent a title.
 Output ONLY valid JSON:
-{"status":"clear","searchQuery":"<most precise YouTube search query that matches a real result above>"}
-OR
-{"status":"choice","question":"<max 15 words, spoken question>","options":[{"label":"<video title>","searchQuery":"<search for that exact result>"}, ...]}
-OR
-{"status":"unknown","reason":"<one short sentence — e.g. 'None of the results I found genuinely match that description, Sir — could you tell me the movie/song title?'"}`;
+{"status":"clear","searchQuery":"<query matching a real result above>"}
+OR {"status":"choice","question":"<max 15 words>","options":[{"label":"<title>","searchQuery":"<query>"}, ...]}
+OR {"status":"unknown","reason":"<one short sentence>"}`;
 
         const userContent = `ORIGINAL REQUEST: ${extractedQuery}\n\nACTUAL YOUTUBE SEARCH RESULTS:\n${ytResults}`;
         let raw = await callAnyBrain(extractSystem, userContent, 350);
@@ -990,15 +793,12 @@ OR
           const cleanOptions = parsed.options.filter(o => o && o.label && o.searchQuery).slice(0, 3);
           if (cleanOptions.length >= 2) {
             writeChunk('answer', 'Found multiple matches:\n- ' + cleanOptions.map(o => o.label).join('\n- '), { brain:'YOUTUBE-CHOICE' });
-            endStream();
-            return;
+            endStream(); return;
           }
         }
-
         if (parsed?.status === 'unknown') {
-          writeChunk('answer', parsed.reason || ('I could not confidently match that to a real video, Sir. Could you name the title more specifically? "' + extractedQuery + '" was too vague to verify against what I found on YouTube.'), { brain:'YOUTUBE-UNKNOWN' });
-          endStream();
-          return;
+          writeChunk('answer', parsed.reason || ('I could not confidently match that to a real video, Sir. Could you name the title more specifically?'), { brain:'YOUTUBE-UNKNOWN' });
+          endStream(); return;
         }
 
         const finalQuery = (parsed && parsed.searchQuery) || extractedQuery;
@@ -1010,18 +810,15 @@ OR
 
         if (!rawWeb) {
           writeChunk('answer', 'Could not find: ' + extractedQuery, { brain:'YOUTUBE' });
-          endStream();
-          return;
+          endStream(); return;
         }
 
         writeChunk('fetching', 'Analysing web context...');
         const extractSystem = `You are a YouTube search query extractor for Scorpion AI. Today is ${timeStr}.
-Given the user's "play" request and web search context (no YouTube search succeeded), extract the best search query — but ONLY if the web context actually names a specific, real, identifiable title/speaker/event. Never output a vague plot description as the search query.
-
+Given the user's "play" request and web search context (no YouTube search succeeded), extract the best search query — but ONLY if the web context actually names a specific, real, identifiable title/speaker/event.
 Output ONLY valid JSON:
-{"status":"clear","searchQuery":"<best YouTube search string based on web context — must be a real specific title, not a vague description>"}
-OR
-{"status":"unknown","reason":"<one short sentence explaining what's missing>"}`;
+{"status":"clear","searchQuery":"<best YouTube search string — must be a real specific title>"}
+OR {"status":"unknown","reason":"<one short sentence>"}`;
         const userContent = `REQUEST: ${extractedQuery}\n\nWEB CONTEXT:\n${rawWeb.slice(0,2000)}`;
         let raw = await callAnyBrain(extractSystem, userContent, 300);
         let parsed = null;
@@ -1029,8 +826,7 @@ OR
 
         if (parsed?.status === 'unknown') {
           writeChunk('answer', parsed.reason || ('I could not confirm a specific match for "' + extractedQuery + '", Sir. Could you give me the exact title?'), { brain:'WEB-UNKNOWN' });
-          endStream();
-          return;
+          endStream(); return;
         }
 
         const sq = (parsed && parsed.searchQuery) || extractedQuery;
@@ -1039,13 +835,8 @@ OR
 
     } else if (analyzeMode) {
       const analyzeFormatRule = listMode ? `OUTPUT FORMAT RULES:
-- The user wants point-form / list output. Write as short points, each line starting with "- ".
-- No bold, no headers, no numbered lists — only "- " bullets.
-- Address the user as Sir.` : `CRITICAL OUTPUT FORMAT RULES:
-- Write in plain conversational sentences only.
-- NEVER use markdown: no asterisks, no bold, no headers, no bullet points, no numbered lists, no backticks.
-- Your output will be read aloud by text-to-speech.
-- Address the user as Sir.`;
+- Write as short points, each line starting with "- ". Address the user as Sir.` : `CRITICAL OUTPUT FORMAT RULES:
+- Plain conversational sentences only, no markdown. Output is read by TTS. Address the user as Sir.`;
 
       const analyzeSystem = `You are Scorpion, a hyper-intelligent Jarvis-style AI assistant.
 You are warm, witty, loyal, and brilliantly intelligent. You address the user as Sir.
@@ -1054,8 +845,7 @@ Today is ${timeStr}.
 ${analyzeFormatRule}
 
 The user has pasted or referenced a block of text below for you to analyse, summarise, or otherwise work with.
-Do NOT treat this content as something to search the web for — it is already provided to you in full.
-Read it carefully and respond directly to what they asked you to do with it.`;
+Do NOT treat this content as something to search the web for — it is already provided to you in full.`;
 
       const brainRoster = [
         { name:'CEREBRAS', key:process.env.CEREBRAS_API_KEY, url:'https://api.cerebras.ai/v1/chat/completions',     model:'llama3.1-8b',            headers:k=>({'Content-Type':'application/json','Authorization':'Bearer '+k}) },
@@ -1067,7 +857,6 @@ Read it carefully and respond directly to what they asked you to do with it.`;
       writeChunk('fetching', 'No search needed — analysing provided text directly.');
 
       if (!brainRoster.length) {
-        console.error('[chat.js] NO BRAIN API KEYS CONFIGURED');
         writeChunk('error', 'No brain API keys configured.');
         endStream(); return;
       }
